@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Askari - Security Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0077b6', 
+                        secondary: '#00b4d8', 
+                        accent: '#90e0ef',
+                        dark: '#00171f',
+                        surface: '#FFFFFF',
+                        background: '#F1F4F9', 
+                    },
+                    borderRadius: {
+                        'lg': '0.75rem',
+                        'xl': '1rem',
+                        '2xl': '1.5rem',
+                    },
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        hud: ['Outfit', 'sans-serif'],
+                        outfit: ['Outfit', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            background-color: #F1F4F9;
+        }
+        .font-hud { font-family: 'Outfit', sans-serif; }
+        .sidebar-gradient {
+            background: linear-gradient(180deg, #00171f 0%, #003459 100%);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="text-slate-800 antialiased overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="index.js"></script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
