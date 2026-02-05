@@ -1,7 +1,8 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EducationRecord, Guard, ApplicationStatus, UserRole, Guarantor } from '../types';
 import FileUploader from './FileUploader';
+import { guardService } from '../services/guardService';
+import { supabase } from '../services/supabaseClient';
 
 interface WizardData {
   full_name: string;
@@ -67,23 +68,9 @@ const InputField: React.FC<{
     </div>
 );
 
-// Helper to calculate age
-const calculateAge = (dob: string): number | null => {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  const now = new Date();
-  if (isNaN(birth.getTime())) return null;
-  let age = now.getFullYear() - birth.getFullYear();
-  const m = now.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
-    age--;
-  }
-  return age;
-};
+const STORAGE_KEY_PREFIX = 'amini_guard_wizard_draft_';
 
-const STORAGE_KEY_PREFIX = 'askari_guard_wizard_draft_';
-
-export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initialData?: Partial<Guard>, onComplete: (guard: Guard) => void, isApplicantFlow?: boolean }> = ({ initialData, onComplete, isApplicantFlow = false }) => {
+export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initialData?: Partial<Guard>, onComplete: (guard: Guard, isApplicantFlow?: boolean) => void, isApplicantFlow?: boolean }> = ({ initialData, onComplete, isApplicantFlow = false }) => {
   const STORAGE_KEY = initialData?.id ? `${STORAGE_KEY_PREFIX}${initialData.id}` : STORAGE_KEY_PREFIX + 'new';
   
   const initialFormState: WizardData = {
@@ -126,57 +113,39 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   // Auto-extract DOB from NIDA number
   useEffect(() => {
     const cleanNida = formData.nida_number.replace(/[^0-9]/g, '');
-    // NIDA format starts with YYYYMMDD...
     if (cleanNida.length >= 8) {
       const yyyy = parseInt(cleanNida.substring(0, 4));
       const mm = parseInt(cleanNida.substring(4, 6));
       const dd = parseInt(cleanNida.substring(6, 8));
 
-      // Basic validation to check if it looks like a date
       if (yyyy > 1900 && yyyy < new Date().getFullYear() && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
           const formattedDob = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-          
-          // Only update if different to avoid loop/unnecessary updates
           if (formData.dob !== formattedDob) {
               setFormData(prev => ({ ...prev, dob: formattedDob }));
-              // Clear DOB error if exists
-              setErrors(prev => {
-                  const newErrors = { ...prev };
-                  delete newErrors.dob;
-                  return newErrors;
-              });
+              setErrors(prev => { const newErrors = { ...prev }; delete newErrors.dob; return newErrors; });
           }
       }
     }
   }, [formData.nida_number]);
 
-  // Save draft on change (Debounced slightly by effect nature)
+  // Save draft on change
   useEffect(() => {
     if (!initialData) { 
         const timeoutId = setTimeout(() => {
             try {
                 const dataToSave = { ...formData };
-                
-                // Helper to check if string is likely a large base64 image
                 const isHeavy = (s?: string) => s && s.length > 5000;
 
-                // Strip main documents
+                // Strip heavy Base64 strings to avoid localStorage limits
                 if (isHeavy(dataToSave.nida_front_url)) dataToSave.nida_front_url = '';
                 if (isHeavy(dataToSave.birth_cert_url)) dataToSave.birth_cert_url = '';
                 if (isHeavy(dataToSave.application_letter_url)) dataToSave.application_letter_url = '';
                 if (isHeavy(dataToSave.residence_letter_url)) dataToSave.residence_letter_url = '';
-
-                // Strip nested documents in education
                 dataToSave.education_history = dataToSave.education_history.map(e => ({
-                    ...e,
-                    certificate_url: isHeavy(e.certificate_url) ? '' : e.certificate_url
+                    ...e, certificate_url: isHeavy(e.certificate_url) ? '' : e.certificate_url
                 }));
-
-                // Strip nested documents in guarantors
                 dataToSave.guarantors = dataToSave.guarantors.map(g => ({
-                    ...g,
-                    letter_url: isHeavy(g.letter_url) ? '' : g.letter_url,
-                    residence_letter_url: isHeavy(g.residence_letter_url) ? '' : g.residence_letter_url
+                    ...g, letter_url: isHeavy(g.letter_url) ? '' : g.letter_url, residence_letter_url: isHeavy(g.residence_letter_url) ? '' : g.residence_letter_url
                 }));
 
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
@@ -194,24 +163,15 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
     }));
-    // Clear error
     if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
+      setErrors(prev => { const newErrors = { ...prev }; delete newErrors[name]; return newErrors; });
     }
   };
 
   const handleFileChange = (field: keyof WizardData, url: string) => {
     setFormData(prev => ({ ...prev, [field]: url }));
     if (errors[field as string]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field as string];
-        return newErrors;
-      });
+      setErrors(prev => { const newErrors = { ...prev }; delete newErrors[field as string]; return newErrors; });
     }
   };
 
@@ -268,28 +228,80 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     window.scrollTo(0, 0);
   };
 
+  // ------------------------------------------------------------------
+  //  CORE LOGIC: THE SUBMIT FUNCTION
+  // ------------------------------------------------------------------
   const handleSubmit = async () => {
-      if (validateStep(currentStep)) {
-          setIsSubmitting(true);
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          
-          const newGuard: Guard = {
-            id: initialData?.id || `g-${Date.now()}`,
-            ...formData,
-            // Default to POOL_APPLICANT so they appear in Marketplace immediately
-            application_status: initialData?.application_status || ApplicationStatus.POOL_APPLICANT,
-            profile_score: 50, // Calculated based on completion
-            performance_score: 100,
-            created_at: initialData?.created_at || new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            company_id: initialData?.company_id, // Preserve if existing
-            dossier_data: initialData?.dossier_data || {},
-            consecutive_absences: initialData?.consecutive_absences || 0,
+      if (!validateStep(currentStep)) return;
+
+      setIsSubmitting(true);
+      try {
+          // 1. Separate core guard data from related arrays (guarantors, education)
+          // We must strip these arrays because 'guards' table doesn't have these columns.
+          const { guarantors, education_history, ...coreGuardData } = formData;
+
+          const guardPayload = {
+              ...coreGuardData,
+              application_status: initialData?.application_status || ApplicationStatus.POOL_APPLICANT,
+              profile_score: 50, // This could be calculated dynamically
+              // Ensure we don't accidentally send undefined for ID if it's new
           };
-          
+
+          let guardId = initialData?.id;
+
+          // 2. Insert or Update the Core Guard Record
+          if (guardId) {
+              // Edit Mode
+              await guardService.updateGuard(guardId, guardPayload);
+          } else {
+              // Create Mode
+              const { data, error } = await guardService.createGuard(guardPayload);
+              if (error || !data) throw new Error(error || 'Failed to create guard record');
+              guardId = data.id;
+          }
+
+          if (!guardId) throw new Error("Guard ID is missing after creation.");
+
+          // 3. Insert Guarantors using service method
+          if (guarantors.length > 0) {
+              const guarantorResult = await guardService.createGuarantors(guardId, guarantors);
+              if (guarantorResult.error) {
+                  console.error("Guarantor insert error:", guarantorResult.error);
+                  // Optional: Could throw error or show warning
+              }
+          }
+
+          // 4. Insert Education Records using service method
+          if (education_history.length > 0) {
+              const educationResult = await guardService.createEducationRecords(guardId, education_history);
+              if (educationResult.error) {
+                  console.error("Education insert error:", educationResult.error);
+              }
+          }
+
+          // 5. Cleanup & Notify
           localStorage.removeItem(STORAGE_KEY);
-          onComplete(newGuard);
+          
+          // Fetch the FULL object (with relations) to pass back to the parent component
+          const { data: completeGuard } = await guardService.getGuardById(guardId);
+          
+          if (completeGuard) {
+              onComplete(completeGuard, isApplicantFlow);
+          } else {
+              // Fallback if fetch fails
+              onComplete({ id: guardId, ...formData, application_status: ApplicationStatus.POOL_APPLICANT } as Guard, isApplicantFlow);
+          }
+
+          // Reset Form
+          setFormData(initialFormState);
+          setCurrentStep(1);
+          setErrors({});
+
+      } catch (error: any) {
+          console.error('Submission error:', error);
+          alert(`Failed to submit application: ${error.message || 'Unknown error'}`);
+      } finally {
+          setIsSubmitting(false);
       }
   };
 
@@ -298,7 +310,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           ...prev,
           education_history: [
               ...prev.education_history, 
-              { id: `edu-${Date.now()}`, guard_id: '', level: 'secondary', year: '', certificate_url: '' }
+              { id: `temp-${Date.now()}`, guard_id: '', level: 'secondary', year: '', certificate_url: '' }
           ]
       }));
   };
@@ -321,7 +333,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           ...prev,
           guarantors: [
               ...prev.guarantors,
-              { id: `gua-${Date.now()}`, guard_id: '', name: '', phone: '', relationship: '', letter_url: '', residence_letter_url: '' }
+              { id: `temp-${Date.now()}`, guard_id: '', name: '', phone: '', relationship: '', letter_url: '', residence_letter_url: '' }
           ]
       }));
   };
@@ -330,14 +342,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       const updated = [...formData.guarantors];
       updated[index] = { ...updated[index], [field]: value };
       setFormData(prev => ({ ...prev, guarantors: updated }));
-      
-      // Clear specific error
       if (errors[`guarantor_${index}`]) {
-          setErrors(prev => {
-              const newErrors = { ...prev };
-              delete newErrors[`guarantor_${index}`];
-              return newErrors;
-          });
+          setErrors(prev => { const newErrors = { ...prev }; delete newErrors[`guarantor_${index}`]; return newErrors; });
       }
   };
   
@@ -497,13 +503,27 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                     Back
                 </button>
             )}
-            <button 
-                onClick={currentStep === 4 ? handleSubmit : handleNext} 
+            <button
+                onClick={currentStep === 4 ? handleSubmit : handleNext}
                 disabled={isSubmitting}
                 className="flex-grow py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-primary transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-wait"
             >
-                {isSubmitting ? 'Processing...' : currentStep === 4 ? 'Submit Application' : 'Next Step'}
-                {!isSubmitting && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                {isSubmitting ? (
+                    <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Processing...
+                    </>
+                ) : (
+                    <>
+                        {currentStep === 4 ? 'Submit Application' : 'Next Step'}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    </>
+                )}
             </button>
         </div>
     </div>

@@ -1,5 +1,6 @@
-
-import React, { useState, useMemo } from 'react';
+import { guardService } from './services/guardService';
+import { generateAIResponse } from './services/aiService';
+import React, { useState, useMemo, useEffect } from 'react'; // ✅ Added useEffect here
 import Layout from './components/Layout';
 import Auth from './components/Auth';
 import IntakeManager from './components/IntakeManager';
@@ -21,7 +22,10 @@ import GuardOperations from './components/GuardOperations';
 import GuardProfile from './components/GuardProfile';
 import NoticeBoard from './components/NoticeBoard';
 import ForensicDisclosure from './components/ForensicDisclosure';
-import { ASKARI_SQL_SCHEMA } from './constants/sql';
+import GuardApplication from './components/GuardApplication';
+import { NotificationManager } from './components/Notification';
+import { AMINI_SQL_SCHEMA } from './constants/sql';
+import { supabase } from './services/supabaseClient'; // ✅ Moved import to TOP level
 import { 
   MOCK_COMPANIES, MOCK_PROFILES, MOCK_SITES, MOCK_GUARDS, 
   MOCK_INCIDENTS, MOCK_EQUIPMENT, MOCK_DISCIPLINARY_CODES,
@@ -30,10 +34,130 @@ import {
 import { Guard, Profile, UserRole, ApplicationStatus, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement } from './types';
 
 const App: React.FC = () => {
+  // --- SUPABASE CONNECTION TEST (Correct Location) ---
+  useEffect(() => {
+    const diagnose = async () => {
+      console.log("🔍 STARTING SUPABASE DIAGNOSTIC...");
+
+      const url = import.meta.env.VITE_SUPABASE_URL;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!url || !key) {
+        alert("❌ CRITICAL: Supabase Keys are MISSING in .env.local");
+        return;
+      }
+
+      // Try a simple fetch
+      const { data, error } = await supabase.from('guards').select('count', { count: 'exact', head: true });
+
+      if (error) {
+        console.error("❌ SUPABASE ERROR:", error);
+        alert(`❌ Connection Failed: ${error.message}`);
+      } else {
+        console.log("✅ SUPABASE SUCCESS:", data);
+        // Uncomment the line below if you want to see the popup every time
+        // alert("✅ Connected to Supabase! The app IS talking to the database.");
+      }
+    };
+
+    diagnose();
+  }, []);
+  // --- END TEST CODE ---
+// --- 🚀 LOAD REAL DATA FROM SUPABASE ---
+
+
+
+// 2. Paste this INSIDE the App() function, before the return statement
+useEffect(() => {
+  const testAI = async () => {
+    console.log("🤖 Testing Gemini Connection...");
+    
+    // Simple prompt to check if it works
+    const response = await generateAIResponse("Write a one-sentence slogan for a security company.");
+    
+    console.log("🤖 Gemini Response:", response);
+    
+    if (response.startsWith("Error") || response.startsWith("Failed")) {
+      alert("❌ AI Test Failed. Check console.");
+    } else {
+      // Optional: Alert to confirm it worked visible on screen
+      // alert(`✅ AI Connected! Slogan: ${response}`);
+    }
+  };
+
+  testAI();
+}, []);
+
+
+useEffect(() => {
+    const fetchRealData = async () => {
+      console.log("📥 App: Fetching data from Supabase...");
+
+      try {
+        // Load guards
+        const { data: guardData, error: guardError } = await guardService.getGuards();
+        if (guardError) {
+          console.error("❌ Failed to fetch guards:", guardError);
+        } else if (guardData) {
+          console.log(`✅ Loaded ${guardData.length} guards from database.`);
+          setGuards(guardData);
+        }
+
+        // Load sites from Supabase directly (since sites table exists)
+        const { data: siteData, error: siteError } = await supabase
+          .from('sites')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (siteError) {
+          console.error("❌ Failed to fetch sites:", siteError);
+        } else if (siteData) {
+          console.log(`✅ Loaded ${siteData.length} sites from database.`);
+          setSites(siteData);
+        }
+
+        // Load profiles from Supabase directly (since profiles table exists)
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (profileError) {
+          console.error("❌ Failed to fetch profiles:", profileError);
+        } else if (profileData) {
+          console.log(`✅ Loaded ${profileData.length} profiles from database.`);
+          setProfiles(profileData);
+        }
+
+        // Load companies from Supabase directly (since companies table exists)
+        const { data: companyData, error: companyError } = await supabase
+          .from('companies')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (companyError) {
+          console.error("❌ Failed to fetch companies:", companyError);
+        } else if (companyData) {
+          console.log(`✅ Loaded ${companyData.length} companies from database.`);
+          setCompanies(companyData);
+        }
+
+        // TODO: Load incidents, equipment, disciplinary_codes, leave_requests, attendance_logs, announcements
+        // These would need to be implemented in the service layer or loaded directly from Supabase
+        // For now, keeping mock data as fallback
+
+      } catch (error) {
+        console.error("❌ Error fetching data:", error);
+      }
+    };
+
+    fetchRealData();
+  }, []);
   // --- Global State ---
   const [user, setUser] = useState<Profile | Guard | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedGuardForAudit, setSelectedGuardForAudit] = useState<Guard | null>(null);
+  const [showGuardApplication, setShowGuardApplication] = useState(false);
 
   // --- Data State (Mock Database) ---
   const [companies, setCompanies] = useState<Company[]>(MOCK_COMPANIES);
@@ -53,7 +177,7 @@ const App: React.FC = () => {
   const userCompanyId = isGuard ? (user as Guard).company_id : (user as Profile)?.company_id;
   const currentUserName = user?.full_name || 'N/A';
 
-  // Filter data based on Multi-Tenancy (if not Super Admin)
+  // Filter data based on Multi-Tenancy
   const filteredGuards = useMemo(() => {
     if (userRole === UserRole.SUPER_ADMIN) return guards;
     if (isGuard) return [user as Guard]; 
@@ -91,16 +215,48 @@ const App: React.FC = () => {
   // --- Actions ---
 
   const handleLogin = (loggedInUser: Profile | Guard) => {
-    setUser(loggedInUser);
-    if ('role' in loggedInUser) {
-       setActiveTab('overview');
+    const pendingAccount = localStorage.getItem('pending_guard_account');
+    let finalUser = loggedInUser;
+    let needsIntake = false;
+
+    if (pendingAccount && !('role' in loggedInUser)) { 
+      try {
+        const accountData = JSON.parse(pendingAccount);
+        const pendingGuard = accountData.guard;
+        const pendingEmail = (pendingGuard.email || '').trim().toLowerCase();
+        const loggedInEmail = ((loggedInUser as Guard).email || '').trim().toLowerCase();
+        
+        const isPendingAccount = pendingGuard.id === loggedInUser.id || 
+                                 (pendingEmail && pendingEmail === loggedInEmail);
+        
+        if (isPendingAccount) {
+          const existingGuard = guards.find(g => g.id === pendingGuard.id);
+          if (!existingGuard) {
+            setGuards(prev => [...prev, pendingGuard]);
+          }
+          finalUser = pendingGuard;
+          needsIntake = accountData.needs_intake || false;
+        }
+      } catch (e) {
+        console.error('Error parsing pending account data:', e);
+      }
+    }
+
+    setUser(finalUser);
+
+    if (!('role' in finalUser)) { 
+      const g = finalUser as Guard;
+      if (needsIntake) {
+        setActiveTab('profile-update');
+        return;
+      }
+      if (g.application_status === ApplicationStatus.ACTIVE) {
+        setActiveTab('overview');
+      } else {
+        setActiveTab('application-status');
+      }
     } else {
-       const g = loggedInUser as Guard;
-       if (g.application_status === ApplicationStatus.ACTIVE) {
-         setActiveTab('overview');
-       } else {
-         setActiveTab('application-status');
-       }
+      setActiveTab('overview');
     }
   };
 
@@ -112,21 +268,36 @@ const App: React.FC = () => {
   const handlePublicApply = (newGuard: Guard) => {
     const existing = guards.find(g => g.nida_number === newGuard.nida_number);
     if (existing && existing.application_status === ApplicationStatus.BLACKLISTED) {
-      alert(`Access Denied: The applicant ${newGuard.full_name} and NIDA Number ${newGuard.nida_number} are blacklisted and cannot apply again.`);
+      alert(`Access Denied: Blacklisted.`);
       return;
     }
     setGuards(prev => [...prev, newGuard]);
     handleLogin(newGuard);
   };
 
-  const handleIntakeComplete = (newGuard: Guard) => {
-    const guardWithCompany = { 
-        ...newGuard, 
+  const handleIntakeComplete = (newGuard: Guard, isApplicantFlow = false) => {
+    if (isApplicantFlow) {
+      setGuards(prev => prev.map(g =>
+        g.id === newGuard.id
+          ? {
+              ...newGuard,
+              application_status: ApplicationStatus.POOL_APPLICANT,
+              profile_score: 75,
+              updated_at: new Date().toISOString()
+            }
+          : g
+      ));
+      localStorage.removeItem('pending_guard_account');
+      (window as any).showNotification?.('success', 'Application complete!');
+    } else {
+      const guardWithCompany = {
+        ...newGuard,
         company_id: userCompanyId,
-        application_status: ApplicationStatus.PENDING 
-    };
-    setGuards(prev => [...prev, guardWithCompany]);
-    alert("New personnel added to the pool.");
+        application_status: ApplicationStatus.PENDING
+      };
+      setGuards(prev => [...prev, guardWithCompany]);
+      (window as any).showNotification?.('success', 'Personnel added.');
+    }
   };
 
   const handleLockGuard = (guardId: string, companyId: string, notes: string) => {
@@ -177,12 +348,7 @@ const App: React.FC = () => {
   };
 
   const handleIssueKit = (guardId: string, items: any, sig: string) => {
-      setGuards(prev => prev.map(g => {
-          if (g.id === guardId) {
-              return { ...g, application_status: ApplicationStatus.ACTIVE };
-          }
-          return g;
-      }));
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.ACTIVE } : g));
   };
 
   const handleReportIncident = (guardId: string, report: Partial<IncidentReport>) => {
@@ -204,18 +370,6 @@ const App: React.FC = () => {
           setGuards(prev => prev.map(g => {
               if (g.id === guardId) {
                   const newScore = Math.max(0, (g.performance_score || 100) - code.points);
-                  if (newScore <= 5 && g.application_status !== ApplicationStatus.BLACKLISTED) {
-                      setTimeout(() => alert(`SYSTEM ALERT: Guard ${g.full_name} has been automatically blacklisted due to critical performance failure (Score: ${newScore}).`), 100);
-                      return {
-                          ...g,
-                          performance_score: newScore,
-                          application_status: ApplicationStatus.BLACKLISTED,
-                          dossier_data: {
-                              ...g.dossier_data,
-                              rejection_reason: `Automatic System Blacklist: Performance score dropped to ${newScore} (Threshold: ≤5). Last Incident: ${code.label}.`
-                          }
-                      };
-                  }
                   return { ...g, performance_score: newScore };
               }
               return g;
@@ -224,30 +378,20 @@ const App: React.FC = () => {
   };
 
   const handleReinstate = (guardId: string) => {
-      setGuards(prev => prev.map(g => 
-          g.id === guardId ? { ...g, application_status: ApplicationStatus.POOL_APPLICANT, company_id: undefined, performance_score: 100 } : g
-      ));
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.POOL_APPLICANT, company_id: undefined, performance_score: 100 } : g));
   };
 
   const handleShiftPersonnel = (personId: string, targetSiteId: string, type: 'guard' | 'supervisor') => {
       if (type === 'guard') {
           setGuards(prev => prev.map(g => g.id === personId ? { ...g, current_site_id: targetSiteId || undefined } : g));
       } else {
-          // Robust supervisor reassignment to fix "Occupied" errors
           setSites(prev => {
-              // 1. Remove this supervisor from any site they are currently commanding
-              const cleanedSites = prev.map(site => 
-                  site.supervisor_id === personId ? { ...site, supervisor_id: undefined } : site
-              );
-              // 2. If targetSiteId is provided, assign the supervisor to that site
+              const cleanedSites = prev.map(site => site.supervisor_id === personId ? { ...site, supervisor_id: undefined } : site);
               if (targetSiteId) {
-                  return cleanedSites.map(site => 
-                      site.id === targetSiteId ? { ...site, supervisor_id: personId } : site
-                  );
+                  return cleanedSites.map(site => site.id === targetSiteId ? { ...site, supervisor_id: personId } : site);
               }
               return cleanedSites;
           });
-          // Also update the profile current_site_id for consistency
           setProfiles(prev => prev.map(p => p.id === personId ? { ...p, current_site_id: targetSiteId || undefined } : p));
       }
   };
@@ -268,17 +412,7 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLeave = (id: string, status: 'approved' | 'rejected') => {
-      setLeaveRequests(prev => prev.map(r => {
-          if (r.id === id) {
-              if (status === 'approved') {
-                  setGuards(g_prev => g_prev.map(g => g.id === r.guard_id ? { ...g, application_status: ApplicationStatus.ON_LEAVE } : g));
-              } else if (status === 'rejected') {
-                  setGuards(g_prev => g_prev.map(g => g.id === r.guard_id && g.application_status === ApplicationStatus.ON_LEAVE ? { ...g, application_status: ApplicationStatus.ACTIVE } : g));
-              }
-              return { ...r, status };
-          }
-          return r;
-      }));
+      setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
   };
   
   const handleAddPolicy = (policy: DisciplinaryCode) => {
@@ -287,9 +421,7 @@ const App: React.FC = () => {
 
   const handleUpdatePolicy = (code: string, updates: Partial<DisciplinaryCode>) => {
     setDisciplinaryCodes(prev => prev.map(c => 
-        (c.code === code && (c.company_id === userCompanyId || c.company_id === undefined && userRole === UserRole.SUPER_ADMIN)) 
-        ? { ...c, ...updates, updated_at: new Date().toISOString() } 
-        : c
+        (c.code === code) ? { ...c, ...updates, updated_at: new Date().toISOString() } : c
     ));
   };
 
@@ -320,77 +452,70 @@ const App: React.FC = () => {
       setCompanies(prev => prev.map(c => c.id === id ? { ...c, is_active: !c.is_active } : c));
   };
 
-
   if (!user) {
-    return <Auth onLogin={handleLogin} onPublicSubmit={handlePublicApply} guards={guards} profiles={profiles} />;
+    if (showGuardApplication && window.innerWidth >= 1024) {
+      return (
+        <NotificationManager>
+          <div className="min-h-screen bg-background overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
+            <GuardApplication
+              onComplete={(guard) => setShowGuardApplication(false)}
+              onBackToLogin={() => setShowGuardApplication(false)}
+            />
+          </div>
+        </NotificationManager>
+      );
+    }
+    return <Auth
+      onLogin={handleLogin}
+      onPublicSubmit={handlePublicApply}
+      guards={guards}
+      profiles={profiles}
+      onShowGuardApplication={() => setShowGuardApplication(true)}
+    />;
   }
 
   const guardSite = isGuard ? sites.find(s => s.id === (user as Guard).current_site_id) : undefined;
   const guardSupervisor = isGuard ? profiles.find(p => p.id === (guardSite?.supervisor_id)) : undefined;
 
   return (
-    <Layout 
-        activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
-        userRole={userRole} 
-        onLogout={handleLogout}
-        companyName={isGuard ? undefined : companies.find(c => c.id === userCompanyId)?.name}
-        currentUser={user}
-    >
+    <NotificationManager>
+      <Layout
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          userRole={userRole}
+          onLogout={handleLogout}
+          companyName={isGuard ? undefined : companies.find(c => c.id === userCompanyId)?.name}
+          currentUser={user}
+      >
       {!isGuard && (
         <>
             {activeTab === 'overview' && (
-                <div className="space-y-12 animate-in fade-in duration-500">
-                    <div className="bg-slate-900 rounded-[3rem] p-10 md:p-14 text-white shadow-2xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/20 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
+                <div className="space-y-16 animate-in fade-in duration-700">
+                    <div className="bg-slate-900 rounded-[2.5rem] p-12 text-white shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/20 rounded-full blur-3xl -mr-40 -mt-40 pointer-events-none" />
                         <div className="relative z-10">
-                            <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-4">Welcome Back, {user.full_name.split(' ')[0]}!</p>
-                            <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none">
-                                Operational Nexus <br />
-                                <span className="text-white/60">Ready for Command.</span>
+                            <h1 className="text-5xl font-black uppercase tracking-tight leading-none mb-8">
+                                Dashboard <br />
+                                <span className="text-primary text-4xl">Overview</span>
                             </h1>
-                            <div className="flex flex-col sm:flex-row gap-6 mt-10">
-                                <div className="p-5 bg-white/10 rounded-2xl border border-white/10 flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-primary text-white rounded-xl flex items-center justify-center text-xl font-bold">
-                                        {filteredGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE).length}
-                                    </div>
-                                    <span className="text-sm font-black text-white uppercase tracking-tight">Active<br/>Guards</span>
+                            <div className="grid grid-cols-4 gap-6">
+                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                                    <p className="text-sm font-bold text-white/60 uppercase">Active Guards</p>
+                                    <p className="text-4xl font-black text-white mt-2">{filteredGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE).length}</p>
                                 </div>
-                                <div className="p-5 bg-white/10 rounded-2xl border border-white/10 flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-emerald-500 text-white rounded-xl flex items-center justify-center text-xl font-bold">
-                                        {filteredSites.length}
-                                    </div>
-                                    <span className="text-sm font-black text-white uppercase tracking-tight">Active<br/>Sites</span>
+                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                                    <p className="text-sm font-bold text-white/60 uppercase">Total Sites</p>
+                                    <p className="text-4xl font-black text-white mt-2">{filteredSites.length}</p>
+                                </div>
+                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                                    <p className="text-sm font-bold text-white/60 uppercase">Incidents</p>
+                                    <p className="text-4xl font-black text-white mt-2">{filteredIncidents.length}</p>
+                                </div>
+                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                                    <p className="text-sm font-bold text-white/60 uppercase">Pending Leave</p>
+                                    <p className="text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    {/* Updated Dashboard Grid: 2 Columns, 3 Rows */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Applicants in Pool</p>
-                            <p className="text-5xl font-black text-primary font-hud">{filteredGuards.filter(g => g.application_status === ApplicationStatus.POOL_APPLICANT).length}</p>
-                        </div>
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Interviews Locked</p>
-                            <p className="text-5xl font-black text-amber-500 font-hud">{filteredGuards.filter(g => g.application_status === ApplicationStatus.INTERVIEW_LOCKED).length}</p>
-                        </div>
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Procurement Pending</p>
-                            <p className="text-5xl font-black text-indigo-500 font-hud">{filteredGuards.filter(g => g.application_status === ApplicationStatus.PROCUREMENT_PENDING).length}</p>
-                        </div>
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Incidents Last 30d</p>
-                            <p className="text-5xl font-black text-red-600 font-hud">{filteredIncidents.length}</p>
-                        </div>
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Blacklisted Personnel</p>
-                            <p className="text-5xl font-black text-slate-900 font-hud">{filteredGuards.filter(g => g.application_status === ApplicationStatus.BLACKLISTED).length}</p>
-                        </div>
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Leave Requests</p>
-                            <p className="text-5xl font-black text-purple-600 font-hud">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
                         </div>
                     </div>
                 </div>
@@ -508,7 +633,7 @@ const App: React.FC = () => {
 
             {activeTab === 'architecture' && userRole === UserRole.SUPER_ADMIN && <ArchitectureOverview />}
             {activeTab === 'erd-view' && userRole === UserRole.SUPER_ADMIN && <ERDView />}
-            {activeTab === 'sql-schema' && userRole === UserRole.SUPER_ADMIN && <CodeBlock code={ASKARI_SQL_SCHEMA} />}
+            {activeTab === 'sql-schema' && userRole === UserRole.SUPER_ADMIN && <CodeBlock code={AMINI_SQL_SCHEMA} />}
         </>
       )}
 
@@ -548,7 +673,8 @@ const App: React.FC = () => {
           onClose={() => setSelectedGuardForAudit(null)} 
         />
       )}
-    </Layout>
+      </Layout>
+    </NotificationManager>
   );
 };
 

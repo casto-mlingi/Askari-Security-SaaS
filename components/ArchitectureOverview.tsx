@@ -6,14 +6,14 @@ const ArchitectureOverview: React.FC = () => {
     <div className="max-w-7xl mx-auto space-y-12 animate-in fade-in duration-500 pb-24">
       <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm">
         <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">System Architecture</h2>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-4">A high-level overview of the Askari multi-tenant SaaS data model. (v2.1)</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-4">A high-level overview of the AMINI multi-tenant SaaS data model. (v2.1)</p>
       </div>
 
       <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm space-y-10">
         <section>
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter mb-4">Core Multi-Tenancy Model</h3>
           <p className="text-slate-600 font-medium leading-relaxed max-w-4xl">
-            Askari is engineered as a multi-tenant platform, designed to serve multiple security companies (tenants) from a single, unified infrastructure while ensuring strict data isolation and security. The architectural foundation for this model rests on three core tables: <code className="font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg">companies</code>, <code className="font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg">subscriptions</code>, and <code className="font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg">profiles</code>.
+            AMINI is engineered as a multi-tenant platform, designed to serve multiple security companies (tenants) from a single, unified infrastructure while ensuring strict data isolation and security. The architectural foundation for this model rests on three core tables: <code className="font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg">companies</code>, <code className="font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg">subscriptions</code>, and <code className="font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg">profiles</code>.
           </p>
           <ul className="list-disc list-inside space-y-4 mt-6 text-slate-600 max-w-4xl">
             <li>

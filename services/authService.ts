@@ -22,15 +22,15 @@ export const authService = {
           full_name: 'Production Administrator',
           role: UserRole.COMPANY_ADMIN,
           email: email,
-          company_id: 'c-askari-master',
+          company_id: 'c-amini-master',
           is_active: true,
           created_at: new Date().toISOString()
         },
         expires_at: new Date(Date.now() + 86400000).toISOString() // 24h
       };
 
-      localStorage.setItem('askari_auth_token', mockSession.token);
-      localStorage.setItem('askari_user', JSON.stringify(mockSession.user));
+      localStorage.setItem('amini_auth_token', mockSession.token);
+      localStorage.setItem('amini_user', JSON.stringify(mockSession.user));
 
       return { data: mockSession };
     }
@@ -40,16 +40,16 @@ export const authService = {
 
   async logout(): Promise<void> {
     // return api.post('/auth/logout', {});
-    localStorage.removeItem('askari_auth_token');
-    localStorage.removeItem('askari_user');
+    localStorage.removeItem('amini_auth_token');
+    localStorage.removeItem('amini_user');
   },
 
   getCurrentUser(): any {
-    const user = localStorage.getItem('askari_user');
+    const user = localStorage.getItem('amini_user');
     return user ? JSON.parse(user) : null;
   },
 
   isAuthenticated(): boolean {
-    return !!localStorage.getItem('askari_auth_token');
+    return !!localStorage.getItem('amini_auth_token');
   }
 };

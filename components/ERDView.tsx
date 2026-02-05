@@ -229,7 +229,7 @@ const ERDView: React.FC = () => {
        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
             <div>
                 <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-slate-900">Database Schema (ERD)</h2>
-                <p className="text-slate-500 text-xs font-medium">Visual representation of Askari's data architecture. Updated to v2.1.</p>
+                <p className="text-slate-500 text-xs font-medium">Visual representation of AMINI's data architecture. Updated to v2.1.</p>
             </div>
         </div>
 

@@ -10,7 +10,7 @@ import { Guard, UserRole } from '../types';
 interface IntakeManagerProps {
   guards: Guard[];
   userRole: UserRole;
-  onComplete: (guard: Guard) => void;
+  onComplete: (guard: Guard, isApplicantFlow?: boolean) => void;
   isApplicantFlow?: boolean;
   applicantData?: Guard;
 }
@@ -53,7 +53,7 @@ const IntakeManager: React.FC<IntakeManagerProps> = ({ guards, userRole, onCompl
       </div>
 
       {(activeTab === 'manual' || isApplicantFlow) ? (
-        <GuardWizard onComplete={onComplete} guards={guards} userRole={userRole} initialData={applicantData} isApplicantFlow={isApplicantFlow} />
+        <GuardWizard onComplete={(guard) => onComplete(guard, isApplicantFlow)} guards={guards} userRole={userRole} initialData={applicantData} isApplicantFlow={isApplicantFlow} />
       ) : (
         <BulkImport />
       )}

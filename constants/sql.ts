@@ -1,6 +1,6 @@
 
 /**
- * ASKARI_SQL_SCHEMA: The foundational database schema for the Askari Multi-Tenant SaaS.
+ * AMINI_SQL_SCHEMA: The foundational database schema for the AMINI Multi-Tenant SaaS.
  * This is exported as a string for documentation and reference within the app.
  *
  * ARCHITECTURAL REVISION: 2.1
@@ -10,7 +10,7 @@
  * - Enforced data integrity with stricter CHECK constraints and CASCADE/SET NULL on foreign keys.
  * - Clarified JSONB data structures with comments.
  */
-export const ASKARI_SQL_SCHEMA = `-- Askari Multi-Tenant Security SaaS: Hardened Schema v2.1 (PostgreSQL)
+export const AMINI_SQL_SCHEMA = `-- AMINI Multi-Tenant Security SaaS: Hardened Schema v2.1 (PostgreSQL)
 
 -- Block 0: Core Extensions & Reusable Functions
 

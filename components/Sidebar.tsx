@@ -77,10 +77,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
           e.preventDefault();
           setActiveTab(item.tab);
         }}
-        className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all font-bold ${
+        className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group relative overflow-hidden ${
           isActive
-            ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]'
-            : 'text-slate-400 hover:text-white hover:bg-white/5'
+            ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
+            : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
         }`}
       >
         <Icon className="w-6 h-6" />
@@ -90,64 +90,75 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
   };
 
   return (
-    <aside className="h-full sidebar-gradient flex flex-col p-6 text-white no-scrollbar">
-      <div className="flex items-center gap-3 mb-12 shrink-0">
-        <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/10">
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-        </div>
-        <div>
-          <h1 className="font-black text-xl leading-none tracking-tight">ASKARI</h1>
-          <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">SaaS</p>
-        </div>
-      </div>
-
-      <nav className="flex-grow space-y-2 overflow-y-auto pr-2 -mr-2">
-        {navItems.map(renderNavItem)}
-      </nav>
-
-      {isAdmin && (
-        <div className="mt-12 pt-8 border-t border-white/10 shrink-0">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">System</p>
-          <div className="space-y-2">
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); setActiveTab('architecture'); }}
-              className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all font-bold ${
-                activeTab === 'architecture'
-                  ? 'bg-white/10 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <ICONS.Registry className="w-6 h-6" />
-              <span className="text-sm">Architecture</span>
-            </a>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); setActiveTab('erd-view'); }}
-              className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all font-bold ${
-                activeTab === 'erd-view'
-                  ? 'bg-white/10 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <ICONS.Database className="w-6 h-6" />
-              <span className="text-sm">ERD View</span>
-            </a>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); setActiveTab('sql-schema'); }}
-              className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all font-bold ${
-                activeTab === 'sql-schema'
-                  ? 'bg-white/10 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <ICONS.Operations className="w-6 h-6" />
-              <span className="text-sm">SQL Schema</span>
-            </a>
+    <aside className="h-full sidebar-gradient flex flex-col p-8 text-white no-scrollbar relative">
+      <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent pointer-events-none"></div>
+      <div className="relative z-10">
+        <div className="flex items-center gap-4 mb-16 shrink-0">
+          <div className="w-14 h-14 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-105 transition-transform duration-200">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="font-black text-2xl leading-none tracking-tight bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">AMINI</h1>
+            <p className="text-slate-300 text-xs font-semibold tracking-wider uppercase mt-1">Security Platform</p>
           </div>
         </div>
-      )}
+
+          <nav className="flex-grow space-y-3 overflow-y-auto pr-3 -mr-3">
+          <div className="space-y-2">
+            {navItems.map((item, index) => (
+              <div key={item.tab} className="animate-fade-in" style={{ animationDelay: `${index * 50}ms` }}>
+                {renderNavItem(item)}
+              </div>
+            ))}
+          </div>
+        </nav>
+
+        {isAdmin && (
+          <div className="mt-16 pt-8 border-t border-white/20 shrink-0">
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-6 px-2">System Tools</p>
+            <div className="space-y-2">
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); setActiveTab('architecture'); }}
+                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
+                  activeTab === 'architecture'
+                    ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+                }`}
+              >
+                <ICONS.Registry className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span className="text-sm tracking-tight">Architecture</span>
+              </a>
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); setActiveTab('erd-view'); }}
+                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
+                  activeTab === 'erd-view'
+                    ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+                }`}
+              >
+                <ICONS.Database className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span className="text-sm tracking-tight">ERD View</span>
+              </a>
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); setActiveTab('sql-schema'); }}
+                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
+                  activeTab === 'sql-schema'
+                    ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+                }`}
+              >
+                <ICONS.Operations className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span className="text-sm tracking-tight">SQL Schema</span>
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 };

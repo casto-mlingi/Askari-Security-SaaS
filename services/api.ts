@@ -1,14 +1,14 @@
 import { ApiResponse } from '../types';
 
 /**
- * Base URL for the Askari Backend.
+ * Base URL for the AMINI Backend.
  * In production, this would be an environment variable (e.g., process.env.API_URL).
  */
-const API_BASE_URL = 'https://api.askari-security.cloud/v1';
+const API_BASE_URL = 'https://api.amini-security.cloud/v1';
 
 class ApiClient {
   private getHeaders(): HeadersInit {
-    const token = localStorage.getItem('askari_auth_token');
+    const token = localStorage.getItem('amini_auth_token');
     return {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -18,7 +18,7 @@ class ApiClient {
   private async handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
     if (response.status === 401) {
       // Handle unauthorized session
-      localStorage.removeItem('askari_auth_token');
+      localStorage.removeItem('amini_auth_token');
       // In a real app, you might trigger a redirect or a context update
     }
 

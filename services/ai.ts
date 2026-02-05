@@ -11,7 +11,7 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 export async function analyzeGuardDossier(guard: Guard) {
   const ai = getAI();
   const prompt = `
-    Role: Senior Security Vetting Officer for 'Askari', a private security firm.
+    Role: Senior Security Vetting Officer for 'AMINI', a private security firm.
     Task: Analyze this applicant's dossier for risk and reliability.
     
     Applicant Data:

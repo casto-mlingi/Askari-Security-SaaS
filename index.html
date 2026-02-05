@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Askari - Security Platform</title>
+    <title>AMINI - Security Platform</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet">
     <script>
@@ -11,36 +12,205 @@
             theme: {
                 extend: {
                     colors: {
-                        primary: '#0077b6', 
-                        secondary: '#00b4d8', 
-                        accent: '#90e0ef',
-                        dark: '#00171f',
-                        surface: '#FFFFFF',
-                        background: '#F1F4F9', 
+                        primary: '#1e293b',
+                        'primary-light': '#334155',
+                        'primary-dark': '#0f172a',
+                        secondary: '#3b82f6',
+                        'secondary-light': '#60a5fa',
+                        'secondary-dark': '#2563eb',
+                        accent: '#06b6d4',
+                        'accent-light': '#22d3ee',
+                        'accent-dark': '#0891b2',
+                        success: '#10b981',
+                        warning: '#f59e0b',
+                        error: '#ef4444',
+                        dark: '#0f172a',
+                        'dark-light': '#1e293b',
+                        surface: '#ffffff',
+                        'surface-secondary': '#f8fafc',
+                        background: '#f1f5f9',
+                        'background-secondary': '#e2e8f0',
+                        border: '#e2e8f0',
+                        'border-light': '#f1f5f9',
+                        text: '#1e293b',
+                        'text-secondary': '#64748b',
+                        'text-muted': '#94a3b8',
                     },
                     borderRadius: {
-                        'lg': '0.75rem',
-                        'xl': '1rem',
+                        lg: '0.75rem',
+                        xl: '1rem',
                         '2xl': '1.5rem',
                     },
                     fontFamily: {
                         sans: ['Outfit', 'sans-serif'],
                         hud: ['Outfit', 'sans-serif'],
                         outfit: ['Outfit', 'sans-serif'],
-                    }
+                    },
                 }
             }
         }
     </script>
     <style>
-        body { 
-            font-family: 'Outfit', sans-serif; 
+        body {
+            font-family: 'Outfit', sans-serif;
             -webkit-tap-highlight-color: transparent;
-            background-color: #F1F4F9;
+            background-color: #f1f5f9;
+            line-height: 1.6;
+            color: #1e293b;
         }
         .font-hud { font-family: 'Outfit', sans-serif; }
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.025em;
+        }
+        p {
+            line-height: 1.6;
+        }
         .sidebar-gradient {
-            background: linear-gradient(180deg, #00171f 0%, #003459 100%);
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.1);
+        }
+        .glass-effect {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        .animate-slide-up {
+            animation: slideUp 0.5s ease-out;
+        }
+        .animate-scale-in {
+            animation: scaleIn 0.4s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .nav-item-hover {
+            transition: all 0.2s ease;
+        }
+        .nav-item-hover:hover {
+            transform: translateX(4px);
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            body {
+                -webkit-text-size-adjust: 100%;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            .mobile-optimized {
+                touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            .mobile-text {
+                font-size: 14px;
+                line-height: 1.4;
+            }
+
+            .mobile-heading {
+                font-size: 24px;
+                line-height: 1.2;
+            }
+
+            /* Better touch targets */
+            button, a, [role="button"] {
+                min-height: 44px;
+                min-width: 44px;
+            }
+
+            /* Prevent horizontal scroll */
+            .mobile-scroll {
+                overflow-x: hidden;
+            }
+        }
+
+        @media (max-width: 768px) and (min-width: 641px) {
+            /* Tablet-specific styles */
+            .tablet-optimized {
+                padding: 1rem;
+            }
+        }
+
+        /* Improved focus states for accessibility */
+        button:focus-visible,
+        a:focus-visible {
+            outline: 2px solid #3b82f6;
+            outline-offset: 2px;
+        }
+
+        /* Desktop-only application styles */
+        @media (min-width: 1024px) {
+            .desktop-application {
+                background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                min-height: 100vh;
+                scroll-behavior: smooth;
+            }
+
+            /* Smooth scrolling for application page */
+            html {
+                scroll-behavior: smooth;
+            }
+
+            .application-card {
+                backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.1);
+            }
+
+            /* Scroll progress indicator */
+            .scroll-progress {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 3px;
+                background: linear-gradient(90deg, #3b82f6, #06b6d4);
+                transform-origin: left;
+                z-index: 1000;
+                transition: transform 0.1s ease-out;
+            }
+
+            /* Custom scrollbar */
+            .custom-scrollbar::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-track {
+                background: rgba(0, 0, 0, 0.1);
+                border-radius: 4px;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+                background: linear-gradient(180deg, #3b82f6, #06b6d4);
+                border-radius: 4px;
+                transition: background 0.3s ease;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                background: linear-gradient(180deg, #2563eb, #0891b2);
+            }
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -55,11 +225,9 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body class="text-slate-800 antialiased overflow-hidden">
     <div id="root"></div>
-    <script type="module" src="index.js"></script>
-<script type="module" src="/index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

@@ -58,19 +58,45 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab, currentU
   const tabs = isActiveGuard ? activeGuardTabs : applicantTabs;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-24 bg-white border-t border-slate-200 flex items-center justify-around px-6 z-[120] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-      {tabs.map(tab => (
+    <div className="fixed bottom-0 left-0 right-0 h-20 bg-white/95 backdrop-blur-xl border-t border-border-light flex items-center justify-around px-4 z-[120] safe-bottom shadow-[0_-8px_32px_rgba(0,0,0,0.12)] mobile-optimized">
+      {tabs.map((tab, index) => (
         <button
           key={tab.id}
           onClick={() => setActiveTab(tab.id)}
-          className={`flex flex-col items-center gap-2 transition-all w-24 ${
-            activeTab === tab.id ? 'text-primary' : 'text-slate-400'
+          className={`flex flex-col items-center gap-1.5 transition-all duration-300 relative group flex-1 max-w-20 mobile-optimized ${
+            activeTab === tab.id ? 'text-primary' : 'text-text-muted hover:text-text-secondary'
           }`}
         >
-          <div className={`p-3 rounded-xl transition-all ${activeTab === tab.id ? 'bg-primary/10' : ''}`}>
-            <tab.icon className="w-7 h-7" />
+          {/* Active indicator */}
+          <div className={`absolute -top-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-primary rounded-full transition-all duration-300 ${
+            activeTab === tab.id ? 'opacity-100 scale-100' : 'opacity-0 scale-75'
+          }`} />
+
+          {/* Icon container */}
+          <div className={`p-2.5 rounded-2xl transition-all duration-300 relative ${
+            activeTab === tab.id
+              ? 'bg-primary/15 shadow-lg shadow-primary/20 scale-110'
+              : 'bg-surface-secondary hover:bg-background-secondary group-active:scale-95'
+          }`}>
+            <tab.icon className={`w-6 h-6 transition-all duration-300 ${
+              activeTab === tab.id ? 'scale-110' : 'group-hover:scale-105'
+            }`} />
+
+            {/* Active glow effect */}
+            {activeTab === tab.id && (
+              <div className="absolute inset-0 rounded-2xl bg-primary/20 animate-pulse" />
+            )}
           </div>
-          <span className="text-xs font-black uppercase tracking-widest">{tab.label}</span>
+
+          {/* Label */}
+          <span className={`text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
+            activeTab === tab.id ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary'
+          }`}>
+            {tab.label}
+          </span>
+
+          {/* Ripple effect on touch */}
+          <div className="absolute inset-0 rounded-lg opacity-0 group-active:opacity-20 bg-primary transition-opacity duration-150" />
         </button>
       ))}
     </div>

@@ -302,7 +302,7 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
            <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-10 space-y-8 border border-white/20">
               <div className="text-center">
                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Register Tenant</h3>
-                 <p className="text-sm font-medium text-slate-500 mt-2">Add a new company to the Askari network.</p>
+                 <p className="text-sm font-medium text-slate-500 mt-2">Add a new company to the AMINI network.</p>
               </div>
               <form onSubmit={handleSubmitCompany} className="space-y-6">
                  <div className="space-y-2">

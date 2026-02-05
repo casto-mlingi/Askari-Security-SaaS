@@ -27,6 +27,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'marketplace' | 'interviews'>('marketplace');
   const [selectedGuard, setSelectedGuard] = useState<Guard | null>(null);
+  const [detailGuard, setDetailGuard] = useState<Guard | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   
   // Locking State
@@ -123,6 +124,39 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     setAiAnalysis(null);
   };
 
+  const safeAge = (dob?: string) => {
+    if (!dob) return '—';
+    const d = new Date(dob);
+    if (Number.isNaN(d.getTime())) return '—';
+    return `${new Date().getFullYear() - d.getFullYear()} Years`;
+  };
+
+  const renderDocLink = (label: string, url?: string) => {
+    const trimmed = (url || '').trim();
+    return (
+      <div className="flex items-center justify-between gap-4 border-b border-slate-100 py-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+          <p className="text-xs font-medium text-slate-600 truncate">{trimmed || 'Not provided'}</p>
+        </div>
+        {trimmed ? (
+          <a
+            href={trimmed}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 px-4 py-2 bg-white border border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all"
+          >
+            View
+          </a>
+        ) : (
+          <span className="shrink-0 px-4 py-2 bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl border border-slate-100">
+            —
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-24 animate-in fade-in duration-500">
        <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-10">
@@ -143,7 +177,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
       {activeTab === 'marketplace' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
            {poolApplicants.length > 0 ? poolApplicants.map(guard => (
-             <div key={guard.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group">
+             <button
+               key={guard.id}
+               type="button"
+               onClick={() => setDetailGuard(guard)}
+               className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group focus:outline-none focus:ring-2 focus:ring-primary/20"
+             >
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-4">
                          <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-xl">
@@ -158,7 +197,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 <div className="space-y-4 mb-8">
                     <div className="flex justify-between border-b border-slate-50 py-2">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Age</span>
-                        <span className="text-xs font-bold text-slate-700">{new Date().getFullYear() - new Date(guard.dob).getFullYear()} Years</span>
+                        <span className="text-xs font-bold text-slate-700">{safeAge(guard.dob)}</span>
                     </div>
                     <div className="flex justify-between border-b border-slate-50 py-2">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Education</span>
@@ -170,12 +209,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     </div>
                 </div>
                 <button 
-                  onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
                   className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95"
                 >
                     Review & Lock
                 </button>
-             </div>
+             </button>
            )) : (
               <div className="col-span-full py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
                   <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No applicants in the pool</p>
@@ -187,7 +226,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
       {activeTab === 'interviews' && (
         <div className="space-y-6">
            {lockedApplicants.map(guard => (
-             <div key={guard.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row gap-8 items-start">
+             <button
+               key={guard.id}
+               type="button"
+               onClick={() => setDetailGuard(guard)}
+               className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row gap-8 items-start w-full hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20"
+             >
                 <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-[1.5rem] flex items-center justify-center font-black text-2xl shrink-0">
                    {guard.full_name[0]}
                 </div>
@@ -202,7 +246,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                       {analyzingId === guard.id ? (
                         <span className="px-6 py-3 bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl animate-pulse">Running Analysis...</span>
                       ) : (
-                        <button onClick={() => handleRunAI(guard)} className="px-6 py-3 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); handleRunAI(guard); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2">
                            <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeWidth="2.5"/></svg>
                            Run AI Analysis
                         </button>
@@ -223,25 +267,192 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 </div>
                 <div className="shrink-0 flex flex-col gap-3 w-full md:w-auto">
                     <button 
-                       onClick={() => { setSelectedGuard(guard); setDecisionMode('hire'); }}
+                       onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
                        className="px-8 py-4 bg-emerald-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200"
                     >
                        Hire & Deploy
                     </button>
                     <button 
-                       onClick={() => { setSelectedGuard(guard); setDecisionMode('reject'); }}
+                       onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('reject'); }}
                        className="px-8 py-4 bg-white border border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"
                     >
                        Reject
                     </button>
                 </div>
-             </div>
+             </button>
            )) }
            {lockedApplicants.length === 0 && (
              <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
                 <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No active interviews</p>
              </div>
            )}
+        </div>
+      )}
+
+      {/* Applicant Details Modal */}
+      {detailGuard && (
+        <div className="fixed inset-0 z-[1190] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="p-8 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+              <div className="min-w-0">
+                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter truncate">
+                  Applicant Details
+                </h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 truncate">
+                  {detailGuard.full_name} • {detailGuard.nida_number}
+                </p>
+              </div>
+              <button
+                onClick={() => setDetailGuard(null)}
+                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-8 overflow-y-auto custom-scrollbar space-y-10">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white border border-slate-200 rounded-2xl p-6">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Identity</h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.full_name}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NIDA</span>
+                      <span className="text-xs font-bold text-slate-800 text-right font-mono">{detailGuard.nida_number}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DOB / Age</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.dob || '—'} • {safeAge(detailGuard.dob)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.phone || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-6">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Status & Flags</h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Application</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.application_status}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Score</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.profile_score}%</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Armed</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.is_armed ? 'Yes' : 'No'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Residence</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">
+                        {typeof detailGuard.residence_lat === 'number' && typeof detailGuard.residence_lng === 'number'
+                          ? `${detailGuard.residence_lat.toFixed(5)}, ${detailGuard.residence_lng.toFixed(5)}`
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white border border-slate-200 rounded-2xl p-6">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Next of Kin</h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Name</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.next_of_kin_name || '—'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.next_of_kin_phone || '—'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Relationship</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.next_of_kin_relationship || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-6">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Education</h4>
+                  {detailGuard.education_history?.length ? (
+                    <div className="space-y-3">
+                      {detailGuard.education_history.map((e, idx) => (
+                        <div key={e.id || idx} className="border border-slate-100 rounded-xl p-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <p className="text-xs font-black text-slate-900 uppercase tracking-tight">{e.level?.replace('_', ' ') || '—'}</p>
+                            <p className="text-[10px] font-mono font-bold text-slate-400 uppercase">{e.year || '—'}</p>
+                          </div>
+                          <div className="mt-3">
+                            {renderDocLink('Certificate', e.certificate_url)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">No education records provided.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-6">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Guarantors</h4>
+                {detailGuard.guarantors?.length ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {detailGuard.guarantors.map((g, idx) => (
+                      <div key={g.id || idx} className="border border-slate-100 rounded-xl p-5">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-slate-900 uppercase tracking-tight truncate">{g.name}</p>
+                            <p className="text-xs font-medium text-slate-500">{g.relationship} • {g.phone}</p>
+                          </div>
+                        </div>
+                        <div className="mt-4">
+                          {renderDocLink('Guarantor Letter', g.letter_url)}
+                          {renderDocLink('Residence Letter', g.residence_letter_url)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No guarantors provided.</p>
+                )}
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-6">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Documents</h4>
+                <div className="space-y-1">
+                  {renderDocLink('Application Letter', detailGuard.application_letter_url)}
+                  {renderDocLink('NIDA (Front)', detailGuard.nida_front_url)}
+                  {renderDocLink('Birth Certificate', detailGuard.birth_cert_url)}
+                  {renderDocLink('Residence Letter', detailGuard.residence_letter_url)}
+                  {renderDocLink('Employment Contract (if any)', detailGuard.employment_contract_url)}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 bg-slate-50 border-t border-slate-100 flex flex-col md:flex-row gap-3">
+              <button
+                onClick={() => { setSelectedGuard(detailGuard); setDecisionMode('view'); setDetailGuard(null); }}
+                className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95"
+              >
+                Review & Lock
+              </button>
+              <button
+                onClick={() => setDetailGuard(null)}
+                className="px-8 py-4 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
