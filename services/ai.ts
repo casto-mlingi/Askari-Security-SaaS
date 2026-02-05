@@ -116,9 +116,9 @@ export async function suggestDisciplinaryPolicy(description: string) {
   const prompt = `
     Role: HR Policy Architect for a security firm.
     Task: Create a disciplinary policy code based on the user's description.
-    
+
     Description: "${description}"
-    
+
     Requirements:
     1. Code: Uppercase, snake_case, max 20 chars (e.g. SLEEPING_ON_DUTY).
     2. Label: Professional, short title.
@@ -146,5 +146,24 @@ export async function suggestDisciplinaryPolicy(description: string) {
   } catch (error) {
     console.error("AI Policy Generation Error:", error);
     return null;
+  }
+}
+
+/**
+ * Simple AI response generator for general use.
+ */
+export async function generateAIResponse(prompt: string): Promise<string> {
+  const ai = getAI();
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-pro-preview",
+      contents: prompt,
+    });
+
+    return response.text || "AI response unavailable.";
+  } catch (error) {
+    console.error("AI Response Error:", error);
+    return "Error: AI service unavailable.";
   }
 }
