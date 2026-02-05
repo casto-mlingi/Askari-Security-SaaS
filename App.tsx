@@ -219,11 +219,13 @@ useEffect(() => {
     let finalUser = loggedInUser;
     let needsIntake = false;
 
-    if (pendingAccount && !('role' in loggedInUser)) { 
+    if (pendingAccount && !('role' in loggedInUser)) {
       try {
         const accountData = JSON.parse(pendingAccount);
         const pendingGuard = accountData.guard;
-        
+        // Guard records don't have email - compare by ID only
+        const isPendingAccount = pendingGuard.id === loggedInUser.id;
+
         if (isPendingAccount) {
           const existingGuard = guards.find(g => g.id === pendingGuard.id);
           if (!existingGuard) {
