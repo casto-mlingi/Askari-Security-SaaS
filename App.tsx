@@ -1,5 +1,5 @@
 import { guardService } from './services/guardService';
-import { generateAIResponse } from './services/aiService';
+import { generateAIResponse } from './services/ai';
 import React, { useState, useMemo, useEffect } from 'react'; // ✅ Added useEffect here
 import Layout from './components/Layout';
 import Auth from './components/Auth';
@@ -223,11 +223,6 @@ useEffect(() => {
       try {
         const accountData = JSON.parse(pendingAccount);
         const pendingGuard = accountData.guard;
-        const pendingEmail = (pendingGuard.email || '').trim().toLowerCase();
-        const loggedInEmail = ((loggedInUser as Guard).email || '').trim().toLowerCase();
-        
-        const isPendingAccount = pendingGuard.id === loggedInUser.id || 
-                                 (pendingEmail && pendingEmail === loggedInEmail);
         
         if (isPendingAccount) {
           const existingGuard = guards.find(g => g.id === pendingGuard.id);

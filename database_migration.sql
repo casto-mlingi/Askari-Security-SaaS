@@ -1,22 +1,10 @@
+-- AMINI Security SaaS Database Migration Script
+-- Run this in Supabase SQL Editor to ensure all tables and fields exist
 
-/**
- * AMINI_SQL_SCHEMA: The foundational database schema for the AMINI Multi-Tenant SaaS.
- * This is exported as a string for documentation and reference within the app.
- *
- * ARCHITECTURAL REVISION: 2.1
- * - Normalized `education_history`, `guarantors`, and `next_of_kin` into dedicated tables/columns for improved data integrity and querying.
- * - Added new tables for `equipment_items`, `leave_requests`, `announcements`, and `disciplinary_codes`.
- * - Implemented an automatic `updated_at` trigger for all new tables.
- * - Enforced data integrity with stricter CHECK constraints and CASCADE/SET NULL on foreign keys.
- * - Clarified JSONB data structures with comments.
- */
-export const AMINI_SQL_SCHEMA = `-- AMINI Multi-Tenant Security SaaS: Hardened Schema v2.1 (PostgreSQL)
-
--- Block 0: Core Extensions & Reusable Functions
-
+-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Function to automatically update 'updated_at' timestamps
+-- Create timestamp update function
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -25,9 +13,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
--- Block 1: Core Identity, Multi-Tenancy, & Infrastructure
-
+-- Companies table
 CREATE TABLE IF NOT EXISTS companies (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -37,22 +23,12 @@ CREATE TABLE IF NOT EXISTS companies (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Drop existing trigger if it exists, then recreate
 DROP TRIGGER IF EXISTS set_timestamp_companies ON companies;
-CREATE TRIGGER set_timestamp_companies
-BEFORE UPDATE ON companies
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_companies BEFORE UPDATE ON companies FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
 
-CREATE TABLE IF NOT EXISTS subscriptions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    plan_type TEXT NOT NULL CHECK (plan_type IN ('basic', 'standard', 'enterprise')),
-    status TEXT NOT NULL CHECK (status IN ('active', 'past_due', 'canceled', 'trialing')),
-    current_period_end TIMESTAMPTZ NOT NULL,
-    max_guards INTEGER DEFAULT 50,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
+-- Profiles table
 CREATE TABLE IF NOT EXISTS profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name TEXT NOT NULL,
@@ -66,12 +42,12 @@ CREATE TABLE IF NOT EXISTS profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT chk_company_role CHECK ((role = 'super_admin' AND company_id IS NULL) OR (role <> 'super_admin' AND company_id IS NOT NULL))
 );
-DROP TRIGGER IF EXISTS set_timestamp_profiles ON profiles;
-CREATE TRIGGER set_timestamp_profiles
-BEFORE UPDATE ON profiles
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
 
+-- Drop existing trigger if it exists, then recreate
+DROP TRIGGER IF EXISTS set_timestamp_profiles ON profiles;
+CREATE TRIGGER set_timestamp_profiles BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Sites table
 CREATE TABLE IF NOT EXISTS sites (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -83,17 +59,17 @@ CREATE TABLE IF NOT EXISTS sites (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-DROP TRIGGER IF EXISTS set_timestamp_sites ON sites;
-CREATE TRIGGER set_timestamp_sites
-BEFORE UPDATE ON sites
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
 
+-- Drop existing trigger if it exists, then recreate
+DROP TRIGGER IF EXISTS set_timestamp_sites ON sites;
+CREATE TRIGGER set_timestamp_sites BEFORE UPDATE ON sites FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Administrative logs table
 CREATE TABLE IF NOT EXISTS administrative_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     actor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-    action_type TEXT NOT NULL, 
+    action_type TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     entity_id UUID NOT NULL,
     payload JSONB,
@@ -101,21 +77,22 @@ CREATE TABLE IF NOT EXISTS administrative_logs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Announcements table
 CREATE TABLE IF NOT EXISTS announcements (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, -- Company-specific announcements
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
-    author_profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL, -- Who created it
+    author_profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-DROP TRIGGER IF EXISTS set_timestamp_announcements ON announcements;
-CREATE TRIGGER set_timestamp_announcements
-BEFORE UPDATE ON announcements
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
 
+-- Drop existing trigger if it exists, then recreate
+DROP TRIGGER IF EXISTS set_timestamp_announcements ON announcements;
+CREATE TRIGGER set_timestamp_announcements BEFORE UPDATE ON announcements FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Equipment items table
 CREATE TABLE IF NOT EXISTS equipment_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -126,37 +103,18 @@ CREATE TABLE IF NOT EXISTS equipment_items (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Drop existing trigger if it exists, then recreate
 DROP TRIGGER IF EXISTS set_timestamp_equipment_items ON equipment_items;
-CREATE TRIGGER set_timestamp_equipment_items
-BEFORE UPDATE ON equipment_items
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_equipment_items BEFORE UPDATE ON equipment_items FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
 
-CREATE TABLE IF NOT EXISTS disciplinary_codes (
-    code TEXT PRIMARY KEY NOT NULL, -- E.g., 'AWOL', 'LATE'
-    company_id UUID REFERENCES companies(id) ON DELETE CASCADE, -- Nullable for global codes, specific for tenant overrides
-    label TEXT NOT NULL,
-    description TEXT,
-    points INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT unique_code_per_company UNIQUE (code, company_id)
-);
-DROP TRIGGER IF EXISTS set_timestamp_disciplinary_codes ON disciplinary_codes;
-CREATE TRIGGER set_timestamp_disciplinary_codes
-BEFORE UPDATE ON disciplinary_codes
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
-
-
--- Block 2: Assets, Personnel, & Operations
-
+-- Guards table (main table)
 CREATE TABLE IF NOT EXISTS guards (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID REFERENCES companies(id) ON DELETE CASCADE, -- Nullable for pool applicants
+    company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
     nida_number TEXT NOT NULL,
-    username TEXT UNIQUE, -- For guard portal login
-    password_hash TEXT, -- Nullable until account is claimed
+    username TEXT UNIQUE,
+    password_hash TEXT,
     full_name TEXT NOT NULL,
     dob DATE NOT NULL,
     phone TEXT,
@@ -176,56 +134,41 @@ CREATE TABLE IF NOT EXISTS guards (
     residence_lat DOUBLE PRECISION,
     residence_lng DOUBLE PRECISION,
     is_armed BOOLEAN DEFAULT FALSE,
-    weapon_qualification TEXT, -- Add missing field for weapon qualification status
-    
-    -- Next of Kin (migrated from dossier_data)
+    weapon_qualification TEXT,
     next_of_kin_name TEXT,
     next_of_kin_phone TEXT,
     next_of_kin_relationship TEXT,
-
-    -- Documents (migrated from dossier_data / top-level)
     nida_front_url TEXT,
     birth_cert_url TEXT,
     application_letter_url TEXT,
     residence_letter_url TEXT,
-
-    -- Remaining JSONB data for flexibility / AI analysis
     dossier_data JSONB,
-    -- JSONB Structure for dossier_data:
-    -- {
-    --   "interviewer_notes": "...",
-    --   "rejection_reason": "...",
-    --   "ai_analysis": { "reliability_score": 85, "reasoning": "...", "risk_flags": ["..."], "analyzed_at": "timestamp" }
-    -- }
-
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-    -- Explicit Constraint for NIDA Uniqueness
     CONSTRAINT uq_guards_nida_number UNIQUE (nida_number)
 );
-DROP TRIGGER IF EXISTS set_timestamp_guards ON guards;
-CREATE TRIGGER set_timestamp_guards
-BEFORE UPDATE ON guards
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
 
+-- Drop existing trigger if it exists, then recreate
+DROP TRIGGER IF EXISTS set_timestamp_guards ON guards;
+CREATE TRIGGER set_timestamp_guards BEFORE UPDATE ON guards FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Education records table
 CREATE TABLE IF NOT EXISTS education_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
     level TEXT NOT NULL CHECK (level IN ('primary', 'secondary', 'advanced', 'nta4_5', 'military')),
-    year TEXT NOT NULL, -- Store as text to allow flexible formats like '2010', '2015-2017'
+    year TEXT NOT NULL,
     certificate_url TEXT,
     weapon_proficiency TEXT CHECK (weapon_proficiency IN ('pass', 'fail')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-DROP TRIGGER IF EXISTS set_timestamp_education_records ON education_records;
-CREATE TRIGGER set_timestamp_education_records
-BEFORE UPDATE ON education_records
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
 
+-- Drop existing trigger if it exists, then recreate
+DROP TRIGGER IF EXISTS set_timestamp_education_records ON education_records;
+CREATE TRIGGER set_timestamp_education_records BEFORE UPDATE ON education_records FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Guarantors table
 CREATE TABLE IF NOT EXISTS guarantors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
@@ -237,13 +180,12 @@ CREATE TABLE IF NOT EXISTS guarantors (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Drop existing trigger if it exists, then recreate
 DROP TRIGGER IF EXISTS set_timestamp_guarantors ON guarantors;
-CREATE TRIGGER set_timestamp_guarantors
-BEFORE UPDATE ON guarantors
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_guarantors BEFORE UPDATE ON guarantors FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
 
-
+-- Attendance logs table
 CREATE TABLE IF NOT EXISTS attendance_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
@@ -256,26 +198,45 @@ CREATE TABLE IF NOT EXISTS attendance_logs (
     status TEXT NOT NULL CHECK (status IN ('present', 'rejected'))
 );
 
+-- Disciplinary codes table
+CREATE TABLE IF NOT EXISTS disciplinary_codes (
+    code TEXT PRIMARY KEY NOT NULL,
+    company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    description TEXT,
+    points INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT unique_code_per_company UNIQUE (code, company_id)
+);
+
+-- Drop existing trigger if it exists, then recreate
+DROP TRIGGER IF EXISTS set_timestamp_disciplinary_codes ON disciplinary_codes;
+CREATE TRIGGER set_timestamp_disciplinary_codes BEFORE UPDATE ON disciplinary_codes FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Incident reports table
 CREATE TABLE IF NOT EXISTS incident_reports (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
     site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
-    code TEXT NOT NULL REFERENCES disciplinary_codes(code) ON DELETE RESTRICT, -- RESTRICT to prevent deleting code if used
+    code TEXT NOT NULL REFERENCES disciplinary_codes(code) ON DELETE RESTRICT,
     notes TEXT,
     evidence_url TEXT,
     reported_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Kit issuances table
 CREATE TABLE IF NOT EXISTS kit_issuances (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
     issuer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    items_issued JSONB NOT NULL, -- Array of { item_id: UUID, qty: int, size: string }
+    items_issued JSONB NOT NULL,
     guard_signature_hash TEXT,
     issued_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Leave requests table
 CREATE TABLE IF NOT EXISTS leave_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
@@ -287,9 +248,70 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Drop existing trigger if it exists, then recreate
 DROP TRIGGER IF EXISTS set_timestamp_leave_requests ON leave_requests;
-CREATE TRIGGER set_timestamp_leave_requests
-BEFORE UPDATE ON leave_requests
-FOR EACH ROW
-EXECUTE PROCEDURE trigger_set_timestamp();
-`;
+CREATE TRIGGER set_timestamp_leave_requests BEFORE UPDATE ON leave_requests FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Subscriptions table
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    plan_type TEXT NOT NULL CHECK (plan_type IN ('basic', 'standard', 'enterprise')),
+    status TEXT NOT NULL CHECK (status IN ('active', 'past_due', 'canceled', 'trialing')),
+    current_period_end TIMESTAMPTZ NOT NULL,
+    max_guards INTEGER DEFAULT 50,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Add indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_guards_company_id ON guards(company_id);
+CREATE INDEX IF NOT EXISTS idx_guards_application_status ON guards(application_status);
+CREATE INDEX IF NOT EXISTS idx_guards_current_site_id ON guards(current_site_id);
+CREATE INDEX IF NOT EXISTS idx_sites_company_id ON sites(company_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_company_id ON profiles(company_id);
+CREATE INDEX IF NOT EXISTS idx_administrative_logs_company_id ON administrative_logs(company_id);
+CREATE INDEX IF NOT EXISTS idx_announcements_company_id ON announcements(company_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_items_company_id ON equipment_items(company_id);
+CREATE INDEX IF NOT EXISTS idx_education_records_guard_id ON education_records(guard_id);
+CREATE INDEX IF NOT EXISTS idx_guarantors_guard_id ON guarantors(guard_id);
+CREATE INDEX IF NOT EXISTS idx_incident_reports_guard_id ON incident_reports(guard_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_guard_id ON leave_requests(guard_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_logs_guard_id ON attendance_logs(guard_id);
+CREATE INDEX IF NOT EXISTS idx_incident_reports_guard_id ON incident_reports(guard_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_guard_id ON leave_requests(guard_id);
+
+-- Insert default disciplinary codes if they don't exist
+INSERT INTO disciplinary_codes (code, label, points) VALUES
+('AWOL', 'Absence Without Leave', 25),
+('LATE', 'Late for Duty', 5),
+('UNIFORM', 'Improper Uniform', 5),
+('SLEEP', 'Sleeping on Duty', 40),
+('THEFT', 'Theft or Misconduct', 100),
+('OTHER_REPORT', 'Other Self-Reported Issue', 0)
+ON CONFLICT (code, company_id) DO NOTHING;
+
+-- Add any missing columns to existing tables (safe to run multiple times)
+-- Add any missing columns to existing tables (safe to run multiple times)
+DO $$
+BEGIN
+    -- Add weapon_qualification to guards if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'weapon_qualification') THEN
+        ALTER TABLE guards ADD COLUMN weapon_qualification TEXT;
+        RAISE NOTICE 'Added weapon_qualification column to guards table';
+    ELSE
+        RAISE NOTICE 'weapon_qualification column already exists in guards table';
+    END IF;
+
+    -- Add any other missing columns here as needed
+    -- Example:
+    -- IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'new_column') THEN
+    --     ALTER TABLE guards ADD COLUMN new_column TEXT;
+    --     RAISE NOTICE 'Added new_column to guards table';
+    -- END IF;
+END $$;
+
+-- Ensure all tables have proper permissions for authenticated users
+-- Grant necessary permissions (adjust as needed for your RLS policies)
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;

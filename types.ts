@@ -215,6 +215,7 @@ export interface Guard {
   residence_lat?: number;
   residence_lng?: number;
   is_armed: boolean;
+  weapon_qualification?: string;
   created_at: string;
   updated_at?: string;
 
