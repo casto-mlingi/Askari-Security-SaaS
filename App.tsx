@@ -34,20 +34,24 @@ import {
 import { Guard, Profile, UserRole, ApplicationStatus, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement } from './types';
 
 const App: React.FC = () => {
-  // --- SUPABASE CONNECTION TEST (Correct Location) ---
+  // --- COMBINED DIAGNOSTIC & AI TEST (Single useEffect to prevent duplicates) ---
   useEffect(() => {
-    const diagnose = async () => {
+    const runDiagnostics = async () => {
+      // Prevent multiple executions in development (React Strict Mode)
+      if (window._aminiDiagnosticsRun) return;
+      window._aminiDiagnosticsRun = true;
+
       console.log("🔍 STARTING SUPABASE DIAGNOSTIC...");
 
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      // Test Supabase connection
+      const url = (import.meta as any).env.VITE_SUPABASE_URL;
+      const key = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
       if (!url || !key) {
         alert("❌ CRITICAL: Supabase Keys are MISSING in .env.local");
         return;
       }
 
-      // Try a simple fetch
       const { data, error } = await supabase.from('guards').select('count', { count: 'exact', head: true });
 
       if (error) {
@@ -55,38 +59,32 @@ const App: React.FC = () => {
         alert(`❌ Connection Failed: ${error.message}`);
       } else {
         console.log("✅ SUPABASE SUCCESS:", data);
-        // Uncomment the line below if you want to see the popup every time
-        // alert("✅ Connected to Supabase! The app IS talking to the database.");
+      }
+
+      // Only test AI in production or if explicitly enabled (to avoid rate limits)
+      const shouldTestAI = import.meta.env.PROD || import.meta.env.VITE_TEST_AI === 'true';
+
+      if (shouldTestAI) {
+        console.log("🤖 Testing Gemini Connection...");
+
+        try {
+          const response = await generateAIResponse("Write a one-sentence slogan for a security company.");
+          console.log("🤖 Gemini Response:", response);
+
+          if (response.startsWith("Error") || response.startsWith("Failed")) {
+            console.warn("⚠️ AI Test Failed - this is expected on free tier");
+          }
+        } catch (error) {
+          console.warn("⚠️ AI Test Error:", error.message);
+        }
+      } else {
+        console.log("🤖 Skipping AI test in development (to avoid rate limits)");
       }
     };
 
-    diagnose();
+    runDiagnostics();
   }, []);
-  // --- END TEST CODE ---
-// --- 🚀 LOAD REAL DATA FROM SUPABASE ---
-
-
-
-// 2. Paste this INSIDE the App() function, before the return statement
-useEffect(() => {
-  const testAI = async () => {
-    console.log("🤖 Testing Gemini Connection...");
-    
-    // Simple prompt to check if it works
-    const response = await generateAIResponse("Write a one-sentence slogan for a security company.");
-    
-    console.log("🤖 Gemini Response:", response);
-    
-    if (response.startsWith("Error") || response.startsWith("Failed")) {
-      alert("❌ AI Test Failed. Check console.");
-    } else {
-      // Optional: Alert to confirm it worked visible on screen
-      // alert(`✅ AI Connected! Slogan: ${response}`);
-    }
-  };
-
-  testAI();
-}, []);
+  // --- END DIAGNOSTIC CODE ---
 
 
 useEffect(() => {

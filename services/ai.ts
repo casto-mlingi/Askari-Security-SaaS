@@ -150,20 +150,54 @@ export async function suggestDisciplinaryPolicy(description: string) {
 }
 
 /**
- * Simple AI response generator for general use.
+ * Simple AI response generator for general use with rate limiting.
  */
 export async function generateAIResponse(prompt: string): Promise<string> {
+  // Rate limiting: prevent multiple calls within 5 seconds
+  const now = Date.now();
+  const lastCall = window._lastAICall || 0;
+
+  if (now - lastCall < 5000) {
+    console.warn("AI call rate limited - waiting...");
+    await new Promise(resolve => setTimeout(resolve, 5000 - (now - lastCall)));
+  }
+
+  window._lastAICall = Date.now();
+
+  return generateAIResponseWithRetry(prompt);
+}
+
+/**
+ * AI response generator with retry logic and exponential backoff.
+ */
+async function generateAIResponseWithRetry(prompt: string, retries = 3): Promise<string> {
   const ai = getAI();
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: prompt,
-    });
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-preview",
+        contents: prompt,
+      });
 
-    return response.text || "AI response unavailable.";
-  } catch (error) {
-    console.error("AI Response Error:", error);
-    return "Error: AI service unavailable.";
+      return response.text || "AI response unavailable.";
+    } catch (error: any) {
+      console.error(`AI Response Error (attempt ${i + 1}/${retries}):`, error);
+
+      // Check if it's a rate limit error (429)
+      if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
+        if (i < retries - 1) {
+          const delay = Math.pow(2, i) * 2000; // 2s, 4s, 8s...
+          console.warn(`Rate limited. Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+      }
+
+      // For other errors or if we've exhausted retries
+      return "Error: AI service unavailable.";
+    }
   }
+
+  return "Error: AI service unavailable after retries.";
 }
