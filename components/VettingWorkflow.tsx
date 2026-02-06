@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Guard, Site, Profile, IncidentReport, DisciplinaryCode, ApplicationStatus, UserRole } from '../types';
+import { Guard, Site, Profile, IncidentReport, DisciplinaryCode, ApplicationStatus, UserRole, ResubmitRequest } from '../types';
 import { analyzeGuardDossier } from '../services/ai';
 import FileUploader from './FileUploader';
 
@@ -8,30 +8,45 @@ interface VettingWorkflowProps {
   guards: Guard[];
   sites: Site[];
   profiles: Profile[];
+  companies?: { id: string; name: string; address?: string }[];
   incidents: IncidentReport[];
   disciplinaryCodes: DisciplinaryCode[];
-  onLock: (guardId: string, companyId: string, notes: string) => void;
+  onLock: (guardId: string, companyId: string, notes: string, schedule?: { date: string; location: string }) => void;
   onFinalize: (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, rejectionReason?: string) => void;
   currentUser?: Profile | null;
+  resubmitRequests?: ResubmitRequest[];
+  onResubmitDecision?: (requestId: string, guardId: string, decision: 'approved' | 'rejected') => void;
 }
 
 const VettingWorkflow: React.FC<VettingWorkflowProps> = ({ 
   guards, 
   sites, 
   profiles, 
+  companies = [],
   incidents, 
   disciplinaryCodes, 
   onLock, 
   onFinalize,
-  currentUser 
+  currentUser,
+  resubmitRequests = [],
+  onResubmitDecision
 }) => {
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'interviews'>('marketplace');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'interviews' | 'resubmits'>('marketplace');
   const [selectedGuard, setSelectedGuard] = useState<Guard | null>(null);
   const [detailGuard, setDetailGuard] = useState<Guard | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortKey, setSortKey] = useState<'name' | 'age' | 'education' | 'score'>('score');
   
   // Locking State
   const [lockNote, setLockNote] = useState('');
+  const [interviewDate, setInterviewDate] = useState('');
+  const [interviewLocation, setInterviewLocation] = useState('');
+  
+  const defaultCompanyAddress = companies.find(c => c.id === currentUser?.company_id)?.address || '';
+  const ensureDefaultLocation = () => {
+    if (!interviewLocation) setInterviewLocation(defaultCompanyAddress || 'Company Office');
+  };
 
   // Hiring State
   const [deploymentSite, setDeploymentSite] = useState('');
@@ -53,21 +68,47 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
   const poolApplicants = useMemo(() => guards.filter(g => g.application_status === ApplicationStatus.POOL_APPLICANT), [guards]);
   const lockedApplicants = useMemo(() => guards.filter(g => g.application_status === ApplicationStatus.INTERVIEW_LOCKED), [guards]);
   const supervisors = useMemo(() => profiles.filter(p => p.role === UserRole.SUPERVISOR), [profiles]);
+  const sortedPoolApplicants = useMemo(() => {
+    const arr = [...poolApplicants];
+    const getAge = (d?: string) => {
+      if (!d) return 0;
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return 0;
+      return new Date().getFullYear() - dt.getFullYear();
+    };
+    const getEdu = (g: Guard) => (g.education_history[0]?.level || '').toString().toLowerCase();
+    arr.sort((a, b) => {
+      if (sortKey === 'name') {
+        return (a.full_name || '').toLowerCase().localeCompare((b.full_name || '').toLowerCase());
+      }
+      if (sortKey === 'score') {
+        return (b.profile_score || 0) - (a.profile_score || 0);
+      }
+      if (sortKey === 'age') {
+        return getAge(a.dob) - getAge(b.dob);
+      }
+      if (sortKey === 'education') {
+        return getEdu(a).localeCompare(getEdu(b));
+      }
+      return 0;
+    });
+    return arr;
+  }, [poolApplicants, sortKey]);
 
   const handleLockSubmit = () => {
-    // If user is super admin, they might not have a company_id, or they might be acting on behalf of one. 
-    // For simplicity, we assume only company admins/hr lock guards, or we use a fallback if super admin.
-    const companyId = currentUser?.company_id; 
-    
+    const companyId = currentUser?.company_id;
     if (!selectedGuard || !companyId) {
-        alert("You must be logged in as a Company Admin or HR to lock applicants.");
-        return;
+      alert("You must be logged in as a Company Admin or HR to lock applicants.");
+      return;
     }
-    onLock(selectedGuard.id, companyId, lockNote);
+    onLock(selectedGuard.id, companyId, lockNote, { date: interviewDate, location: interviewLocation || defaultCompanyAddress || 'Company Office' });
     setSelectedGuard(null);
     setLockNote('');
+    setInterviewDate('');
+    setInterviewLocation('');
     setActiveTab('interviews');
   };
+
 
   const handleRunAI = async (guard: Guard) => {
     setAnalyzingId(guard.id);
@@ -159,35 +200,55 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-24 animate-in fade-in duration-500">
-       <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-10">
+      <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm flex flex-col gap-6">
         <div>
-           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">Vetting Workflow</h2>
-           <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-4">Recruitment & Background Checks</p>
+          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">Vetting Workflow</h2>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-4">Recruitment & Background Checks</p>
         </div>
-        <div className="bg-slate-100 p-1.5 rounded-2xl flex border border-slate-200 shadow-inner w-full md:w-auto">
-          <button onClick={() => setActiveTab('marketplace')} className={`flex-1 md:flex-none px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'marketplace' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-            Marketplace ({poolApplicants.length})
-          </button>
-          <button onClick={() => setActiveTab('interviews')} className={`flex-1 md:flex-none px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'interviews' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-            Interviews ({lockedApplicants.length})
-          </button>
+        <div className="flex items-center justify-between gap-4">
+          <div className="bg-slate-100 p-1.5 rounded-2xl flex border border-slate-200 shadow-inner w-full md:w-auto">
+            <button onClick={() => setActiveTab('marketplace')} className={`flex-1 md:flex-none px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'marketplace' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+              Marketplace ({poolApplicants.length})
+            </button>
+            <button onClick={() => setActiveTab('interviews')} className={`flex-1 md:flex-none px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'interviews' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+              Interviews ({lockedApplicants.length})
+            </button>
+            <button onClick={() => setActiveTab('resubmits')} className={`flex-1 md:flex-none px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'resubmits' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+              Resubmit Requests
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+              <button onClick={() => setViewMode('grid')} className={`px-4 py-3 text-[10px] font-black uppercase tracking-widest ${viewMode === 'grid' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
+              </button>
+              <button onClick={() => setViewMode('list')} className={`px-4 py-3 text-[10px] font-black uppercase tracking-widest ${viewMode === 'list' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="6" x2="20" y2="6" strokeWidth="2"/><line x1="4" y1="12" x2="20" y2="12" strokeWidth="2"/><line x1="4" y1="18" x2="20" y2="18" strokeWidth="2"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {activeTab === 'marketplace' && (
+        <>
+        {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-           {poolApplicants.length > 0 ? poolApplicants.map(guard => (
-             <button
+           {sortedPoolApplicants.length > 0 ? sortedPoolApplicants.map(guard => (
+             <div
                key={guard.id}
-               type="button"
                onClick={() => setDetailGuard(guard)}
-               className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group focus:outline-none focus:ring-2 focus:ring-primary/20"
+               className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20"
              >
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-4">
-                         <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-xl">
-                            {guard.full_name[0]}
-                         </div>
+                         {guard.passport_photo_url ? (
+                           <img src={guard.passport_photo_url} alt={guard.full_name} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
+                         ) : (
+                           <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-xl">
+                             {guard.full_name[0]}
+                           </div>
+                         )}
                          <div>
                             <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{guard.full_name}</h4>
                             <p className="text-[10px] font-mono font-bold text-slate-400 mt-1 uppercase">Score: {guard.profile_score}%</p>
@@ -203,24 +264,86 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Education</span>
                         <span className="text-xs font-bold text-slate-700">{guard.education_history[0]?.level.replace('_',' ') || 'None'}</span>
                     </div>
-                    <div className="flex justify-between py-2">
+                    <div className="flex justify-between border-b border-slate-50 py-2">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
                         <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-2 py-0.5 rounded">Available</span>
                     </div>
+                    <div className="flex justify-between py-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Documents</span>
+                        <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded">
+                          {[
+                            guard.application_letter_url,
+                            guard.nida_front_url,
+                            guard.birth_cert_url,
+                            guard.residence_letter_url
+                          ].filter(Boolean).length} core • {guard.education_history.filter(e => !!e.certificate_url).length} edu • {guard.guarantors.filter(g => g.letter_url && g.residence_letter_url).length} guarantors
+                        </span>
+                    </div>
                 </div>
-                <button 
+                <div 
                   onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
-                  className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95"
+                  className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95 text-center"
                 >
                     Review & Lock
-                </button>
-             </button>
+                </div>
+             </div>
            )) : (
               <div className="col-span-full py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
                   <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No applicants in the pool</p>
               </div>
            )}
         </div>
+        ) : (
+          <div className="space-y-4">
+            {sortedPoolApplicants.length > 0 ? sortedPoolApplicants.map(guard => (
+              <div
+                key={guard.id}
+                onClick={() => setDetailGuard(guard)}
+                className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 flex items-center justify-between gap-6 cursor-pointer"
+              >
+                <div className="flex items-center gap-4">
+                  {guard.passport_photo_url ? (
+                    <img src={guard.passport_photo_url} alt={guard.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                  ) : (
+                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-lg">
+                      {guard.full_name[0]}
+                    </div>
+                  )}
+                  <div>
+                    <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
+                    <div className="flex gap-4 text-xs text-slate-600">
+                      <span>Score: {guard.profile_score}%</span>
+                      <span>Age: {safeAge(guard.dob)}</span>
+                      <span>Edu: {guard.education_history[0]?.level.replace('_',' ') || 'None'}</span>
+                      <span className="text-emerald-600 bg-emerald-50 px-2 rounded">Available</span>
+                      <span className="text-slate-700 bg-slate-50 px-2 rounded">
+                        Docs {[
+                          guard.application_letter_url,
+                          guard.nida_front_url,
+                          guard.birth_cert_url,
+                          guard.residence_letter_url
+                        ].filter(Boolean).length}/{4}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="shrink-0">
+                  <div 
+                    onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
+                    className="px-6 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95"
+                  >
+                    Review & Lock
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
+                <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No applicants in the pool</p>
+              </div>
+            )}
+          </div>
+        )}
+        </>
       )}
 
       {activeTab === 'interviews' && (
@@ -232,9 +355,13 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                onClick={() => setDetailGuard(guard)}
                className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row gap-8 items-start w-full hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20"
              >
-                <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-[1.5rem] flex items-center justify-center font-black text-2xl shrink-0">
-                   {guard.full_name[0]}
-                </div>
+                {guard.passport_photo_url ? (
+                  <img src={guard.passport_photo_url} alt={guard.full_name} className="w-16 h-16 rounded-full object-cover border border-slate-200 shrink-0" />
+                ) : (
+                  <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center font-black text-2xl shrink-0">
+                     {guard.full_name[0]}
+                  </div>
+                )}
                 <div className="flex-grow">
                    <div className="flex items-center gap-4 mb-2">
                       <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{guard.full_name}</h3>
@@ -286,6 +413,37 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No active interviews</p>
              </div>
            )}
+        </div>
+      )}
+
+      {activeTab === 'resubmits' && (
+        <div className="space-y-6">
+          <div className="p-6 bg-white rounded-[2.5rem] border border-slate-200">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Applicants who requested to edit CV</p>
+          </div>
+          <div className="space-y-4">
+            {resubmitRequests.map(r => {
+              const g = guards.find(x => x.id === r.guard_id);
+              return (
+                <div key={r.id} className="bg-white p-6 rounded-2xl border border-slate-200 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black uppercase tracking-tight text-slate-900">{g?.full_name || r.guard_id}</p>
+                    <p className="text-xs text-slate-500">Reason: {r.reason}</p>
+                    <p className="text-[10px] font-mono text-slate-400">Submitted: {new Date(r.created_at).toLocaleString()}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => onResubmitDecision?.(r.id, r.guard_id, 'approved')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest">Approve</button>
+                    <button onClick={() => onResubmitDecision?.(r.id, r.guard_id, 'rejected')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest">Reject</button>
+                  </div>
+                </div>
+              );
+            })}
+            {resubmitRequests.length === 0 && (
+              <div className="p-8 bg-slate-50 border border-slate-100 rounded-[2rem] text-center">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No resubmit requests</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -490,6 +648,28 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                                 className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary text-sm font-medium"
                                 placeholder="E.g. Candidate fits the profile for the Downtown Bank site..."
                              />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
+                            <input 
+                              type="datetime-local" 
+                              value={interviewDate} 
+                              onChange={e => setInterviewDate(e.target.value)} 
+                              className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Location</label>
+                            <input 
+                              type="text" 
+                              value={interviewLocation} 
+                              onFocus={ensureDefaultLocation}
+                              onChange={e => setInterviewLocation(e.target.value)} 
+                              className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                              placeholder={defaultCompanyAddress || 'Company Office'}
+                            />
+                          </div>
                         </div>
                     </div>
                 )}

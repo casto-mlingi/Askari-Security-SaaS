@@ -37,6 +37,7 @@ const getNavItems = (role: UserRole): NavItem[] => {
     { label: 'Vetting', icon: 'Applicants', tab: 'vetting' },
     { label: 'Interview Report', icon: 'Report', tab: 'interview-report' },
     { label: 'Procurement', icon: 'Procurement', tab: 'procurement' },
+    { label: 'Stock In', icon: 'Procurement', tab: 'stock-in' },
     { label: 'Operations', icon: 'Operations', tab: 'operations' },
     { label: 'Tactical Monitor', icon: 'Monitor', tab: 'tactical-monitor' },
     { label: 'Disciplinary', icon: 'Disciplinary', tab: 'disciplinary' },
@@ -54,9 +55,9 @@ const getNavItems = (role: UserRole): NavItem[] => {
     case UserRole.HR_OFFICER:
       return all.filter(item => ['overview', 'intake', 'vetting', 'interview-report', 'disciplinary', 'blacklist', 'registry'].includes(item.tab));
     case UserRole.PROCUREMENT:
-      return all.filter(item => ['overview', 'procurement'].includes(item.tab));
+      return all.filter(item => ['overview', 'procurement', 'stock-in'].includes(item.tab));
     case UserRole.SUPERVISOR:
-      return all.filter(item => ['overview', 'operations', 'tactical-monitor'].includes(item.tab));
+      return all.filter(item => ['overview', 'operations', 'tactical-monitor', 'blacklist'].includes(item.tab));
     default:
       return [];
   }
@@ -90,7 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
   };
 
   return (
-    <aside className="h-full sidebar-gradient flex flex-col p-8 text-white no-scrollbar relative">
+    <aside className="h-full sidebar-gradient flex flex-col p-8 text-white relative overflow-y-auto">
       <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent pointer-events-none"></div>
       <div className="relative z-10">
         <div className="flex items-center gap-4 mb-16 shrink-0">
@@ -114,6 +115,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
             ))}
           </div>
         </nav>
+
+        
 
         {isAdmin && (
           <div className="mt-16 pt-8 border-t border-white/20 shrink-0">

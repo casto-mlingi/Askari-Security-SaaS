@@ -1,203 +1,193 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { Guard } from "../types";
+import { Guard, IncidentReport } from '../types';
 
-// Initialize the Gemini AI client using the injected environment variable
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
+const SITE_URL = 'http://localhost:3000';
+const SITE_NAME = 'Askari Security SaaS';
 
-/**
- * Reliability Forecast: Uses Gemini 3 Pro to analyze a guard's dossier.
- * Generates a reliability score and identifies risk flags based on demographics and history.
- */
-export async function analyzeGuardDossier(guard: Guard) {
-  const ai = getAI();
-  const prompt = `
-    Role: Senior Security Vetting Officer for 'AMINI', a private security firm.
-    Task: Analyze this applicant's dossier for risk and reliability.
-    
-    Applicant Data:
-    - Name: ${guard.full_name}
-    - Age: ${guard.dob ? new Date().getFullYear() - new Date(guard.dob).getFullYear() : 'Unknown'}
-    - NIDA: ${guard.nida_number}
-    - Education: ${guard.education_history.map(e => `${e.level} (${e.year})`).join(', ') || 'None listed'}
-    - Guarantors: ${guard.guarantors.length} listed
-    - Armed: ${guard.is_armed ? 'Yes' : 'No'}
-    
-    Analyze for inconsistencies, gaps, or risk factors.
-    If data is sparse, score lower.
-    Return JSON.
-  `;
+// 🔄 "INDIE" FREE MODEL LIST (Low Traffic & Stable)
+// These models are less likely to be busy (429) than Google/Meta models.
+const MODELS = [
+  "google/gemma-3-27b-it:free",       // 1. Google (Try first, might be busy)
+  "gryphe/mythomax-l2-13b:free",      // 2. VERY STABLE (Good fallback)
+  "openchat/openchat-7b:free",        // 3. Fast & Reliable
+  "undi95/toppy-m-7b:free",           // 4. Good for JSON
+  "huggingfaceh4/zephyr-7b-beta:free",// 5. Old faithful
+  "liquid/lfm-2.5-1.2b-instruct:free" // 6. Ultra-fast lightweight
+];
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            reliability_score: { type: Type.NUMBER, description: "0-100 reliability score. <50 is risky, >80 is excellent." },
-            reasoning: { type: Type.STRING, description: "A concise executive summary of the analysis (max 30 words)." },
-            risk_flags: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING },
-              description: "List of potential risks (e.g. 'No Guarantors', 'Underage')." 
-            }
-          },
-          required: ["reliability_score", "reasoning", "risk_flags"]
-        },
-      },
-    });
+// ==========================================
+// 1. CORE CONNECTIVITY
+// ==========================================
 
-    const result = JSON.parse(response.text || "{}");
-    return {
-      reliability_score: result.reliability_score || 50,
-      reasoning: result.reasoning || "Analysis failed.",
-      risk_flags: result.risk_flags || []
-    };
+// Helper to wait (for retries)
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  } catch (error) {
-    console.error("AI Vetting Error:", error);
-    return {
-      reliability_score: 50,
-      reasoning: "AI Service Unavailable - Manual Review Required",
-      risk_flags: ["System Error"]
-    };
-  }
-}
-
-/**
- * Operational Triage: Uses Gemini 3 Pro to categorize incident reports from rough notes.
- * It suggests the appropriate disciplinary code and formalizes the report text.
- */
-export async function analyzeIncident(notes: string, availableCodes: string[]) {
-  const ai = getAI();
-  const prompt = `
-    Role: Security Operations Center Controller.
-    Task: Read the supervisor's rough field notes and categorize the incident.
-    
-    Supervisor Notes: "${notes}"
-    
-    Available Disciplinary Codes: ${availableCodes.join(', ')}
-    
-    1. Select the BEST fitting code. If unsure, use 'OTHER_REPORT'.
-    2. Rewrite the notes to be formal, concise, and forensic suitable for a legal report.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            recommended_code: { type: Type.STRING, description: "The exact code from the available list." },
-            formal_notes: { type: Type.STRING, description: "Formalized version of the event description." }
-          },
-          required: ["recommended_code", "formal_notes"]
-        }
-      }
-    });
-
-    return JSON.parse(response.text || "{}");
-  } catch (error) {
-    console.error("AI Incident Analysis Error:", error);
-    return null;
-  }
-}
-
-/**
- * Policy Generator: Suggests a disciplinary code, label, and point value based on a description.
- */
-export async function suggestDisciplinaryPolicy(description: string) {
-  const ai = getAI();
-  const prompt = `
-    Role: HR Policy Architect for a security firm.
-    Task: Create a disciplinary policy code based on the user's description.
-
-    Description: "${description}"
-
-    Requirements:
-    1. Code: Uppercase, snake_case, max 20 chars (e.g. SLEEPING_ON_DUTY).
-    2. Label: Professional, short title.
-    3. Points: 1-100 severity score (100 is immediate termination/theft, 5 is minor).
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            code: { type: Type.STRING, description: "UPPERCASE_SNAKE_CASE code" },
-            label: { type: Type.STRING, description: "Human readable label" },
-            points: { type: Type.NUMBER, description: "Deduction points (1-100)" }
-          },
-          required: ["code", "label", "points"]
-        }
-      }
-    });
-    return JSON.parse(response.text || "{}");
-  } catch (error) {
-    console.error("AI Policy Generation Error:", error);
-    return null;
-  }
-}
-
-/**
- * Simple AI response generator for general use with rate limiting.
- */
-export async function generateAIResponse(prompt: string): Promise<string> {
-  // Rate limiting: prevent multiple calls within 5 seconds
-  const now = Date.now();
-  const lastCall = window._lastAICall || 0;
-
-  if (now - lastCall < 5000) {
-    console.warn("AI call rate limited - waiting...");
-    await new Promise(resolve => setTimeout(resolve, 5000 - (now - lastCall)));
+export const generateAIResponse = async (prompt: string): Promise<string> => {
+  if (!OPENROUTER_API_KEY) {
+    console.error("❌ CRITICAL: VITE_OPENROUTER_API_KEY is missing");
+    return "Error: System AI Key is missing.";
   }
 
-  window._lastAICall = Date.now();
-
-  return generateAIResponseWithRetry(prompt);
-}
-
-/**
- * AI response generator with retry logic and exponential backoff.
- */
-async function generateAIResponseWithRetry(prompt: string, retries = 3): Promise<string> {
-  const ai = getAI();
-
-  for (let i = 0; i < retries; i++) {
+  // Loop through models until one works
+  for (const model of MODELS) {
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
-        contents: prompt,
+      console.log(`📡 Attempting AI with model: ${model}...`);
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": SITE_URL,
+          "X-Title": SITE_NAME,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          "model": model, 
+          "messages": [{ "role": "user", "content": prompt }],
+          "temperature": 0.7, 
+          "max_tokens": 1000 
+        })
       });
 
-      return response.text || "AI response unavailable.";
-    } catch (error: any) {
-      console.error(`AI Response Error (attempt ${i + 1}/${retries}):`, error);
-
-      // Check if it's a rate limit error (429)
-      if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
-        if (i < retries - 1) {
-          const delay = Math.pow(2, i) * 2000; // 2s, 4s, 8s...
-          console.warn(`Rate limited. Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices[0]?.message?.content || "No response.";
+        console.log(`✅ Success with ${model}`);
+        return content;
       }
 
-      // For other errors or if we've exhausted retries
-      return "Error: AI service unavailable.";
+      // If failed, log why
+      const errData = await response.json();
+      console.warn(`⚠️ Model ${model} failed (${response.status}):`, errData.error?.message);
+
+      // If Busy (429), wait 2 seconds before next try
+      if (response.status === 429) {
+        await delay(2000); 
+      }
+
+    } catch (error) {
+      console.warn(`⚠️ Network error with ${model}, trying next...`);
     }
   }
 
-  return "Error: AI service unavailable after retries.";
-}
+  return "Error: All AI models are currently busy. Please try again in 1 minute.";
+};
+
+// ==========================================
+// 2. VETTING ANALYSIS (HR)
+// ==========================================
+
+export const analyzeGuardDossier = async (guard: Guard, incidents: IncidentReport[] = []) => {
+  const incidentText = incidents.length > 0 
+    ? incidents.map(i => `- ${i.code}: ${i.notes}`).join('\n') 
+    : "No prior incidents.";
+
+  const prompt = `
+    You are a Senior Security Vetting Officer. Analyze this candidate for a security guard position.
+    
+    CANDIDATE: ${guard.full_name}
+    HISTORY: ${incidentText}
+    NOTES: ${guard.dossier_data?.interviewer_notes || 'None'}
+
+    Return STRICT JSON: { "reliability_score": number, "risk_flags": string[], "reasoning": "string" }
+  `;
+
+  const responseText = await generateAIResponse(prompt);
+  
+  return parseJSON(responseText, { 
+    reliability_score: 50, 
+    risk_flags: ["AI Busy"], 
+    reasoning: "Manual Review Required (AI Unreachable)" 
+  });
+};
+
+// ==========================================
+// 3. INCIDENT ANALYSIS (Operations)
+// ==========================================
+
+export const analyzeIncident = async (description: string, type: string) => {
+  const prompt = `
+    You are a Security Operations Center (SOC) Commander. 
+    Analyze this incident report and recommend immediate action.
+
+    INCIDENT TYPE: ${type}
+    DESCRIPTION: ${description}
+
+    TASK:
+    Return STRICT JSON object with this format:
+    {
+      "severity": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+      "recommended_action": "string",
+      "is_police_matter": boolean,
+      "requires_backup": boolean
+    }
+  `;
+
+  const responseText = await generateAIResponse(prompt);
+  
+  return parseJSON(responseText, {
+    severity: "MEDIUM",
+    recommended_action: "Investigate immediately.",
+    is_police_matter: false,
+    requires_backup: false
+  });
+};
+
+// ==========================================
+// 4. POLICY GENERATION (Disciplinary)
+// ==========================================
+
+export const suggestDisciplinaryPolicy = async (topic: string) => {
+  const prompt = `
+    You are an HR Specialist in the Security Industry.
+    Create a standard Disciplinary Code for: "${topic}"
+
+    Return STRICT JSON: { "code": "string", "label": "string", "description": "string", "points": number }
+  `;
+
+  const responseText = await generateAIResponse(prompt);
+
+  return parseJSON(responseText, {
+    code: "GEN-01",
+    label: topic,
+    description: "Policy definition pending (AI Busy).",
+    points: 10
+  });
+};
+
+// ==========================================
+// 5. HELPER: ROBUST JSON PARSER
+// ==========================================
+
+const parseJSON = (text: string, fallback: any) => {
+  if (text.startsWith("Error:")) {
+    console.warn("AI Service returned error, using fallback.");
+    if (fallback.description) {
+      return { ...fallback, description: text };
+    }
+    return fallback;
+  }
+
+  try {
+    // Clean up "thinking" tags or markdown
+    let clean = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    clean = clean.replace(/```json/g, "").replace(/```/g, "").trim();
+
+    const firstBrace = clean.indexOf('{');
+    const lastBrace = clean.lastIndexOf('}');
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const jsonString = clean.substring(firstBrace, lastBrace + 1);
+      return JSON.parse(jsonString);
+    }
+
+    return JSON.parse(clean);
+  } catch (e) {
+    console.warn("AI JSON Parse Warning:", e);
+    // Return fallback but show preview of text
+    if (fallback.description && text.length > 5) {
+      return { ...fallback, description: text.substring(0, 200) + "..." };
+    }
+    return fallback;
+  }
+};

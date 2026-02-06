@@ -6,6 +6,7 @@ import Auth from './components/Auth';
 import IntakeManager from './components/IntakeManager';
 import VettingWorkflow from './components/VettingWorkflow';
 import ProcurementDashboard from './components/ProcurementDashboard';
+import StockInPage from './components/StockInPage';
 import BlacklistManager from './components/BlacklistManager';
 import OperationsEngine from './components/OperationsEngine';
 import SiteManager from './components/SiteManager';
@@ -20,6 +21,7 @@ import InterviewReport from './components/InterviewReport';
 import ApplicantDashboard from './components/ApplicantDashboard';
 import GuardOperations from './components/GuardOperations';
 import GuardProfile from './components/GuardProfile';
+import PerformanceLineChart from './components/PerformanceLineChart';
 import NoticeBoard from './components/NoticeBoard';
 import ForensicDisclosure from './components/ForensicDisclosure';
 import GuardApplication from './components/GuardApplication';
@@ -38,8 +40,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const runDiagnostics = async () => {
       // Prevent multiple executions in development (React Strict Mode)
-      if (window._aminiDiagnosticsRun) return;
-      window._aminiDiagnosticsRun = true;
+      if ((window as any)._aminiDiagnosticsRun) return;
+      (window as any)._aminiDiagnosticsRun = true;
 
       console.log("🔍 STARTING SUPABASE DIAGNOSTIC...");
 
@@ -52,13 +54,16 @@ const App: React.FC = () => {
         return;
       }
 
-      const { data, error } = await supabase.from('guards').select('count', { count: 'exact', head: true });
+      const { data, count, error } = await supabase
+        .from('guards')
+        .select('id', { count: 'exact' })
+        .limit(1);
 
       if (error) {
         console.error("❌ SUPABASE ERROR:", error);
         alert(`❌ Connection Failed: ${error.message}`);
       } else {
-        console.log("✅ SUPABASE SUCCESS:", data);
+        console.log("✅ SUPABASE SUCCESS:", { count });
       }
 
       // Only test AI in production or if explicitly enabled (to avoid rate limits)
@@ -140,6 +145,16 @@ useEffect(() => {
           setCompanies(companyData);
         }
 
+        const { data: resubData, error: resubError } = await supabase
+          .from('resubmit_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (resubError) {
+          console.error("❌ Failed to fetch resubmit requests:", resubError);
+        } else if (resubData) {
+          setResubmitRequests(resubData);
+        }
+
         // TODO: Load incidents, equipment, disciplinary_codes, leave_requests, attendance_logs, announcements
         // These would need to be implemented in the service layer or loaded directly from Supabase
         // For now, keeping mock data as fallback
@@ -168,6 +183,7 @@ useEffect(() => {
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(MOCK_LEAVE_REQUESTS);
   const [attendanceLogs, setAttendanceLogs] = useState(MOCK_ATTENDANCE);
   const [announcements, setAnnouncements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
+  const [resubmitRequests, setResubmitRequests] = useState<any[]>([]);
 
   // --- Derived State Helpers ---
   const isGuard = user && !('role' in user);
@@ -245,7 +261,9 @@ useEffect(() => {
         setActiveTab('profile-update');
         return;
       }
-      if (g.application_status === ApplicationStatus.ACTIVE) {
+      if (g.application_status === ApplicationStatus.DRAFT) {
+        setActiveTab('profile-update');
+      } else if (g.application_status === ApplicationStatus.ACTIVE) {
         setActiveTab('overview');
       } else {
         setActiveTab('application-status');
@@ -277,7 +295,7 @@ useEffect(() => {
           ? {
               ...newGuard,
               application_status: ApplicationStatus.POOL_APPLICANT,
-              profile_score: 75,
+              profile_score: newGuard.profile_score || 0,
               updated_at: new Date().toISOString()
             }
           : g
@@ -295,58 +313,129 @@ useEffect(() => {
     }
   };
 
-  const handleLockGuard = (guardId: string, companyId: string, notes: string) => {
-    setGuards(prev => prev.map(g => {
-        if (g.id === guardId) {
-            return {
-                ...g,
-                application_status: ApplicationStatus.INTERVIEW_LOCKED,
-                company_id: companyId,
-                dossier_data: { ...g.dossier_data, interviewer_notes: notes }
-            };
-        }
-        return g;
-    }));
-  };
-
-  const handleFinalizeVetting = (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, reason?: string) => {
-      setGuards(prev => prev.map(g => {
+  const handleLockGuard = async (guardId: string, companyId: string, notes: string, schedule?: { date: string; location: string }) => {
+    try {
+      const { data, error } = await supabase
+        .from('guards')
+        .update({
+          application_status: ApplicationStatus.INTERVIEW_LOCKED,
+          company_id: companyId,
+          dossier_data: { interviewer_notes: notes, interview_schedule: schedule || null }
+        })
+        .eq('id', guardId)
+        .select()
+        .single();
+      if (error) {
+        console.error('Failed to persist lock:', error);
+        setGuards(prev => prev.map(g => {
           if (g.id === guardId) {
-              if (result === 'pass') {
-                  return {
-                      ...g,
-                      application_status: ApplicationStatus.PROCUREMENT_PENDING,
-                      agreed_salary: terms.salary,
-                      contract_start_date: terms.startDate,
-                      contract_end_date: terms.endDate,
-                      employment_contract_url: terms.contractUrl,
-                      current_site_id: terms.siteId,
-                      assigned_supervisor_id: terms.supervisorId
-                  };
-              } else if (result === 'blacklist') {
-                   return {
-                       ...g,
-                       application_status: ApplicationStatus.BLACKLISTED,
-                       dossier_data: { ...g.dossier_data, rejection_reason: reason }
-                   };
-              } else {
-                  return {
-                       ...g,
-                       application_status: ApplicationStatus.POOL_APPLICANT,
-                       company_id: undefined,
-                       dossier_data: { ...g.dossier_data, rejection_reason: reason }
-                  };
-              }
+            return {
+              ...g,
+              application_status: ApplicationStatus.INTERVIEW_LOCKED,
+              company_id: companyId,
+              dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null }
+            };
           }
           return g;
+        }));
+        (window as any).showNotification?.('warning', 'Offline: lock saved locally.');
+      } else {
+        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
+        (window as any).showNotification?.('success', 'Applicant locked for interview.');
+      }
+    } catch (e) {
+      console.error('Error locking applicant:', e);
+      setGuards(prev => prev.map(g => {
+        if (g.id === guardId) {
+          return {
+            ...g,
+            application_status: ApplicationStatus.INTERVIEW_LOCKED,
+            company_id: companyId,
+            dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null }
+          };
+        }
+        return g;
       }));
+      (window as any).showNotification?.('warning', 'Error: lock saved locally.');
+    }
+  };
+
+  const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, reason?: string) => {
+    try {
+      if (result === 'pass' && terms) {
+        const updatePayload = {
+          application_status: ApplicationStatus.PROCUREMENT_PENDING,
+          agreed_salary: Number(terms.salary),
+          contract_start_date: terms.startDate || null,
+          contract_end_date: terms.endDate || null,
+          employment_contract_url: terms.contractUrl || null,
+          current_site_id: terms.siteId || null,
+          assigned_supervisor_id: terms.supervisorId || null
+        };
+        const { data, error } = await supabase
+          .from('guards')
+          .update(updatePayload)
+          .eq('id', guardId)
+          .select()
+          .single();
+        if (error) {
+          console.error('Failed to persist hiring:', error);
+          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
+          (window as any).showNotification?.('warning', 'Offline: hiring saved locally.');
+        } else {
+          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
+          (window as any).showNotification?.('success', 'Hiring finalized.');
+        }
+      } else if (result === 'blacklist') {
+        const updatePayload = {
+          application_status: ApplicationStatus.BLACKLISTED,
+          dossier_data: { rejection_reason: reason }
+        };
+        const { data, error } = await supabase
+          .from('guards')
+          .update(updatePayload)
+          .eq('id', guardId)
+          .select()
+          .single();
+        if (error) {
+          console.error('Failed to persist blacklist:', error);
+          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
+          (window as any).showNotification?.('warning', 'Offline: blacklist saved locally.');
+        } else {
+          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
+          (window as any).showNotification?.('success', 'Applicant blacklisted.');
+        }
+      } else {
+        const updatePayload = {
+          application_status: ApplicationStatus.POOL_APPLICANT,
+          company_id: null,
+          dossier_data: { rejection_reason: reason }
+        };
+        const { data, error } = await supabase
+          .from('guards')
+          .update(updatePayload)
+          .eq('id', guardId)
+          .select()
+          .single();
+        if (error) {
+          console.error('Failed to persist rejection:', error);
+          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
+          (window as any).showNotification?.('warning', 'Offline: rejection saved locally.');
+        } else {
+          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
+          (window as any).showNotification?.('success', 'Applicant released to pool.');
+        }
+      }
+    } catch (e) {
+      console.error('Error finalizing vetting:', e);
+    }
   };
 
   const handleIssueKit = (guardId: string, items: any, sig: string) => {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.ACTIVE } : g));
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.ACTIVE, performance_score: 100 } : g));
   };
 
-  const handleReportIncident = (guardId: string, report: Partial<IncidentReport>) => {
+  const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
       const newIncident: IncidentReport = {
           id: `inc-${Date.now()}`,
           guard_id: guardId,
@@ -359,6 +448,21 @@ useEffect(() => {
           created_at: new Date().toISOString()
       };
       setIncidents(prev => [newIncident, ...prev]);
+      try {
+        const { error } = await supabase.from('incidents').insert({
+          guard_id: newIncident.guard_id,
+          code: newIncident.code,
+          notes: newIncident.notes,
+          evidence_url: newIncident.evidence_url,
+          reported_by: newIncident.reported_by,
+          site_id: newIncident.site_id,
+          site_name: newIncident.site_name,
+          created_at: newIncident.created_at
+        });
+        if (error) console.error('Failed to persist incident:', error);
+      } catch (e) {
+        console.error('Error persisting incident:', e);
+      }
       
       const code = disciplinaryCodes.find(c => c.code === report.code);
       if (code) {
@@ -370,6 +474,41 @@ useEffect(() => {
               return g;
           }));
       }
+
+      const current = guards.find(g => g.id === guardId);
+      const scoreAfter = Math.max(0, (current?.performance_score || 100) - (code?.points || 0));
+      if (scoreAfter <= 5) {
+        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter } : g));
+        try {
+          const { error } = await supabase.from('guards').update({ application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter }).eq('id', guardId);
+          if (error) console.error('Failed to update guard status:', error);
+        } catch (e) {
+          console.error('Error updating guard status:', e);
+        }
+      }
+  };
+
+  const handleClockIn = async (guardId: string, siteId?: string) => {
+    const site = sites.find(s => s.id === (siteId || guards.find(g => g.id === guardId)?.current_site_id));
+    if (!site) return;
+    const log = {
+      id: `al-${Date.now()}`,
+      guard_id: guardId,
+      site_id: site.id,
+      supervisor_id: profiles.find(p => p.current_site_id === site.id && p.role === UserRole.SUPERVISOR)?.id || '',
+      checked_in_at: new Date().toISOString(),
+      lat: site.lat,
+      lng: site.lng,
+      distance_meters: 0,
+      status: 'present' as const
+    };
+    setAttendanceLogs(prev => [log, ...prev]);
+    try {
+      const { error } = await supabase.from('attendance_logs').insert(log);
+      if (error) console.error('Failed to persist attendance:', error);
+    } catch (e) {
+      console.error('Error persisting attendance:', e);
+    }
   };
 
   const handleReinstate = (guardId: string) => {
@@ -410,18 +549,37 @@ useEffect(() => {
       setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
   };
   
-  const handleAddPolicy = (policy: DisciplinaryCode) => {
-    setDisciplinaryCodes(prev => [...prev, { ...policy, company_id: userCompanyId }]);
+  const handleAddPolicy = async (policy: DisciplinaryCode) => {
+    const payload = { ...policy, company_id: userCompanyId };
+    setDisciplinaryCodes(prev => [...prev, payload]);
+    try {
+      const { error } = await supabase.from('disciplinary_codes').insert(payload);
+      if (error) console.error('Failed to persist policy:', error);
+    } catch (e) {
+      console.error('Error persisting policy:', e);
+    }
   };
 
-  const handleUpdatePolicy = (code: string, updates: Partial<DisciplinaryCode>) => {
+  const handleUpdatePolicy = async (code: string, updates: Partial<DisciplinaryCode>) => {
     setDisciplinaryCodes(prev => prev.map(c => 
         (c.code === code) ? { ...c, ...updates, updated_at: new Date().toISOString() } : c
     ));
+    try {
+      const { error } = await supabase.from('disciplinary_codes').update({ ...updates, updated_at: new Date().toISOString() }).eq('code', code);
+      if (error) console.error('Failed to update policy:', error);
+    } catch (e) {
+      console.error('Error updating policy:', e);
+    }
   };
 
-  const handleDeletePolicy = (code: string) => {
+  const handleDeletePolicy = async (code: string) => {
     setDisciplinaryCodes(prev => prev.filter(c => c.code !== code));
+    try {
+      const { error } = await supabase.from('disciplinary_codes').delete().eq('code', code);
+      if (error) console.error('Failed to delete policy:', error);
+    } catch (e) {
+      console.error('Error deleting policy:', e);
+    }
   };
   
   const handleGuardReportProblem = (desc: string, evidence?: string) => {
@@ -511,6 +669,10 @@ useEffect(() => {
                                     <p className="text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
                                 </div>
                             </div>
+                            <div className="mt-8 bg-white rounded-[2rem] p-6 text-slate-900">
+                                <h3 className="text-sm font-black uppercase tracking-widest mb-4">Fleet-Wide Metrics</h3>
+                                <PerformanceLineChart />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -525,11 +687,39 @@ useEffect(() => {
                     guards={filteredGuards} 
                     sites={filteredSites} 
                     profiles={profiles} 
+                    companies={companies}
                     incidents={filteredIncidents}
                     disciplinaryCodes={filteredDisciplinaryCodes}
                     onLock={handleLockGuard} 
                     onFinalize={handleFinalizeVetting} 
                     currentUser={user as Profile}
+                    resubmitRequests={resubmitRequests as any}
+                    onResubmitDecision={async (requestId, guardId, decision) => {
+                      try {
+                        const { data, error } = await guardService.updateResubmitRequest(requestId, decision);
+                        if (error) {
+                          console.error('Failed to update resubmit request:', error);
+                          setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
+                          if (decision === 'approved') {
+                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
+                          }
+                          (window as any).showNotification?.('warning', 'Offline: decision saved locally.');
+                        } else {
+                          setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...data } : r));
+                          if (decision === 'approved') {
+                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
+                          }
+                          (window as any).showNotification?.('success', `Request ${decision}.`);
+                        }
+                      } catch (e) {
+                        console.error('Error updating resubmit request:', e);
+                        setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
+                        if (decision === 'approved') {
+                          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
+                        }
+                        (window as any).showNotification?.('warning', 'Error: decision saved locally.');
+                      }
+                    }}
                 />
             )}
             
@@ -544,6 +734,9 @@ useEffect(() => {
                     onIssueKit={handleIssueKit} 
                 />
             )}
+            {activeTab === 'stock-in' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
+                <StockInPage />
+            )}
 
             {activeTab === 'operations' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.COMPANY_ADMIN) && (
                 <OperationsEngine 
@@ -551,8 +744,12 @@ useEffect(() => {
                     sites={filteredSites} 
                     incidents={filteredIncidents}
                     onReportIncident={handleReportIncident}
+                    onClockIn={handleClockIn}
                     disciplinaryCodes={filteredDisciplinaryCodes}
                     userName={currentUserName}
+                    currentUser={user as Profile}
+                    companies={companies}
+                    profiles={profiles}
                 />
             )}
 
@@ -585,16 +782,47 @@ useEffect(() => {
                     sites={filteredSites}
                     profiles={profiles}
                     guards={filteredGuards}
-                    onAddSite={() => alert('Add site not implemented in mock')}
+                    onAddSite={async (site) => {
+                      const newSite = {
+                        ...site,
+                        company_id: userCompanyId as string
+                      } as Site;
+                      try {
+                        const { data, error } = await supabase
+                          .from('sites')
+                          .insert({
+                            name: newSite.name,
+                            lat: newSite.lat,
+                            lng: newSite.lng,
+                            geofence_radius_meters: newSite.geofence_radius_meters,
+                            company_id: newSite.company_id,
+                            supervisor_id: newSite.supervisor_id || null
+                          })
+                          .select()
+                          .single();
+                        if (error) {
+                          console.error('Failed to add site:', error);
+                          setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
+                          (window as any).showNotification?.('warning', 'Offline: site added locally.');
+                        } else {
+                          setSites(prev => [data as Site, ...prev]);
+                          (window as any).showNotification?.('success', 'Site created.');
+                        }
+                      } catch (e) {
+                        console.error('Error adding site:', e);
+                        setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
+                        (window as any).showNotification?.('warning', 'Error: site added locally.');
+                      }
+                    }}
                     onShiftPersonnel={handleShiftPersonnel}
                 />
             )}
 
-            {activeTab === 'blacklist' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
+            {activeTab === 'blacklist' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.SUPERVISOR) && (
                 <BlacklistManager 
-                    guards={filteredGuards}
-                    incidents={filteredIncidents}
-                    disciplinaryCodes={filteredDisciplinaryCodes}
+                    guards={userRole === UserRole.SUPERVISOR ? guards : filteredGuards}
+                    incidents={userRole === UserRole.SUPERVISOR ? incidents : filteredIncidents}
+                    disciplinaryCodes={userRole === UserRole.SUPERVISOR ? disciplinaryCodes : filteredDisciplinaryCodes}
                     userRole={userRole}
                     onReinstateGuard={handleReinstate}
                 />
@@ -638,7 +866,29 @@ useEffect(() => {
                 <GuardProfile guard={user as Guard} />
             )}
             {activeTab === 'application-status' && (user as Guard).application_status !== ApplicationStatus.ACTIVE && (
-                <ApplicantDashboard guard={user as Guard} />
+                <ApplicantDashboard 
+                  guard={user as Guard} 
+                  onRequestEdit={async (reason: string) => {
+                    try {
+                      const payload = {
+                        id: `rr-${Date.now()}`,
+                        guard_id: (user as Guard).id,
+                        company_id: userCompanyId,
+                        reason,
+                        status: 'pending',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                      };
+                      setResubmitRequests(prev => [payload, ...prev]);
+                      const { error } = await supabase.from('resubmit_requests').insert(payload);
+                      if (error) console.error('Failed to persist request:', error);
+                      (window as any).showNotification?.('success', 'Edit request submitted.');
+                    } catch (e) {
+                      console.error('Error submitting request:', e);
+                      (window as any).showNotification?.('warning', 'Error: request saved locally.');
+                    }
+                  }}
+                />
             )}
             {activeTab === 'profile-update' && (user as Guard).application_status !== ApplicationStatus.ACTIVE && (
                 <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} isApplicantFlow={true} applicantData={user as Guard} />

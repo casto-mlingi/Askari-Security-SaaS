@@ -3,9 +3,10 @@ import { Guard, ApplicationStatus } from '../types';
 
 interface ApplicantDashboardProps {
   guard: Guard;
+  onRequestEdit?: (reason: string) => void;
 }
 
-const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard }) => {
+const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, onRequestEdit }) => {
   
   // 1. Define the logical progression of your application workflow
   const statusOrder = [
@@ -179,6 +180,30 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard }) => {
                  &quot;{guard.dossier_data?.interviewer_notes}&quot;
               </p>
            </div>
+        </div>
+      )}
+      
+      {guard.application_status === ApplicationStatus.POOL_APPLICANT && (
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 md:p-12 shadow-sm space-y-4">
+          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Request CV Edit</h3>
+          <p className="text-xs text-slate-500">You cannot edit your application directly. Submit a request to HR for permission to resubmit.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <textarea id="req-reason" className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm" placeholder="Describe what you need to update"></textarea>
+            <div className="flex items-end">
+              <button 
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('req-reason') as HTMLTextAreaElement | null;
+                  const reason = el?.value || '';
+                  if (!reason.trim()) { alert('Please provide a reason.'); return; }
+                  onRequestEdit?.(reason.trim());
+                }}
+                className="w-full md:w-auto px-6 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all"
+              >
+                Submit Request
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -14,13 +14,6 @@
       "node",
       "vite/client"
     ],
-    "include": [
-      "src/**/*",
-      "*.ts",
-      "*.tsx",
-      "*.js",
-      "*.jsx"
-    ],
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
@@ -33,5 +26,12 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.d.ts"
+  ]
 }

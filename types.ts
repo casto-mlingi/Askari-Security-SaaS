@@ -75,6 +75,7 @@ export interface Company {
   name: string;
   slug: string;
   contact_email: string;
+  address?: string;
   subscription?: Subscription;
   is_active: boolean;
   created_at: string;
@@ -178,6 +179,7 @@ export interface Guard {
   nida_number: string;
   full_name: string;
   dob: string;
+  gender?: 'male' | 'female' | 'trans';
   profile_score: number;
   performance_score?: number;
   application_status: ApplicationStatus;
@@ -203,6 +205,10 @@ export interface Guard {
   birth_cert_url?: string;
   application_letter_url?: string;
   residence_letter_url?: string;
+  police_clearance_url?: string;
+  cv_url?: string;
+  passport_photo_url?: string;
+  previous_employer_letter_url?: string;
   
   agreed_salary?: number;
   contract_start_date?: string;
@@ -216,6 +222,10 @@ export interface Guard {
   residence_lng?: number;
   is_armed: boolean;
   weapon_qualification?: string;
+  nssf_number?: string;
+  bank_account_number?: string;
+  experience_years?: number;
+  previous_experience?: boolean;
   created_at: string;
   updated_at?: string;
 
@@ -259,6 +269,16 @@ export interface Announcement {
   updated_at?: string;
 }
 
+export interface ResubmitRequest {
+  id: string;
+  guard_id: string;
+  company_id?: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface AttendanceLog {
   id: string;
   guard_id: string;
@@ -287,6 +307,7 @@ export interface IncidentReport {
   code: string; // References DisciplinaryCode.code
   notes: string;
   evidence_url: string;
+  evidence_urls?: string[];
   reported_by: string; // Can be Profile.id or Profile.full_name
   site_id?: string; 
   site_name?: string; // Denormalized for display

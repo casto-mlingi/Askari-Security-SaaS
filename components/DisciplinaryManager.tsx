@@ -1,8 +1,8 @@
-
 import React, { useState, useMemo } from 'react';
 import { Guard, IncidentReport, ApplicationStatus, DisciplinaryCode, Site, LeaveRequest, Profile } from '../types';
-import { suggestDisciplinaryPolicy } from '../services/ai';
 import PerformanceLineChart from './PerformanceLineChart';
+// ✅ FIXED: Imported only once, using the correct relative path
+import { suggestDisciplinaryPolicy } from '../services/ai';
 
 interface DisciplinaryManagerProps {
   guards: Guard[];
@@ -15,7 +15,7 @@ interface DisciplinaryManagerProps {
   onViewGuardAudit?: (guard: Guard) => void;
   onAddPolicy?: (policy: DisciplinaryCode) => void;
   onDeletePolicy?: (code: string) => void;
-  onUpdatePolicy?: (code: string, updates: Partial<DisciplinaryCode>) => void; // Added prop
+  onUpdatePolicy?: (code: string, updates: Partial<DisciplinaryCode>) => void;
 }
 
 const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({ 
@@ -29,9 +29,10 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
   onViewGuardAudit,
   onAddPolicy,
   onDeletePolicy,
-  onUpdatePolicy // Destructure new prop
+  onUpdatePolicy 
 }) => {
   const [view, setView] = useState<'performance' | 'incidents' | 'leave' | 'policies'>('performance');
+  const [perfMode, setPerfMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
   
   // Policy Generation State
@@ -45,7 +46,6 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
   const [editLabel, setEditLabel] = useState('');
   const [editPoints, setEditPoints] = useState(0);
   const [editDescription, setEditDescription] = useState('');
-
 
   const deployedGuards = useMemo(() => guards.filter(g => 
     g.application_status === ApplicationStatus.ACTIVE || 
@@ -61,9 +61,13 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
   const handleGeneratePolicy = async () => {
     if (!policyDesc) return;
     setIsGenerating(true);
-    const result = await suggestDisciplinaryPolicy(policyDesc);
-    if (result) {
-        setGeneratedPolicy(result);
+    try {
+      const result = await suggestDisciplinaryPolicy(policyDesc);
+      if (result) {
+          setGeneratedPolicy(result);
+      }
+    } catch (error) {
+      console.error("Policy generation failed:", error);
     }
     setIsGenerating(false);
   };
@@ -113,22 +117,34 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
 
       {view === 'performance' && (
         <div className="space-y-8">
-            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm h-[400px]">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6">Fleet-Wide Metrics</h3>
-                <PerformanceLineChart />
+            {/* Fleet-Wide Metrics chart removed from Disciplinary page */}
+            <div className="flex items-center justify-end gap-3">
+              <button 
+                onClick={() => setPerfMode('grid')}
+                className={`w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center ${perfMode === 'grid' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'}`}
+              >▦</button>
+              <button 
+                onClick={() => setPerfMode('list')}
+                className={`w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center ${perfMode === 'list' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'}`}
+              >☰</button>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className={perfMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
                 {deployedGuards.map(guard => (
                     <div key={guard.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex items-center justify-between group hover:border-primary/20 transition-all">
                         <div className="flex items-center gap-4">
-                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white ${guard.performance_score! < 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}>
-                                 {guard.performance_score}%
-                             </div>
+                             {guard.passport_photo_url ? (
+                               <img src={guard.passport_photo_url} alt={guard.full_name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
+                             ) : (
+                               <div className="w-10 h-10 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{guard.full_name[0]}</div>
+                             )}
                              <div>
                                  <h4 className="font-black text-slate-900 uppercase tracking-tight">{guard.full_name}</h4>
                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Site: {sites.find(s => s.id === guard.current_site_id)?.name || 'Unassigned'}</p>
+                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Supervisor: {profiles.find(p => p.id === sites.find(s => s.id === guard.current_site_id)?.supervisor_id)?.full_name || 'N/A'}</p>
                              </div>
+                        </div>
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white ${guard.performance_score! < 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+                          {guard.performance_score}%
                         </div>
                         <button onClick={() => onViewGuardAudit?.(guard)} className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-900 hover:text-white transition-all">
                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
@@ -148,36 +164,47 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
                 onChange={e => setSearchTerm(e.target.value)}
                 className="w-full h-14 px-6 bg-white border border-slate-200 rounded-2xl font-black text-[10px] uppercase tracking-widest outline-none focus:border-primary transition-all"
             />
-            {filteredIncidents.length > 0 ? filteredIncidents.map(inc => {
-                const guard = guards.find(g => g.id === inc.guard_id);
-                const code = disciplinaryCodes.find(c => c.code === inc.code);
-                return (
-                    <div key={inc.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-                         <div className="flex items-center gap-6">
-                             <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center font-black text-xl border border-red-100 shrink-0">
-                                 !
-                             </div>
-                             <div>
-                                 <div className="flex items-center gap-3">
-                                     <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg">{guard?.full_name}</h4>
-                                     <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-widest">{inc.code}</span>
-                                 </div>
-                                 <p className="text-xs text-slate-600 font-medium italic mt-1 max-w-md">"{inc.notes}"</p>
-                             </div>
-                         </div>
-                         <div className="flex items-center gap-6 md:border-l md:border-slate-100 md:pl-6">
-                             <div className="text-right">
-                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Penalty</p>
-                                 <p className="text-xl font-black text-red-600 font-hud">-{code?.points || 0} PTS</p>
-                             </div>
-                             <div className="text-right">
-                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</p>
-                                 <p className="text-xs font-bold text-slate-700">{new Date(inc.created_at).toLocaleDateString()}</p>
-                             </div>
-                         </div>
+            {filteredIncidents.length > 0 ? (
+              <div className="space-y-6">
+                {guards.map(g => {
+                  const byG = filteredIncidents.filter(i => i.guard_id === g.id);
+                  if (byG.length === 0) return null;
+                  const total = byG.reduce((acc, i) => acc + (disciplinaryCodes.find(c => c.code === i.code)?.points || 0), 0);
+                  return (
+                    <div key={g.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center font-black text-xl border border-red-100">!</div>
+                          <div>
+                            <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg">{g.full_name}</h4>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Supervisor: {profiles.find(p => p.id === sites.find(s => s.id === g.current_site_id)?.supervisor_id)?.full_name || 'N/A'}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xl font-black text-red-600 font-hud">-{total} PTS</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{byG.length} Incidents</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        {byG.map(inc => {
+                          const code = disciplinaryCodes.find(c => c.code === inc.code);
+                          return (
+                            <button key={inc.id} className="w-full text-left p-4 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-black text-slate-900 uppercase">{code?.label}</p>
+                                <span className="text-[10px] font-black text-red-600 font-hud">-{code?.points || 0} PTS</span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{new Date(inc.created_at).toLocaleString()}</p>
+                              <p className="text-xs text-slate-600 font-medium italic mt-2">"{inc.notes}"</p>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                );
-            }) : (
+                  );
+                })}
+              </div>
+            ) : (
                 <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
                     <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No incidents found</p>
                 </div>

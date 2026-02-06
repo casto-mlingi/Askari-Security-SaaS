@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 // implying it's being treated as a named export.
 import { GuardWizard } from './GuardWizard';
 import BulkImport from './BulkImport';
-import { Guard, UserRole } from '../types';
+import { Guard, UserRole, ApplicationStatus } from '../types';
 
 interface IntakeManagerProps {
   guards: Guard[];
@@ -22,6 +22,8 @@ const IntakeManager: React.FC<IntakeManagerProps> = ({ guards, userRole, onCompl
   const subtitle = isApplicantFlow 
     ? "Please provide the following details to proceed with your application." 
     : "Onboard New Guards via Manual or Bulk Entry";
+
+  const canEdit = isApplicantFlow ? applicantData?.application_status === ApplicationStatus.DRAFT : true;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -52,10 +54,16 @@ const IntakeManager: React.FC<IntakeManagerProps> = ({ guards, userRole, onCompl
         )}
       </div>
 
-      {(activeTab === 'manual' || isApplicantFlow) ? (
-        <GuardWizard onComplete={(guard) => onComplete(guard, isApplicantFlow)} guards={guards} userRole={userRole} initialData={applicantData} isApplicantFlow={isApplicantFlow} />
+      {isApplicantFlow ? (
+        canEdit ? (
+          <GuardWizard onComplete={(guard) => onComplete(guard, isApplicantFlow)} guards={guards} userRole={userRole} initialData={applicantData} isApplicantFlow={isApplicantFlow} />
+        ) : (
+          <div className="bg-white p-8 rounded-[2rem] border border-slate-200 text-center">
+            <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Editing is locked. Please request approval to resubmit.</p>
+          </div>
+        )
       ) : (
-        <BulkImport />
+        (activeTab === 'manual') ? <GuardWizard onComplete={(guard) => onComplete(guard, isApplicantFlow)} guards={guards} userRole={userRole} /> : <BulkImport />
       )}
     </div>
   );

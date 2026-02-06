@@ -9,9 +9,13 @@ interface WizardData {
   nida_number: string;
   phone: string;
   dob: string;
+  gender: 'male' | 'female' | 'trans' | '';
   application_letter_url: string;
   nida_front_url: string;
   birth_cert_url: string;
+  police_clearance_url: string;
+  cv_url: string;
+  passport_photo_url: string;
   guarantors: Guarantor[];
   next_of_kin_name: string;
   next_of_kin_phone: string;
@@ -21,6 +25,10 @@ interface WizardData {
   residence_letter_url: string;
   education_history: EducationRecord[];
   is_armed: boolean;
+  bank_account_number?: string;
+  previous_experience: boolean;
+  nssf_number?: string;
+  previous_employer_letter_url?: string;
 }
 
 type ValidationErrors = {
@@ -78,9 +86,13 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     nida_number: initialData?.nida_number || '',
     phone: initialData?.phone || '',
     dob: initialData?.dob || '',
+    gender: (initialData as any)?.gender || '',
     application_letter_url: initialData?.application_letter_url || '',
     nida_front_url: initialData?.nida_front_url || '',
     birth_cert_url: initialData?.birth_cert_url || '',
+    police_clearance_url: initialData?.police_clearance_url || '',
+    cv_url: initialData?.cv_url || '',
+    passport_photo_url: (initialData as any)?.passport_photo_url || '',
     guarantors: initialData?.guarantors || [],
     next_of_kin_name: initialData?.next_of_kin_name || '',
     next_of_kin_phone: initialData?.next_of_kin_phone || '',
@@ -90,12 +102,17 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     is_armed: initialData?.is_armed || false,
     residence_lat: initialData?.residence_lat,
     residence_lng: initialData?.residence_lng,
+    bank_account_number: initialData?.bank_account_number || '',
+    previous_experience: (initialData as any)?.previous_experience || false,
+    nssf_number: initialData?.nssf_number || '',
+    previous_employer_letter_url: (initialData as any)?.previous_employer_letter_url || '',
   };
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<WizardData>(initialFormState);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profileScore, setProfileScore] = useState(0);
 
   // Load draft from local storage on mount
   useEffect(() => {
@@ -127,6 +144,28 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       }
     }
   }, [formData.nida_number]);
+
+  useEffect(() => {
+    let s = 0;
+    s += formData.full_name ? 2 : 0;
+    s += formData.phone ? 3 : 0;
+    s += formData.dob ? 5 : 0;
+    s += formData.nida_number ? 10 : 0;
+    s += formData.nida_front_url ? 10 : 0;
+    s += formData.police_clearance_url ? 10 : 0;
+    s += formData.residence_letter_url ? 10 : 0;
+    s += formData.cv_url ? 5 : 0;
+    s += formData.application_letter_url ? 5 : 0;
+    s += formData.next_of_kin_name ? 5 : 0;
+    s += formData.next_of_kin_relationship ? 5 : 0;
+    s += formData.next_of_kin_phone ? 5 : 0;
+    s += formData.previous_experience ? 5 : 0;
+    s += (formData.previous_experience && formData.nssf_number) ? 10 : 0;
+    s += formData.bank_account_number ? 5 : 0;
+    s += formData.education_history.length ? 5 : 0;
+    s += formData.guarantors.length ? 5 : 0;
+    setProfileScore(Math.min(100, s));
+  }, [formData]);
 
   // Save draft on change
   useEffect(() => {
@@ -190,6 +229,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       if (!formData.nida_front_url) newErrors.nida_front_url = 'NIDA ID document is mandatory';
       if (!formData.birth_cert_url) newErrors.birth_cert_url = 'Birth Certificate is mandatory';
       if (!formData.application_letter_url) newErrors.application_letter_url = 'Application Letter is mandatory';
+      if (!formData.police_clearance_url) newErrors.police_clearance_url = 'Police Clearance is mandatory';
     }
 
     if (step === 4) {
@@ -242,8 +282,12 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
 
           const guardPayload = {
               ...coreGuardData,
-              application_status: initialData?.application_status || ApplicationStatus.POOL_APPLICANT,
-              profile_score: 50, // This could be calculated dynamically
+              application_status: isApplicantFlow ? ApplicationStatus.POOL_APPLICANT : (initialData?.application_status || ApplicationStatus.PENDING),
+              profile_score: profileScore,
+              gender: coreGuardData.gender || undefined,
+              previous_experience: coreGuardData.previous_experience || false,
+              previous_employer_letter_url: coreGuardData.previous_employer_letter_url || undefined,
+              dossier_data: { ...(initialData as any)?.dossier_data, intake_locked: true, intake_submitted_at: new Date().toISOString() },
               // Ensure we don't accidentally send undefined for ID if it's new
           };
 
@@ -365,6 +409,20 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                         <InputField label="NIDA Number" name="nida_number" value={formData.nida_number} onChange={handleChange} error={errors.nida_number} placeholder="19900101-..." />
                         <InputField label="Mobile Phone" name="phone" value={formData.phone} onChange={handleChange} error={errors.phone} placeholder="+255..." />
                         <InputField label="Date of Birth" name="dob" type="date" value={formData.dob} onChange={handleChange} error={errors.dob} />
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Gender</label>
+                          <select
+                            name="gender"
+                            value={formData.gender}
+                            onChange={handleChange}
+                            className="w-full h-14 px-4 bg-slate-50 border-2 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                          >
+                            <option value="">Select Gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="trans">Trans Gender</option>
+                          </select>
+                        </div>
                       </div>
                       
                       <div className="pt-6 border-t border-slate-100">
@@ -376,6 +434,23 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                              </div>
                          </label>
                       </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <InputField label="Bank Account Number" name="bank_account_number" value={formData.bank_account_number || ''} onChange={handleChange} placeholder="1234-5678-..." />
+                        <label className="flex items-center gap-4 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-primary/50 hover:bg-slate-50 transition-all">
+                          <input type="checkbox" name="previous_experience" checked={formData.previous_experience} onChange={handleChange} className="w-6 h-6 rounded border-slate-300 text-primary focus:ring-primary" />
+                          <div>
+                            <span className="block text-sm font-black uppercase text-slate-800 tracking-wide">Previous Experience</span>
+                            <span className="block text-xs text-slate-400 mt-1">Toggle on if previously employed; provide supporting documents</span>
+                          </div>
+                        </label>
+                      </div>
+                      {formData.previous_experience && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <InputField label="NSSF Number" name="nssf_number" value={formData.nssf_number || ''} onChange={handleChange} placeholder="NSSF-XXXX" />
+                          <FileUploader label="Letter from Previous Employer" fileUrl={formData.previous_employer_letter_url || ''} onUpload={(url) => handleFileChange('previous_employer_letter_url', url)} onRemove={() => handleFileChange('previous_employer_letter_url', '')} />
+                        </div>
+                      )}
                   </div>
               );
           case 2:
@@ -387,6 +462,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                           <FileUploader label="Birth Certificate" fileUrl={formData.birth_cert_url} onUpload={(url) => handleFileChange('birth_cert_url', url)} onRemove={() => handleFileChange('birth_cert_url', '')} error={!!errors.birth_cert_url} />
                           <FileUploader label="Handwritten Application Letter" fileUrl={formData.application_letter_url} onUpload={(url) => handleFileChange('application_letter_url', url)} onRemove={() => handleFileChange('application_letter_url', '')} error={!!errors.application_letter_url} />
                           <FileUploader label="Local Govt Residence Letter" fileUrl={formData.residence_letter_url} onUpload={(url) => handleFileChange('residence_letter_url', url)} onRemove={() => handleFileChange('residence_letter_url', '')} />
+                          <FileUploader label="Police Clearance Certificate" fileUrl={formData.police_clearance_url} onUpload={(url) => handleFileChange('police_clearance_url', url)} onRemove={() => handleFileChange('police_clearance_url', '')} />
+                          <FileUploader label="Curriculum Vitae (CV)" fileUrl={formData.cv_url} onUpload={(url) => handleFileChange('cv_url', url)} onRemove={() => handleFileChange('cv_url', '')} />
+          <FileUploader label="Passport Photo (Profile)" fileUrl={formData.passport_photo_url} onUpload={(url) => handleFileChange('passport_photo_url', url)} onRemove={() => handleFileChange('passport_photo_url', '')} />
                       </div>
                   </div>
               );

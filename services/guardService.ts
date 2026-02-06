@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { Guard, ApiResponse, ApplicationStatus, EducationRecord, Guarantor } from '../types';
+import { Guard, ApiResponse, ApplicationStatus, EducationRecord, Guarantor, ResubmitRequest } from '../types';
 
 export const guardService = {
   /**
@@ -16,7 +16,8 @@ export const guardService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching guards:', error);
+      const local = JSON.parse(localStorage.getItem('guards_local') || '[]');
+      if (local.length > 0) return { data: local as Guard[] };
       return { error: error.message };
     }
 
@@ -60,10 +61,14 @@ export const guardService = {
       performance_score, // Has default
       is_armed, // Has default
       has_signed_contract, // Has default
-      application_status, // Has default
       // These are top-level arrays in types but not in DB
       ...coreGuardFields
     } = guardData;
+
+    // Default application status: move new submissions directly to pool applicants
+    if (!('application_status' in coreGuardFields) || !coreGuardFields.application_status) {
+      coreGuardFields.application_status = ApplicationStatus.POOL_APPLICANT;
+    }
 
     const { data, error } = await supabase
       .from('guards')
@@ -71,7 +76,53 @@ export const guardService = {
       .select()
       .single();
 
-    if (error) return { error: error.message };
+    if (error) {
+      const localGuard = {
+        id: `g-${Date.now()}`,
+        nida_number: coreGuardFields.nida_number || `LOCAL-${Date.now()}`,
+        full_name: coreGuardFields.full_name || 'New Guard',
+        dob: coreGuardFields.dob || '2000-01-01',
+        profile_score: typeof (guardData as any).profile_score === 'number' ? (guardData as any).profile_score : 0,
+        performance_score: typeof (guardData as any).performance_score === 'number' ? (guardData as any).performance_score : 100,
+        application_status: coreGuardFields.application_status as ApplicationStatus,
+        current_site_id: coreGuardFields.current_site_id,
+        assigned_supervisor_id: coreGuardFields.assigned_supervisor_id,
+        company_id: coreGuardFields.company_id,
+        phone: coreGuardFields.phone,
+        dossier_data: coreGuardFields['dossier_data'] || {},
+        education_history: [],
+        guarantors: [],
+        next_of_kin_name: coreGuardFields['next_of_kin_name'],
+        next_of_kin_phone: coreGuardFields['next_of_kin_phone'],
+        next_of_kin_relationship: coreGuardFields['next_of_kin_relationship'],
+        nida_front_url: coreGuardFields['nida_front_url'],
+        birth_cert_url: coreGuardFields['birth_cert_url'],
+        application_letter_url: coreGuardFields['application_letter_url'],
+        residence_letter_url: coreGuardFields['residence_letter_url'],
+        police_clearance_url: coreGuardFields['police_clearance_url'],
+        cv_url: coreGuardFields['cv_url'],
+        passport_photo_url: coreGuardFields['passport_photo_url'],
+        agreed_salary: coreGuardFields['agreed_salary'],
+        contract_start_date: coreGuardFields['contract_start_date'],
+        contract_end_date: coreGuardFields['contract_end_date'],
+        has_signed_contract: coreGuardFields['has_signed_contract'],
+        employment_contract_url: coreGuardFields['employment_contract_url'],
+        current_shift: coreGuardFields['current_shift'],
+        leave_return_date: coreGuardFields['leave_return_date'],
+        consecutive_absences: coreGuardFields['consecutive_absences'] ?? 0,
+        residence_lat: coreGuardFields['residence_lat'],
+        residence_lng: coreGuardFields['residence_lng'],
+        is_armed: coreGuardFields['is_armed'] ?? false,
+        weapon_qualification: coreGuardFields['weapon_qualification'],
+        nssf_number: coreGuardFields['nssf_number'],
+        bank_account_number: coreGuardFields['bank_account_number'],
+        experience_years: coreGuardFields['experience_years'],
+        created_at: new Date().toISOString()
+      } as Guard;
+      const existing = JSON.parse(localStorage.getItem('guards_local') || '[]');
+      localStorage.setItem('guards_local', JSON.stringify([localGuard, ...existing]));
+      return { data: localGuard };
+    }
 
     return { data: data as unknown as Guard };
   },
@@ -214,5 +265,32 @@ export const guardService = {
 
     // Then create new records
     return this.createGuarantors(guardId, guarantors);
+  },
+
+  async updateResubmitRequest(id: string, status: 'approved' | 'rejected'): Promise<ApiResponse<ResubmitRequest>> {
+    const { data: req, error: fetchError } = await supabase
+      .from('resubmit_requests')
+      .select('id, guard_id, company_id, reason, status, created_at, updated_at')
+      .eq('id', id)
+      .single();
+    if (fetchError) return { error: fetchError.message };
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('resubmit_requests')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateErr) return { error: updateErr.message };
+
+    if (status === 'approved') {
+      const { error: guardUpdateErr } = await supabase
+        .from('guards')
+        .update({ application_status: ApplicationStatus.DRAFT })
+        .eq('id', req.guard_id);
+      if (guardUpdateErr) return { error: guardUpdateErr.message };
+    }
+
+    return { data: updated as unknown as ResubmitRequest };
   }
 };

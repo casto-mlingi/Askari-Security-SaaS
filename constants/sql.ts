@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS guards (
     full_name TEXT NOT NULL,
     dob DATE NOT NULL,
     phone TEXT,
+    gender TEXT CHECK (gender IN ('male','female','trans')),
     profile_score INTEGER DEFAULT 0,
     performance_score INTEGER DEFAULT 100,
     application_status TEXT NOT NULL DEFAULT 'draft' CHECK (application_status IN ('draft', 'pending', 'pool_applicant', 'interview_locked', 'procurement_pending', 'interviewing', 'hired', 'active', 'rejected', 'blacklisted', 'disqualified', 'leave_without_permit', 'on_leave')),
@@ -177,6 +178,10 @@ CREATE TABLE IF NOT EXISTS guards (
     residence_lng DOUBLE PRECISION,
     is_armed BOOLEAN DEFAULT FALSE,
     weapon_qualification TEXT, -- Add missing field for weapon qualification status
+    nssf_number TEXT,
+    bank_account_number TEXT,
+    experience_years INTEGER,
+    previous_experience BOOLEAN DEFAULT FALSE,
     
     -- Next of Kin (migrated from dossier_data)
     next_of_kin_name TEXT,
@@ -188,6 +193,9 @@ CREATE TABLE IF NOT EXISTS guards (
     birth_cert_url TEXT,
     application_letter_url TEXT,
     residence_letter_url TEXT,
+    cv_url TEXT,
+    passport_photo_url TEXT,
+    previous_employer_letter_url TEXT,
 
     -- Remaining JSONB data for flexibility / AI analysis
     dossier_data JSONB,
@@ -292,4 +300,285 @@ CREATE TRIGGER set_timestamp_leave_requests
 BEFORE UPDATE ON leave_requests
 FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Migrations (safe to run multiple times)
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS passport_photo_url TEXT;
+ALTER TABLE incident_reports ADD COLUMN IF NOT EXISTS evidence_urls JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE incident_reports ADD COLUMN IF NOT EXISTS site_name TEXT;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS gender TEXT;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 
+    FROM pg_constraint 
+    WHERE conname = 'guards_gender_check'
+  ) THEN
+    ALTER TABLE guards
+      ADD CONSTRAINT guards_gender_check
+      CHECK (gender IN ('male','female','trans'));
+  END IF;
+END$$;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS cv_url TEXT;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS previous_employer_letter_url TEXT;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS nssf_number TEXT;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS bank_account_number TEXT;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS experience_years INTEGER;
+ALTER TABLE guards ADD COLUMN IF NOT EXISTS previous_experience BOOLEAN DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS inventory_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    cost_per_unit DOUBLE PRECISION NOT NULL DEFAULT 0,
+    stock_quantity INTEGER NOT NULL DEFAULT 0,
+    condition TEXT CHECK (condition IN ('new','good','better','bad','worse')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS inventory_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    action TEXT CHECK (action IN ('restock','issue','return')),
+    guard_id UUID,
+    item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    stock_condition TEXT CHECK (stock_condition IN ('new','good','better','bad','worse')),
+    return_condition TEXT CHECK (return_condition IN ('good','damaged','lost')),
+    amount_owed DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS inventory_custody (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
+    item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    issued_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS condition TEXT CHECK (condition IN ('new','good','better','bad','worse'));
+ALTER TABLE inventory_logs ADD COLUMN IF NOT EXISTS stock_condition TEXT CHECK (stock_condition IN ('new','good','better','bad','worse'));
+
+ALTER TABLE inventory_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_custody ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY inventory_items_select ON inventory_items
+FOR SELECT
+USING (true);
+
+CREATE POLICY inventory_items_insert ON inventory_items
+FOR INSERT
+WITH CHECK (true);
+
+CREATE POLICY inventory_items_update ON inventory_items
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY inventory_logs_select ON inventory_logs
+FOR SELECT
+USING (true);
+
+CREATE POLICY inventory_logs_insert ON inventory_logs
+FOR INSERT
+WITH CHECK (true);
+
+CREATE POLICY inventory_custody_select ON inventory_custody
+FOR SELECT
+USING (true);
+
+CREATE POLICY inventory_custody_insert ON inventory_custody
+FOR INSERT
+WITH CHECK (true);
+
+CREATE POLICY inventory_custody_delete ON inventory_custody
+FOR DELETE
+USING (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 
+    FROM pg_constraint 
+    WHERE conname = 'incident_reports_evidence_required'
+  ) THEN
+    ALTER TABLE incident_reports
+      ADD CONSTRAINT incident_reports_evidence_required
+      CHECK (jsonb_array_length(evidence_urls) >= 1);
+  END IF;
+END$$;
+-- Reported_by should be TEXT to allow human-readable names
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'incident_reports' AND column_name = 'reported_by' AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE incident_reports DROP CONSTRAINT IF EXISTS incident_reports_reported_by_fkey;
+    ALTER TABLE incident_reports ALTER COLUMN reported_by TYPE TEXT USING reported_by::text;
+  END IF;
+END$$;
+CREATE OR REPLACE FUNCTION sync_legacy_evidence_url()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.evidence_urls IS NOT NULL AND jsonb_array_length(NEW.evidence_urls) > 0 THEN
+    NEW.evidence_url := (NEW.evidence_urls ->> 0);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_sync_legacy_evidence ON incident_reports;
+CREATE TRIGGER trg_sync_legacy_evidence
+BEFORE INSERT OR UPDATE ON incident_reports
+FOR EACH ROW
+EXECUTE PROCEDURE sync_legacy_evidence_url();
+
+CREATE TABLE IF NOT EXISTS resubmit_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+DROP TRIGGER IF EXISTS set_timestamp_resubmit_requests ON resubmit_requests;
+CREATE TRIGGER set_timestamp_resubmit_requests
+BEFORE UPDATE ON resubmit_requests
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
+
+CREATE OR REPLACE VIEW site_guards_view AS
+SELECT
+  s.id AS site_id,
+  s.name AS site_name,
+  s.company_id,
+  s.supervisor_id,
+  g.id AS guard_id,
+  g.full_name,
+  g.application_status,
+  g.performance_score,
+  g.profile_score
+FROM sites s
+LEFT JOIN guards g ON g.current_site_id = s.id;
+ 
+ALTER TABLE guards ENABLE ROW LEVEL SECURITY;
+CREATE POLICY supervisor_select_guards
+ON guards
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM profiles p
+    JOIN sites s ON s.supervisor_id = p.id
+    WHERE p.id = auth.uid()
+      AND s.id = guards.current_site_id
+  )
+);
+CREATE POLICY staff_select_guards
+ON guards
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM profiles p
+    WHERE p.id = auth.uid()
+      AND p.role IN ('hr_officer','procurement','supervisor')
+      AND p.company_id = guards.company_id
+  )
+);
+CREATE POLICY authenticated_select_guards
+ON guards
+FOR SELECT
+TO authenticated
+USING (true);
+CREATE POLICY anon_select_guards
+ON guards
+FOR SELECT
+TO anon
+USING (true);
+CREATE POLICY company_admin_select_guards
+ON guards
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM profiles p
+    WHERE p.id = auth.uid()
+      AND p.role = 'company_admin'
+      AND p.company_id = guards.company_id
+  )
+);
+CREATE POLICY super_admin_select_guards
+ON guards
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM profiles p
+    WHERE p.id = auth.uid()
+      AND p.role = 'super_admin'
+  )
+);
+CREATE OR REPLACE VIEW supervisor_guards_view AS
+SELECT 
+  g.*,
+  s.name AS site_name
+FROM guards g
+JOIN sites s ON s.id = g.current_site_id
+JOIN profiles p ON p.id = s.supervisor_id
+WHERE p.id = auth.uid();
+ALTER TABLE incident_reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY supervisor_select_incidents
+ON incident_reports
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM guards g
+    JOIN sites s ON s.id = g.current_site_id
+    WHERE g.id = incident_reports.guard_id
+      AND s.supervisor_id = auth.uid()
+  )
+);
+CREATE POLICY staff_select_incidents
+ON incident_reports
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM profiles p
+    JOIN guards g ON g.company_id = p.company_id
+    WHERE p.id = auth.uid()
+      AND p.role IN ('hr_officer','procurement')
+      AND g.id = incident_reports.guard_id
+  )
+);
+CREATE POLICY company_admin_select_incidents
+ON incident_reports
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM profiles p
+    WHERE p.id = auth.uid()
+      AND p.role = 'company_admin'
+      AND p.company_id = (SELECT company_id FROM guards g WHERE g.id = incident_reports.guard_id)
+  )
+);
+CREATE POLICY super_admin_select_incidents
+ON incident_reports
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'super_admin'
+  )
+);
+-- Allow pool applicant inserts without company binding
+CREATE POLICY anon_insert_pool_applicants
+ON guards
+FOR INSERT
+TO anon
+WITH CHECK (application_status IN ('draft','pending','pool_applicant') AND company_id IS NULL);
+CREATE POLICY authenticated_insert_pool_applicants
+ON guards
+FOR INSERT
+TO authenticated
+WITH CHECK (application_status IN ('draft','pending','pool_applicant') AND company_id IS NULL);
 `;

@@ -16,6 +16,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
     email: '',
     password: '',
     confirm_password: '',
+    dob: '',
   });
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
@@ -56,6 +57,8 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
     return Object.keys(newErrors).length === 0;
   };
 
+  useEffect(() => {}, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -63,29 +66,14 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
       setIsSubmitting(true);
 
       try {
-        // Create a basic guard profile for account creation
-        // This will be updated with full details during the intake process
-        const newGuard: Guard = {
+        const newGuard: Partial<Guard> = {
           full_name: formData.full_name,
           nida_number: formData.nida_number,
           phone: formData.phone,
-          // Note: email is not stored in guards table - it's in profiles for login
-          dob: '', // Will be filled in intake form (required field, empty for now)
-          // Basic fields - full application will be completed in intake form
-          application_letter_url: '',
-          nida_front_url: '',
-          birth_cert_url: '',
-          guarantors: [],
-          next_of_kin_name: '',
-          next_of_kin_phone: '',
-          next_of_kin_relationship: '',
-          residence_lat: undefined,
-          residence_lng: undefined,
-          residence_letter_url: '',
-          education_history: [],
+          dob: formData.dob || '2000-01-01',
           is_armed: false,
-          application_status: ApplicationStatus.DRAFT, // Will be updated during intake
-          profile_score: 0, // Will be calculated during intake
+          application_status: ApplicationStatus.DRAFT,
+          profile_score: 0,
           performance_score: 100,
           dossier_data: {},
           consecutive_absences: 0,
@@ -97,7 +85,6 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           throw new Error(error || 'Failed to create guard record');
         }
 
-        // Create a user profile for login (this would normally be in profiles table)
         const newUser = {
           id: `u-${Date.now()}`,
           email: formData.email,
@@ -105,9 +92,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           role: UserRole.GUARD,
           is_active: true,
           created_at: new Date().toISOString(),
-          // Store password (in real app this would be hashed)
           password: formData.password,
-          // Link to guard profile
           guard_id: savedGuard.id,
         };
 
@@ -120,7 +105,6 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
 
         onComplete(savedGuard);
 
-        // Show success notification
         (window as any).showNotification?.('success', '🎉 Account created successfully! Please log in to complete your application.');
       } catch (error) {
         console.error('Error creating account:', error);
@@ -205,6 +189,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           </div>
 
           <div className="bg-surface rounded-2xl border border-border shadow-sm p-6 lg:p-8">
+            <div className="mb-6"></div>
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Personal info - 2 cols on desktop */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -230,6 +215,16 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
                   />
                   {errors.nida_number && <p className="text-xs text-error mt-1">{errors.nida_number}</p>}
                 </div>
+              </div>
+              <div>
+                <label className={labelClass}>Date of Birth</label>
+                <input
+                  type="date"
+                  value={formData.dob}
+                  onChange={(e) => handleInputChange('dob', e.target.value)}
+                  className={inputClass(!!errors.dob)}
+                />
+                {errors.dob && <p className="text-xs text-error mt-1">{errors.dob}</p>}
               </div>
               <div>
                 <label className={labelClass}>Phone Number</label>
@@ -284,6 +279,8 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
                   </div>
                 </div>
               </div>
+
+              
 
               <button
                 type="submit"

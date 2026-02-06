@@ -11,6 +11,7 @@ const NoticeBoard: React.FC<NoticeBoardProps> = ({ guard, announcements }) => {
   const hasHRNote = guard.dossier_data?.interviewer_notes;
   const isLocked = guard.application_status === ApplicationStatus.INTERVIEW_LOCKED;
   const isPending = guard.application_status === ApplicationStatus.PROCUREMENT_PENDING;
+  const interviewSchedule = (guard.dossier_data as any)?.interview_schedule as { date?: string; location?: string } | undefined;
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
@@ -54,6 +55,16 @@ const NoticeBoard: React.FC<NoticeBoardProps> = ({ guard, announcements }) => {
                             </p>
                         )}
                     </div>
+                    
+                    {interviewSchedule?.date && (
+                      <div className="bg-white/10 border border-white/5 rounded-2xl p-6 mb-4">
+                        <p className="text-xs font-black uppercase tracking-widest text-white/70">Interview Details</p>
+                        <div className="mt-2 text-sm">
+                          <p><span className="font-bold">Date:</span> {new Date(interviewSchedule.date).toLocaleString()}</p>
+                          <p><span className="font-bold">Location:</span> {interviewSchedule.location || 'Company Office'}</p>
+                        </div>
+                      </div>
+                    )}
                     
                     <p className="text-[9px] font-mono text-white/30 text-right">
                         REF: {guard.id.toUpperCase()}

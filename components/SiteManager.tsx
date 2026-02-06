@@ -53,6 +53,11 @@ interface SiteManagerProps {
 
 const SiteManager: React.FC<SiteManagerProps> = ({ sites, profiles, guards, onAddSite, onShiftPersonnel }) => {
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newLat, setNewLat] = useState<string>('');
+  const [newLng, setNewLng] = useState<string>('');
+  const [newSupervisorId, setNewSupervisorId] = useState<string | undefined>(undefined);
   const selectedSite = sites.find(s => s.id === selectedSiteId);
   const siteSupervisor = profiles.find(p => p.id === selectedSite?.supervisor_id);
   const activeGuards = useMemo(() => guards.filter(g => g.application_status === 'active'), [guards]);
@@ -67,7 +72,7 @@ const SiteManager: React.FC<SiteManagerProps> = ({ sites, profiles, guards, onAd
           <h2 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">Site Management</h2>
           <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mt-4 ml-1">Assign guards and supervisors to sites</p>
         </div>
-        <button onClick={() => alert("Creating new site...")} className="px-12 py-5 bg-primary text-white font-black text-xs uppercase tracking-[0.2em] rounded-[1.5rem] shadow-2xl shadow-blue-900/20 active:scale-95 transition-all hover:bg-blue-700 self-start md:self-center">+ Add New Site</button>
+        <button onClick={() => setIsCreating(true)} className="px-12 py-5 bg-primary text-white font-black text-xs uppercase tracking-[0.2em] rounded-[1.5rem] shadow-2xl shadow-blue-900/20 active:scale-95 transition-all hover:bg-blue-700 self-start md:self-center">+ Add New Site</button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -139,13 +144,80 @@ const SiteManager: React.FC<SiteManagerProps> = ({ sites, profiles, guards, onAd
                       <div key={guard.id} className="p-6 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm animate-in fade-in slide-in-from-right-5">
                          <div className="flex items-center gap-4">
                            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400">{guard.full_name[0]}</div>
-                           <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{guard.full_name}</p>
+                           <div>
+                             <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{guard.full_name}</p>
+                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Performance {Math.round(guard.performance_score || 100)}%</p>
+                           </div>
                          </div>
                          <button onClick={() => onShiftPersonnel(guard.id, '', 'guard')} className="w-10 h-10 flex items-center justify-center text-slate-300 hover:text-red-500">✕</button>
                       </div>
                     ))}
                   </div>
                </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {isCreating && (
+        <div className="fixed inset-0 z-[1000] bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-0 md:p-10">
+          <div className="bg-white w-full max-w-3xl md:rounded-[3rem] shadow-2xl border border-white/20 overflow-hidden">
+            <div className="p-8 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-2">Create Site</p>
+                <h3 className="text-2xl font-black uppercase tracking-tight">Add New Site</h3>
+              </div>
+              <button onClick={() => setIsCreating(false)} className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center hover:bg-red-600 transition-all border border-white/10 shadow-lg">✕</button>
+            </div>
+            <div className="p-8 md:p-12 space-y-8">
+              <div className="space-y-3">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Site Name</p>
+                <input value={newSiteName} onChange={e => setNewSiteName(e.target.value)} className="w-full h-14 rounded-2xl border border-slate-200 px-5 font-black text-sm uppercase tracking-widest focus:border-primary outline-none" placeholder="Enter site name" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Latitude</p>
+                  <input value={newLat} onChange={e => setNewLat(e.target.value)} className="w-full h-14 rounded-2xl border border-slate-200 px-5 font-black text-sm uppercase tracking-widest focus:border-primary outline-none" placeholder="e.g. -6.7924" />
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Longitude</p>
+                  <input value={newLng} onChange={e => setNewLng(e.target.value)} className="w-full h-14 rounded-2xl border border-slate-200 px-5 font-black text-sm uppercase tracking-widest focus:border-primary outline-none" placeholder="e.g. 39.2083" />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Assign Supervisor</p>
+                <SearchableSelect
+                  options={unassignedSupervisors.map(p => ({ id: p.id, label: p.full_name, sublabel: 'Available for assignment' }))}
+                  onSelect={id => setNewSupervisorId(id)}
+                  placeholder="Pick supervisor (optional)"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-4 pt-4">
+                <button onClick={() => setIsCreating(false)} className="px-8 py-4 bg-slate-100 text-slate-700 font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-slate-200">Cancel</button>
+                <button
+                  onClick={() => {
+                    const latNum = parseFloat(newLat);
+                    const lngNum = parseFloat(newLng);
+                    if (!newSiteName || Number.isNaN(latNum) || Number.isNaN(lngNum)) return;
+                    onAddSite({
+                      name: newSiteName,
+                      lat: latNum,
+                      lng: lngNum,
+                      geofence_radius_meters: 100,
+                      supervisor_id: newSupervisorId,
+                      incident_count: 0,
+                      created_at: new Date().toISOString()
+                    } as Omit<Site, 'id' | 'company_id'>);
+                    setIsCreating(false);
+                    setNewSiteName('');
+                    setNewLat('');
+                    setNewLng('');
+                    setNewSupervisorId(undefined);
+                  }}
+                  className="px-12 py-4 bg-primary text-white font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-blue-700"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
         </div>
