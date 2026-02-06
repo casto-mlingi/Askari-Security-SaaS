@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { UserRole, Guard, Profile, ApplicationStatus } from '../types';
 import PublicApplication from './PublicApplication';
+import { MOCK_PROFILES, MOCK_GUARDS } from '../constants/mock';
 
 interface AuthProps {
   onLogin: (user: Profile | Guard) => void;
@@ -11,22 +12,11 @@ interface AuthProps {
   onShowGuardApplication?: () => void;
 }
 
-const DEMO_BUTTONS = [
-  { email: 'admin@amini.com', label: 'Super Admin' },
-  { email: 'manager@ultimate.com', label: 'Company Admin' },
-  { email: 'hr@amini.com', label: 'HR Officer' },
-  { email: 'supply@amini.com', label: 'Procurement' },
-  { email: 'field@amini.com', label: 'Supervisor' },
-  { email: 'guard@amini.com', label: 'Guard' },
-];
-
 const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, onShowGuardApplication }) => {
   const [view, setView] = useState<'login' | 'apply'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [showDemo, setShowDemo] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +34,13 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
       onLogin(staffUser);
       return;
     }
+    const mockStaffUser = MOCK_PROFILES.find(p => 
+      p.email.trim().toLowerCase() === normalizedEmail && p.password === password
+    );
+    if (mockStaffUser) {
+      onLogin(mockStaffUser);
+      return;
+    }
 
     // Check registered guards (by username or email)
     const registeredGuard = guards.find(g => {
@@ -54,6 +51,14 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
     });
     if (registeredGuard) {
       onLogin(registeredGuard);
+      return;
+    }
+    const mockGuard = MOCK_GUARDS.find(g => {
+      const guardUsername = (g.username || '').trim().toLowerCase();
+      return guardUsername === normalizedEmail && g.password === password;
+    });
+    if (mockGuard) {
+      onLogin(mockGuard);
       return;
     }
 
@@ -99,60 +104,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
     setError('Invalid credentials. Check your email or password.');
   };
   
-  const handleDemoClick = (email: string) => {
-    const user = profiles.find(p => p.email === email) || guards.find(g => g.username === email);
-    if (user) {
-        onLogin(user);
-    } else {
-        // Fallback for the default guard which is not in the profiles list
-        if (email === 'guard@amini.com') {
-            const mockGuard: Guard = {
-                id: 'g-demo-001',
-                full_name: 'John Doe (Demo)',
-                nida_number: '19900101-00000-00001-01',
-                dob: '1990-01-01',
-                phone: '+255712345678',
-                username: 'guard@amini.com',
-                password: 'pass123',
-                application_status: ApplicationStatus.ACTIVE,
-                profile_score: 95,
-                performance_score: 98,
-                dossier_data: {}, // Initialized as empty object
-                education_history: [
-                    { id: 'edu-mock-1', guard_id: 'g-demo-001', level: 'secondary', year: '2008', certificate_url: 'https://via.placeholder.com/150.png?text=Mock+Edu+Cert' }
-                ],
-                guarantors: [
-                    { id: 'gua-mock-1', guard_id: 'g-demo-001', name: 'Jane Doe', phone: '0712345678', relationship: 'Sister', letter_url: 'https://via.placeholder.com/150.png?text=Mock+Gua+Letter', residence_letter_url: 'https://via.placeholder.com/150.png?text=Mock+Gua+Res+Letter' }
-                ],
-                next_of_kin_name: 'Peter Doe',
-                next_of_kin_phone: '0799887766',
-                next_of_kin_relationship: 'Spouse',
-                nida_front_url: 'https://via.placeholder.com/150.png?text=Mock+NIDA',
-                birth_cert_url: 'https://via.placeholder.com/150.png?text=Mock+Birth+Cert',
-                application_letter_url: 'https://via.placeholder.com/150.png?text=Mock+App+Letter',
-                residence_letter_url: 'https://via.placeholder.com/150.png?text=Mock+Res+Letter',
-                consecutive_absences: 0,
-                is_armed: true,
-                created_at: new Date().toISOString()
-            };
-            onLogin(mockGuard);
-        } else {
-             alert(`Demo user with email ${email} not found in current data.`);
-        }
-    }
-  };
+ 
 
-  const handleForgot = () => {
-    if (!email) {
-      alert("Please enter your email address to request a password reset.");
-      return;
-    }
-    setIsResetting(true);
-    setTimeout(() => {
-      alert(`A password reset link has been sent to ${email}. Please check your inbox.`);
-      setIsResetting(false);
-    }, 1500);
-  };
+ 
 
   if (view === 'apply') {
     return <PublicApplication onBack={() => setView('login')} onSubmit={onPublicSubmit} />;
@@ -221,14 +175,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className={labelClass}>Password</label>
-                  <button
-                    type="button"
-                    onClick={handleForgot}
-                    disabled={isResetting}
-                    className="text-xs font-bold text-primary hover:underline uppercase tracking-wider"
-                  >
-                    {isResetting ? 'Processing...' : 'Forgot?'}
-                  </button>
                 </div>
                 <input
                   type="password"
@@ -272,28 +218,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
             </div>
 
             <div className="mt-8 pt-6 border-t border-border-light">
-              <button
-                onClick={() => setShowDemo(!showDemo)}
-                className="w-full flex items-center justify-between text-text-muted hover:text-text-secondary font-bold text-xs uppercase tracking-wider"
-              >
-                Demo Logins (Dev)
-                <svg className={`w-4 h-4 transition-transform ${showDemo ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="3"/></svg>
-              </button>
-
-              {showDemo && (
-                <div className="mt-4 grid grid-cols-2 gap-2 animate-fade-in">
-                  {DEMO_BUTTONS.map((user) => (
-                    <button
-                      key={user.email}
-                      onClick={() => handleDemoClick(user.email)}
-                      className="p-3 text-left bg-surface-secondary hover:bg-surface hover:border-primary/30 rounded-xl border-2 border-border-light transition-all group"
-                    >
-                      <p className="text-xs font-bold text-text-muted uppercase tracking-wider group-hover:text-primary">{user.label}</p>
-                      <p className="text-xs text-text-secondary font-medium truncate">{user.email}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
+              
             </div>
           </div>
         </div>
