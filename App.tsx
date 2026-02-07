@@ -184,12 +184,54 @@ useEffect(() => {
   const [attendanceLogs, setAttendanceLogs] = useState(MOCK_ATTENDANCE);
   const [announcements, setAnnouncements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
   const [resubmitRequests, setResubmitRequests] = useState<any[]>([]);
+  const [dbCompanyId, setDbCompanyId] = useState<string | undefined>(undefined);
 
   // --- Derived State Helpers ---
   const isGuard = user && !('role' in user);
   const userRole = isGuard ? UserRole.GUARD : (user as Profile)?.role;
   const userCompanyId = isGuard ? (user as Guard).company_id : (user as Profile)?.company_id;
   const currentUserName = user?.full_name || 'N/A';
+
+  useEffect(() => {
+    const resolveCompanyUuid = async () => {
+      if (!userCompanyId || userRole === UserRole.SUPER_ADMIN) {
+        setDbCompanyId(undefined);
+        return;
+      }
+      const mockCompany = MOCK_COMPANIES.find(c => c.id === userCompanyId);
+      const desiredSlug = mockCompany?.slug;
+      const desiredName = mockCompany?.name;
+      const desiredEmail = mockCompany?.contact_email || 'ops@company.local';
+      if (!desiredSlug || !desiredName) {
+        setDbCompanyId(undefined);
+        return;
+      }
+      const match = companies.find(c => c.slug === desiredSlug || c.name === desiredName);
+      if (match) {
+        setDbCompanyId(match.id);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from('companies')
+          .insert({
+            name: desiredName,
+            slug: desiredSlug,
+            contact_email: desiredEmail,
+            is_active: true
+          })
+          .select('*')
+          .single();
+        if (!error && data?.id) {
+          setDbCompanyId(data.id);
+          setCompanies(prev => [data as Company, ...prev]);
+        }
+      } catch {
+        setDbCompanyId(undefined);
+      }
+    };
+    resolveCompanyUuid();
+  }, [userCompanyId, userRole, companies]);
 
   // Filter data based on Multi-Tenancy
   const filteredGuards = useMemo(() => {
@@ -273,7 +315,10 @@ useEffect(() => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {}
     setUser(null);
     setActiveTab('overview');
   };
@@ -314,6 +359,8 @@ useEffect(() => {
   };
 
   const handleLockGuard = async (guardId: string, companyId: string, notes: string, schedule?: { date: string; location: string }) => {
+    console.log('🚀 Action Started: handleLockGuard');
+    console.log('📦 Payload:', { guardId, companyId, notes, schedule });
     try {
       const { data, error } = await supabase
         .from('guards')
@@ -344,6 +391,7 @@ useEffect(() => {
         (window as any).showNotification?.('success', 'Applicant locked for interview.');
       }
     } catch (e) {
+      console.error('🔥 Supabase Error:', e);
       console.error('Error locking applicant:', e);
       setGuards(prev => prev.map(g => {
         if (g.id === guardId) {
@@ -361,6 +409,8 @@ useEffect(() => {
   };
 
   const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, reason?: string) => {
+    console.log('🚀 Action Started: handleFinalizeVetting');
+    console.log('📦 Payload:', { guardId, result, terms, reason });
     try {
       if (result === 'pass' && terms) {
         const updatePayload = {
@@ -427,6 +477,7 @@ useEffect(() => {
         }
       }
     } catch (e) {
+      console.error('🔥 Supabase Error:', e);
       console.error('Error finalizing vetting:', e);
     }
   };
@@ -436,6 +487,8 @@ useEffect(() => {
   };
 
   const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
+      console.log('🚀 Action Started: handleReportIncident');
+      console.log('📦 Payload:', { guardId, report });
       const newIncident: IncidentReport = {
           id: `inc-${Date.now()}`,
           guard_id: guardId,
@@ -459,7 +512,10 @@ useEffect(() => {
           site_name: newIncident.site_name,
           created_at: newIncident.created_at
         });
-        if (error) console.error('Failed to persist incident:', error);
+        if (error) {
+          console.error('🔥 Supabase Error:', error);
+          console.error('Failed to persist incident:', error);
+        }
       } catch (e) {
         console.error('Error persisting incident:', e);
       }
@@ -729,13 +785,14 @@ useEffect(() => {
 
             {activeTab === 'procurement' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
                 <ProcurementDashboard 
-                    guards={filteredGuards} 
-                    equipment={equipment} 
+                    guards={filteredGuards}
+                    companyId={dbCompanyId}
+                    equipment={equipment.filter(e => !e.company_id || e.company_id === dbCompanyId)} 
                     onIssueKit={handleIssueKit} 
                 />
             )}
             {activeTab === 'stock-in' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
-                <StockInPage />
+                <StockInPage companyId={dbCompanyId} />
             )}
 
             {activeTab === 'operations' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.COMPANY_ADMIN) && (

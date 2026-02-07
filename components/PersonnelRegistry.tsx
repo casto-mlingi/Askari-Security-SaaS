@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Profile, Company, UserRole, Guard, ApplicationStatus, Site } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 interface PersonnelRegistryProps {
   profiles: Profile[];
@@ -98,7 +99,7 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newEmail || !newPassword) {
-        alert("All fields including password are required.");
+        console.error('❌ Validation Failed:', 'Missing required fields', { newName, newEmail, newPassword });
         return;
     }
     
@@ -108,26 +109,33 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
     const targetCompanyId = isSuperAdmin ? selectedCompanyForStaff : currentCompanyId;
 
     if (!targetCompanyId && !isSuperAdmin) {
-        // Should not happen for Tenant Admin due to schema constraints, but good for safety
-        alert("System Error: Tenant Context ID missing.");
+        console.error('❌ Function Aborted: Missing User/Client', { targetCompanyId, isSuperAdmin });
         return;
     }
     
     if (isSuperAdmin && !targetCompanyId) {
-        alert("Please select a company to assign this staff member to.");
+        console.error('❌ Function Aborted: Missing User/Client', { targetCompanyId, isSuperAdmin });
         return;
     }
 
+    console.log('Checking Supabase Client:', supabase);
+    if (!supabase) {
+        console.error('❌ Function Aborted: Missing User/Client');
+        return;
+    }
     setIsSyncing(true);
-    await new Promise(r => setTimeout(r, 1000));
-
-    onAddStaff({
-        full_name: newName,
-        email: newEmail,
-        role: newRole,
-        company_id: targetCompanyId || undefined,
-        password: newPassword
-    });
+    try {
+        await new Promise(r => setTimeout(r, 1000));
+        onAddStaff({
+            full_name: newName,
+            email: newEmail,
+            role: newRole,
+            company_id: targetCompanyId || undefined,
+            password: newPassword
+        });
+    } catch (err) {
+        console.error('🔥 Crash during Supabase Call:', err);
+    }
 
     setIsSyncing(false);
     setIsAddModalOpen(false);

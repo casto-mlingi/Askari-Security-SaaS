@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { Company, UserRole, Profile, Guard, ApplicationStatus, IncidentReport } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 interface CompanyRegistryProps {
   companies: Company[];
   profiles: Profile[];
   guards: Guard[];
   incidents: IncidentReport[];
-  onAddCompany: (company: Omit<Company, 'id' | 'created_at' | 'is_active'>) => void;
+  // We keep these to update the LOCAL UI after a successful save
+  onAddCompany: (company: Company) => void; 
   onUpdateCompany: (id: string, updates: Partial<Company>) => void;
-  onAddStaff: (staff: Omit<Profile, 'id' | 'created_at' | 'is_active'>) => void;
+  onAddStaff: (staff: Profile) => void;
   onToggleActive: (id: string) => void;
 }
 
@@ -61,44 +63,110 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
     };
   }, [selectedCompanyId, profiles, guards, incidents]);
 
+  // ✅ FIX 1: Create Company Directly in Supabase
   const handleSubmitCompany = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !slug || !email) return;
+    console.log('🚀 Action Started: Create Company');
+
+    if (!name || !slug || !email) {
+      alert('Missing fields!');
+      return;
+    }
+
     setIsSyncing(true);
-    await new Promise(r => setTimeout(r, 1000));
-    onAddCompany({ name, slug, contact_email: email });
-    setIsSyncing(false);
-    setShowAdd(false);
-    setName(''); setSlug(''); setEmail('');
+    try {
+      // 1. Direct Insert to Database
+      const { data, error } = await supabase
+        .from('companies')
+        .insert([{
+          name: name,
+          slug: slug,
+          contact_email: email,
+          is_active: true
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      console.log('✅ Company Created:', data);
+      
+      // 2. Update UI
+      onAddCompany(data as Company);
+      setShowAdd(false);
+      setName(''); setSlug(''); setEmail('');
+      
+    } catch (err: any) {
+      console.error('🔥 Supabase Error:', err);
+      alert('Failed to create company: ' + (err.message || err.details));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // ✅ FIX 2: Create Admin User Directly (Triggering Automation)
+  const handleProvisionAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('🚀 Action Started: Provision Admin');
+
+    if (!showAdminModal || !adminName || !adminEmail || !adminPassword) {
+      alert('Missing admin details!');
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      // 1. Create User in Auth (Pass Metadata for the Trigger!)
+      const { data, error } = await supabase.auth.signUp({
+        email: adminEmail,
+        password: adminPassword,
+        options: {
+          data: {
+            full_name: adminName,
+            role: 'company_admin',
+            company_id: showAdminModal.id // <--- This triggers the Auto-Link!
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      console.log('✅ Admin Provisioned:', data);
+      alert(`Admin created! They can log in as ${adminEmail}`);
+
+      // 2. Note: We don't manually insert into profiles because the TRIGGER does it.
+      // We just close the modal.
+      setShowAdminModal(null);
+      setAdminName(''); setAdminEmail(''); setAdminPassword('');
+
+    } catch (err: any) {
+      console.error('🔥 Supabase Error:', err);
+      alert('Failed to provision admin: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleUpdateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showSettingsModal || !name || !email) return;
-    setIsSyncing(true);
-    await new Promise(r => setTimeout(r, 800));
-    onUpdateCompany(showSettingsModal.id, { name, contact_email: email });
-    setIsSyncing(false);
-    setShowSettingsModal(null);
-  };
+    if (!showSettingsModal) return;
 
-  const handleProvisionAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!showAdminModal || !adminName || !adminEmail || !adminPassword) return;
     setIsSyncing(true);
-    await new Promise(r => setTimeout(r, 1200));
-    
-    onAddStaff({
-      full_name: adminName,
-      email: adminEmail,
-      role: UserRole.COMPANY_ADMIN,
-      company_id: showAdminModal.id,
-      password: adminPassword, // Pass password for mock login
-    });
-    
-    setIsSyncing(false);
-    setShowAdminModal(null);
-    setAdminName(''); setAdminEmail(''); setAdminPassword('');
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ name, contact_email: email })
+        .eq('id', showSettingsModal.id);
+
+      if (error) throw error;
+
+      onUpdateCompany(showSettingsModal.id, { name, contact_email: email });
+      setShowSettingsModal(null);
+    } catch (err: any) {
+      alert('Update failed: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const openSettings = (e: React.MouseEvent, company: Company) => {

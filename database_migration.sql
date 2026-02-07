@@ -315,3 +315,143 @@ END $$;
 -- Grant necessary permissions (adjust as needed for your RLS policies)
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+
+-- Company-scoped inventory hardening (safe to run multiple times)
+-- Add company_id columns to inventory tables
+ALTER TABLE IF EXISTS inventory_items ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS inventory_logs ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS inventory_custody ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+
+-- Enable RLS on inventory tables
+ALTER TABLE IF EXISTS inventory_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS inventory_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS inventory_custody ENABLE ROW LEVEL SECURITY;
+
+-- Replace permissive policies with company-scoped policies (super_admin can see all)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_items' AND polname = 'inventory_items_select') THEN
+    DROP POLICY inventory_items_select ON inventory_items;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_items' AND polname = 'inventory_items_insert') THEN
+    DROP POLICY inventory_items_insert ON inventory_items;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_items' AND polname = 'inventory_items_update') THEN
+    DROP POLICY inventory_items_update ON inventory_items;
+  END IF;
+END$$;
+
+DROP POLICY IF EXISTS inventory_items_select_company ON inventory_items;
+CREATE POLICY inventory_items_select_company ON inventory_items
+FOR SELECT
+TO authenticated
+USING (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_items.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+DROP POLICY IF EXISTS inventory_items_insert_company ON inventory_items;
+CREATE POLICY inventory_items_insert_company ON inventory_items
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_items.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+DROP POLICY IF EXISTS inventory_items_update_company ON inventory_items;
+CREATE POLICY inventory_items_update_company ON inventory_items
+FOR UPDATE
+TO authenticated
+USING (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_items.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+)
+WITH CHECK (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_items.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_logs' AND polname = 'inventory_logs_select') THEN
+    DROP POLICY inventory_logs_select ON inventory_logs;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_logs' AND polname = 'inventory_logs_insert') THEN
+    DROP POLICY inventory_logs_insert ON inventory_logs;
+  END IF;
+END$$;
+DROP POLICY IF EXISTS inventory_logs_select_company ON inventory_logs;
+CREATE POLICY inventory_logs_select_company ON inventory_logs
+FOR SELECT
+TO authenticated
+USING (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_logs.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+DROP POLICY IF EXISTS inventory_logs_insert_company ON inventory_logs;
+CREATE POLICY inventory_logs_insert_company ON inventory_logs
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_logs.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_custody' AND polname = 'inventory_custody_select') THEN
+    DROP POLICY inventory_custody_select ON inventory_custody;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_custody' AND polname = 'inventory_custody_insert') THEN
+    DROP POLICY inventory_custody_insert ON inventory_custody;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inventory_custody' AND polname = 'inventory_custody_delete') THEN
+    DROP POLICY inventory_custody_delete ON inventory_custody;
+  END IF;
+END$$;
+DROP POLICY IF EXISTS inventory_custody_select_company ON inventory_custody;
+CREATE POLICY inventory_custody_select_company ON inventory_custody
+FOR SELECT
+TO authenticated
+USING (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_custody.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+DROP POLICY IF EXISTS inventory_custody_insert_company ON inventory_custody;
+CREATE POLICY inventory_custody_insert_company ON inventory_custody
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_custody.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+DROP POLICY IF EXISTS inventory_custody_delete_company ON inventory_custody;
+CREATE POLICY inventory_custody_delete_company ON inventory_custody
+FOR DELETE
+TO authenticated
+USING (
+  (
+    SELECT p.role = 'super_admin' OR p.company_id = inventory_custody.company_id
+    FROM profiles p WHERE p.id = auth.uid()
+  )
+);
+
+-- Indexes for company scoping on inventory tables
+CREATE INDEX IF NOT EXISTS idx_inventory_items_company_id ON inventory_items(company_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_logs_company_id ON inventory_logs(company_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_custody_company_id ON inventory_custody(company_id);

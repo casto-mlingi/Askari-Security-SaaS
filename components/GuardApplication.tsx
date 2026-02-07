@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Guard, ApplicationStatus, UserRole } from '../types';
 import { guardService } from '../services/guardService';
+import { READ_ONLY } from '../services/supabaseClient';
 
 interface GuardApplicationProps {
   onComplete: (guard: Guard) => void;
@@ -21,6 +22,33 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const draftKey = 'guard_application_draft_v1';
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          setFormData(prev => ({
+            ...prev,
+            full_name: parsed.full_name || '',
+            nida_number: parsed.nida_number || '',
+            phone: parsed.phone || '',
+            email: parsed.email || '',
+            dob: parsed.dob || '',
+          }));
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      const { password, confirm_password, ...safe } = formData;
+      localStorage.setItem(draftKey, JSON.stringify(safe));
+    } catch {}
+  }, [formData]);
 
   // Handle scroll visibility
   useEffect(() => {
@@ -62,6 +90,10 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (READ_ONLY) {
+      (window as any).showNotification?.('error', 'Production is read-only. Signups are disabled.');
+      return;
+    }
     if (validateForm()) {
       setIsSubmitting(true);
 
@@ -102,6 +134,9 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           guard: savedGuard,
           needs_intake: true, // Flag to show intake form on first login
         }));
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {}
 
         onComplete(savedGuard);
 

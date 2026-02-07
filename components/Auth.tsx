@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { UserRole, Guard, Profile, ApplicationStatus } from '../types';
 import PublicApplication from './PublicApplication';
 import { MOCK_PROFILES, MOCK_GUARDS } from '../constants/mock';
+import { supabase } from '../services/supabaseClient';
 
 interface AuthProps {
   onLogin: (user: Profile | Guard) => void;
@@ -18,13 +19,36 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     // Normalize email (trim and lowercase for comparison)
     // Note: Passwords should NOT be trimmed - compare exactly as entered
     const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      if (authError) {
+        const msg = (authError.message || '').toLowerCase();
+        if (msg.includes('no api key') || msg.includes('bad request')) {
+          setError('Configuration error: Supabase API key missing or invalid. Set VITE_SUPABASE_ANON_KEY and restart.');
+        }
+      }
+      if (!authError && authData?.user) {
+        const userId = authData.user.id;
+        const { data: dbProfileById } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+        if (dbProfileById) {
+          onLogin(dbProfileById as any);
+          return;
+        }
+        const { data: dbProfileByEmail } = await supabase.from('profiles').select('*').eq('email', normalizedEmail).maybeSingle();
+        if (dbProfileByEmail) {
+          onLogin(dbProfileByEmail as any);
+          return;
+        }
+      }
+    } catch {}
 
     // Check staff profiles first
     const staffUser = profiles.find(p => 
