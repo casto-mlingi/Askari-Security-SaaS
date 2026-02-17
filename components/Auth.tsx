@@ -1,9 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { UserRole, Guard, Profile, ApplicationStatus } from '../types';
 import PublicApplication from './PublicApplication';
 import { MOCK_PROFILES, MOCK_GUARDS } from '../constants/mock';
-import { supabase } from '../services/supabaseClient';
+import { api } from '../services/api';
 
 interface AuthProps {
   onLogin: (user: Profile | Guard) => void;
@@ -18,114 +18,56 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const loginAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (loginAbortRef.current) {
+        try { loginAbortRef.current.abort(); } catch {}
+        loginAbortRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (isSubmitting) return;
+    if (loginAbortRef.current) {
+      try { loginAbortRef.current.abort(); } catch {}
+      loginAbortRef.current = null;
+    }
 
     // Normalize email (trim and lowercase for comparison)
     // Note: Passwords should NOT be trimmed - compare exactly as entered
     const normalizedEmail = email.trim().toLowerCase();
+    setIsSubmitting(true);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-      if (authError) {
-        const msg = (authError.message || '').toLowerCase();
-        if (msg.includes('no api key') || msg.includes('bad request')) {
-          setError('Configuration error: Supabase API key missing or invalid. Set VITE_SUPABASE_ANON_KEY and restart.');
-        }
+      const controller = new AbortController();
+      loginAbortRef.current = controller;
+      const result = await api.post<{ token: string, user: any }>('/auth/login', { email: normalizedEmail, password }, { signal: controller.signal });
+      if (result.error || !result.data) {
+        const msg = String(result.error || 'Invalid email or password');
+        setError(msg.toLowerCase().includes('canceled') ? 'Request canceled. Please try again.' : 'Invalid email or password');
+      } else {
+        const { token, user } = result.data;
+        localStorage.setItem('amini_auth_token', token);
+        onLogin(user);
+        setIsSubmitting(false);
+        loginAbortRef.current = null;
+        return;
       }
-      if (!authError && authData?.user) {
-        const userId = authData.user.id;
-        const { data: dbProfileById } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-        if (dbProfileById) {
-          onLogin(dbProfileById as any);
-          return;
-        }
-        const { data: dbProfileByEmail } = await supabase.from('profiles').select('*').eq('email', normalizedEmail).maybeSingle();
-        if (dbProfileByEmail) {
-          onLogin(dbProfileByEmail as any);
-          return;
-        }
-      }
-    } catch {}
-
-    // Check staff profiles first
-    const staffUser = profiles.find(p => 
-      p.email.trim().toLowerCase() === normalizedEmail && p.password === password
-    );
-    if (staffUser) {
-      onLogin(staffUser);
-      return;
-    }
-    const mockStaffUser = MOCK_PROFILES.find(p => 
-      p.email.trim().toLowerCase() === normalizedEmail && p.password === password
-    );
-    if (mockStaffUser) {
-      onLogin(mockStaffUser);
-      return;
+    } catch (err) {
+      const msg = String(err?.message || '');
+      setError(msg.toLowerCase().includes('abort') ? 'Request canceled. Please try again.' : 'Invalid email or password');
+    } finally {
+      setIsSubmitting(false);
+      loginAbortRef.current = null;
     }
 
-    // Check registered guards (by username or email)
-    const registeredGuard = guards.find(g => {
-      const guardEmail = (g.email || '').trim().toLowerCase();
-      const guardUsername = (g.username || '').trim().toLowerCase();
-      return (guardEmail === normalizedEmail || guardUsername === normalizedEmail) && 
-             g.password === password;
-    });
-    if (registeredGuard) {
-      onLogin(registeredGuard);
-      return;
-    }
-    const mockGuard = MOCK_GUARDS.find(g => {
-      const guardUsername = (g.username || '').trim().toLowerCase();
-      return guardUsername === normalizedEmail && g.password === password;
-    });
-    if (mockGuard) {
-      onLogin(mockGuard);
-      return;
-    }
-
-    // Check for pending guard account in localStorage
-    const pendingAccount = localStorage.getItem('pending_guard_account');
-    if (pendingAccount) {
-      try {
-        const accountData = JSON.parse(pendingAccount);
-        const pendingUser = accountData.user;
-        const pendingGuard = accountData.guard;
-
-        if (!pendingUser || !pendingGuard) {
-          console.error('Invalid pending account structure');
-          localStorage.removeItem('pending_guard_account');
-        } else {
-          // Check both user and guard email fields (normalized)
-          const pendingUserEmail = (pendingUser.email || '').trim().toLowerCase();
-          const pendingGuardEmail = (pendingGuard.email || '').trim().toLowerCase();
-          
-          // Check if email matches (either user.email or guard.email)
-          const emailMatches = pendingUserEmail === normalizedEmail || pendingGuardEmail === normalizedEmail;
-          
-          // Check password (try user.password first, then guard.password as fallback)
-          // Ensure passwords exist and match exactly
-          const userPassword = pendingUser.password || '';
-          const guardPassword = pendingGuard.password || '';
-          const passwordMatches = (userPassword && userPassword === password) || 
-                                 (guardPassword && guardPassword === password);
-          
-          if (emailMatches && passwordMatches) {
-            // Login with the pending guard (will be added to guards array in App.tsx)
-            onLogin(pendingGuard);
-            return;
-          }
-        }
-      } catch (e) {
-        console.error('Error parsing pending account:', e);
-        // Clear corrupted localStorage data
-        localStorage.removeItem('pending_guard_account');
-      }
-    }
-
-    setError('Invalid credentials. Check your email or password.');
+    if (!error) setError('Invalid email or password');
   };
   
  
@@ -138,6 +80,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
 
   const labelClass = 'text-xs font-semibold text-text-secondary uppercase tracking-wider block mb-1';
   const inputClass = 'w-full h-11 px-4 bg-surface-secondary border-2 rounded-xl font-medium outline-none transition-all text-sm border-border-light focus:border-primary';
+
+  const handleSignIn = () => {
+    try {
+      const fullNameEl = document.getElementById('login_full_name') as HTMLInputElement | null;
+      const nidaEl = document.getElementById('login_nida') as HTMLInputElement | null;
+      const payload = {
+        full_name: fullNameEl?.value || '',
+        nida_number: nidaEl?.value || ''
+      };
+      if ((payload.full_name && payload.full_name.trim()) || (payload.nida_number && String(payload.nida_number).trim())) {
+        localStorage.setItem('amini_pending_guard', JSON.stringify(payload));
+      }
+    } catch {}
+  };
 
   return (
     <div className="fixed inset-0 flex flex-col lg:flex-row min-h-screen z-[1000] overflow-hidden">
@@ -212,9 +168,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
 
               <button
                 type="submit"
-                className="w-full py-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mt-6 transition-all active:scale-[0.98]"
+                onClick={handleSignIn}
+                disabled={isSubmitting}
+                className="w-full py-3.5 bg-primary hover:bg-primary-dark disabled:opacity-60 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mt-6 transition-all active:scale-[0.98]"
               >
-                Sign In
+                {isSubmitting ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
 
@@ -234,9 +192,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
               <div className="lg:hidden">
                 <button
                   onClick={() => setView('apply')}
-                  className="text-text-muted hover:text-primary text-xs font-medium transition-colors uppercase tracking-wider"
+                  className="w-full py-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-xl transition-all"
                 >
-                  New Guard? <span className="text-primary font-semibold underline">Apply Here</span>
+                  New Guard   Sign Up
                 </button>
               </div>
             </div>

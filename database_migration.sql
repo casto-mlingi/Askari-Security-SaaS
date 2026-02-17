@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS guards (
     phone TEXT,
     profile_score INTEGER DEFAULT 0,
     performance_score INTEGER DEFAULT 100,
+    readiness_score INTEGER DEFAULT 0,
     application_status TEXT NOT NULL DEFAULT 'draft' CHECK (application_status IN ('draft', 'pending', 'pool_applicant', 'interview_locked', 'procurement_pending', 'interviewing', 'hired', 'active', 'rejected', 'blacklisted', 'disqualified', 'leave_without_permit', 'on_leave')),
     current_site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
     assigned_supervisor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
@@ -142,6 +143,7 @@ CREATE TABLE IF NOT EXISTS guards (
     birth_cert_url TEXT,
     application_letter_url TEXT,
     residence_letter_url TEXT,
+    medical_report_url TEXT,
     dossier_data JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -226,6 +228,23 @@ CREATE TABLE IF NOT EXISTS incident_reports (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Add modern columns for Digital DOB (idempotent)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'incident_reports' AND column_name = 'title') THEN
+        ALTER TABLE incident_reports ADD COLUMN title TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'incident_reports' AND column_name = 'severity') THEN
+        ALTER TABLE incident_reports ADD COLUMN severity TEXT CHECK (severity IN ('low','medium','high','critical'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'incident_reports' AND column_name = 'evidence_image_url') THEN
+        ALTER TABLE incident_reports ADD COLUMN evidence_image_url TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'incident_reports' AND column_name = 'updated_at') THEN
+        ALTER TABLE incident_reports ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+    END IF;
+END $$;
+
 -- Kit issuances table
 CREATE TABLE IF NOT EXISTS kit_issuances (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -301,6 +320,22 @@ BEGIN
         RAISE NOTICE 'Added weapon_qualification column to guards table';
     ELSE
         RAISE NOTICE 'weapon_qualification column already exists in guards table';
+    END IF;
+
+    -- Add readiness_score to guards if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'readiness_score') THEN
+        ALTER TABLE guards ADD COLUMN readiness_score INTEGER DEFAULT 0;
+        RAISE NOTICE 'Added readiness_score column to guards table';
+    ELSE
+        RAISE NOTICE 'readiness_score column already exists in guards table';
+    END IF;
+
+    -- Add medical_report_url to guards if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'medical_report_url') THEN
+        ALTER TABLE guards ADD COLUMN medical_report_url TEXT;
+        RAISE NOTICE 'Added medical_report_url column to guards table';
+    ELSE
+        RAISE NOTICE 'medical_report_url column already exists in guards table';
     END IF;
 
     -- Add any other missing columns here as needed

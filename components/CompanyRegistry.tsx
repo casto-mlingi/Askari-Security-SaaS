@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Company, UserRole, Profile, Guard, ApplicationStatus, IncidentReport } from '../types';
-import { supabase } from '../services/supabaseClient';
+import { api } from '../services/api';
 
 interface CompanyRegistryProps {
   companies: Company[];
@@ -53,17 +53,17 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
     
     return {
       staff: companyStaff,
-      activeGuards: companyGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE),
-      pendingInterview: companyGuards.filter(g => g.application_status === ApplicationStatus.INTERVIEW_LOCKED),
+      activeGuards: companyGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE || g.application_status === ApplicationStatus.ACTIVE_GUARD),
+      pendingInterview: companyGuards.filter(g => g.application_status === ApplicationStatus.INTERVIEWING),
       blacklisted: companyGuards.filter(g => g.application_status === ApplicationStatus.BLACKLISTED),
       incidentCount: incidents.filter(i => {
         const guard = guards.find(g => g.id === i.guard_id);
-        return guard?.company_id === selectedCompanyId;
+        return guard && (guard.company_id === selectedCompanyId) && (guard.application_status === ApplicationStatus.ACTIVE || guard.application_status === ApplicationStatus.ACTIVE_GUARD);
       }).length
     };
   }, [selectedCompanyId, profiles, guards, incidents]);
 
-  // ✅ FIX 1: Create Company Directly in Supabase
+  // Create Company via Backend
   const handleSubmitCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('🚀 Action Started: Create Company');
@@ -75,21 +75,14 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
 
     setIsSyncing(true);
     try {
-      // 1. Direct Insert to Database
-      const { data, error } = await supabase
-        .from('companies')
-        .insert([{
-          name: name,
-          slug: slug,
-          contact_email: email,
-          is_active: true
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      console.log('✅ Company Created:', data);
+      const result = await api.post('/companies', {
+        name,
+        slug,
+        contact_email: email,
+        is_active: true
+      });
+      const data = result.data as Company;
+      console.log('✅ Company Created:', data as any);
       
       // 2. Update UI
       onAddCompany(data as Company);
@@ -97,14 +90,14 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
       setName(''); setSlug(''); setEmail('');
       
     } catch (err: any) {
-      console.error('🔥 Supabase Error:', err);
+      console.error('🔥 Backend Error:', err);
       alert('Failed to create company: ' + (err.message || err.details));
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // ✅ FIX 2: Create Admin User Directly (Triggering Automation)
+  // Create Admin User (placeholder)
   const handleProvisionAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('🚀 Action Started: Provision Admin');
@@ -116,31 +109,22 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
 
     setIsSyncing(true);
     try {
-      // 1. Create User in Auth (Pass Metadata for the Trigger!)
-      const { data, error } = await supabase.auth.signUp({
+      const result = await api.post('/profiles', {
+        full_name: adminName,
         email: adminEmail,
-        password: adminPassword,
-        options: {
-          data: {
-            full_name: adminName,
-            role: 'company_admin',
-            company_id: showAdminModal.id // <--- This triggers the Auto-Link!
-          }
-        }
+        role: UserRole.COMPANY_ADMIN,
+        company_id: showAdminModal.id,
+        password: adminPassword
       });
-
-      if (error) throw error;
-
-      console.log('✅ Admin Provisioned:', data);
-      alert(`Admin created! They can log in as ${adminEmail}`);
-
-      // 2. Note: We don't manually insert into profiles because the TRIGGER does it.
-      // We just close the modal.
+      if (result.error || !result.data) {
+        throw new Error(result.error || 'Failed to provision admin');
+      }
+      onAddStaff(result.data as Profile);
       setShowAdminModal(null);
       setAdminName(''); setAdminEmail(''); setAdminPassword('');
 
     } catch (err: any) {
-      console.error('🔥 Supabase Error:', err);
+      console.error('🔥 Backend Error:', err);
       alert('Failed to provision admin: ' + err.message);
     } finally {
       setIsSyncing(false);
@@ -153,12 +137,7 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
 
     setIsSyncing(true);
     try {
-      const { error } = await supabase
-        .from('companies')
-        .update({ name, contact_email: email })
-        .eq('id', showSettingsModal.id);
-
-      if (error) throw error;
+      await api.patch('/companies/' + showSettingsModal.id, { name, contact_email: email });
 
       onUpdateCompany(showSettingsModal.id, { name, contact_email: email });
       setShowSettingsModal(null);
@@ -203,7 +182,7 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
             >
               <div className="flex justify-between items-start mb-8">
                 <div className="w-16 h-16 bg-slate-950 text-primary rounded-[1.5rem] flex items-center justify-center font-black text-2xl shadow-xl ring-4 ring-slate-100">
-                  {company.name[0]}
+                  {company.name?.[0] || 'C'}
                 </div>
                 <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${company.is_active ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
                   {company.is_active ? 'ACTIVE NODE' : 'OFFLINE'}
@@ -262,7 +241,7 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
            <div className="bg-white w-full max-w-6xl h-full md:h-[90vh] md:rounded-[4rem] shadow-2xl flex flex-col overflow-hidden border border-white/20">
               <div className="p-10 border-b-2 border-slate-100 flex justify-between items-center bg-slate-950 text-white shadow-xl">
                  <div className="flex items-center gap-8">
-                    <div className="w-20 h-20 bg-primary text-white rounded-[2rem] flex items-center justify-center font-black text-3xl shadow-2xl">{drillDownCompany.name[0]}</div>
+                    <div className="w-20 h-20 bg-primary text-white rounded-[2rem] flex items-center justify-center font-black text-3xl shadow-2xl">{drillDownCompany.name?.[0] || 'C'}</div>
                     <div>
                        <p className="text-[10px] font-black text-primary uppercase tracking-[0.4em] mb-3">Tenant Operational Audit</p>
                        <h3 className="text-3xl font-black uppercase tracking-tighter leading-none">{drillDownCompany.name}</h3>
@@ -300,13 +279,13 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
                           {drillDownData.staff.map(member => (
                              <div key={member.id} className="p-6 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm">
                                 <div className="flex items-center gap-4">
-                                   <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400">{member.full_name[0]}</div>
+                                   <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400">{member.full_name?.[0] || 'U'}</div>
                                    <div>
                                       <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{member.full_name}</p>
                                       <p className="text-[10px] font-bold text-slate-400">{member.email}</p>
                                    </div>
                                 </div>
-                                <span className="px-3 py-1 bg-slate-100 text-[8px] font-black uppercase tracking-widest rounded-lg">{member.role.replace('_', ' ')}</span>
+                                <span className="px-3 py-1 bg-slate-100 text-[8px] font-black uppercase tracking-widest rounded-lg">{member.role?.replace('_', ' ')}</span>
                              </div>
                           ))}
                           {drillDownData.staff.length === 0 && <p className="text-xs text-slate-300 italic">No staff members onboarded.</p>}
@@ -372,7 +351,7 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Register Tenant</h3>
                  <p className="text-sm font-medium text-slate-500 mt-2">Add a new company to the AMINI network.</p>
               </div>
-              <form onSubmit={handleSubmitCompany} className="space-y-6">
+              <form onSubmit={handleSubmitCompany} noValidate className="space-y-6">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Company Name</label>
                     <input value={name} onChange={e => setName(e.target.value)} required className="w-full h-14 px-6 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold uppercase outline-none focus:border-primary transition-all" />
@@ -404,7 +383,7 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Provision Tenant Admin</h3>
                  <p className="text-sm font-medium text-slate-500 mt-2">Grant administrative access for {showAdminModal.name}.</p>
               </div>
-              <form onSubmit={handleProvisionAdmin} className="space-y-6">
+              <form onSubmit={handleProvisionAdmin} noValidate className="space-y-6">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Admin Full Name</label>
                     <input value={adminName} onChange={e => setAdminName(e.target.value)} required className="w-full h-14 px-6 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold uppercase outline-none focus:border-primary transition-all" />

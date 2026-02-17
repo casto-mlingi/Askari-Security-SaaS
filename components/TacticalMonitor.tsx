@@ -10,7 +10,7 @@ interface TacticalMonitorProps {
 const TacticalMonitor: React.FC<TacticalMonitorProps> = ({ sites, guards, attendanceLogs }) => {
   const siteStats = useMemo(() => {
     return sites.map(site => {
-      const siteGuards = guards.filter(g => g.current_site_id === site.id && g.application_status === ApplicationStatus.ACTIVE);
+      const siteGuards = guards.filter(g => g.current_site_id === site.id && (g.application_status === ApplicationStatus.ACTIVE || g.application_status === ApplicationStatus.ACTIVE_GUARD));
       const siteLogs = attendanceLogs.filter(l => l.site_id === site.id);
       const latestLogs = siteGuards.map(g => siteLogs.filter(l => l.guard_id === g.id).sort((a, b) => new Date(b.checked_in_at).getTime() - new Date(a.checked_in_at).getTime())[0]);
       

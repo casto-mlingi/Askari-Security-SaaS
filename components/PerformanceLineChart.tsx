@@ -1,17 +1,60 @@
 import React from 'react';
+import { Guard, IncidentReport, AttendanceLog, UserRole } from '../types';
 
-const PerformanceLineChart: React.FC = () => {
-  // Mock trend points
-  const performanceData = [82, 85, 83, 88, 92, 90, 94];
-  const attendanceData = [90, 88, 95, 85, 98, 92, 89];
-  const incidentData = [5, 4, 5, 3, 1, 2, 1];
-  
+type Props = {
+  guards: Guard[];
+  incidents: IncidentReport[];
+  attendanceLogs: AttendanceLog[];
+  userRole: UserRole;
+  companyId?: string;
+};
+
+const PerformanceLineChart: React.FC<Props> = ({ guards, incidents, attendanceLogs, userRole, companyId }) => {
+  const isSuperAdmin = userRole === UserRole.SUPER_ADMIN;
+  const scopedGuardIds = (isSuperAdmin || !companyId)
+    ? guards.map(g => g.id)
+    : guards.filter(g => g.company_id === companyId).map(g => g.id);
+  const scopedAttendance = attendanceLogs.filter(a => scopedGuardIds.includes(a.guard_id));
+  const scopedIncidents = incidents.filter(i => scopedGuardIds.includes(i.guard_id));
+
+  const days = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+  const getDowIndex = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const jsDow = d.getDay(); // 0=Sun..6=Sat
+    return jsDow === 0 ? 6 : jsDow - 1; // 0->6, 1->0, ... align to MON first
+  };
+
+  const avgProfileScore = guards.length
+    ? Math.round(guards.reduce((sum, g) => sum + (g.performance_score ?? g.profile_score ?? 0), 0) / guards.length)
+    : 0;
+
+  const attendancePercentByDay = Array(7).fill(0).map((_, i) => {
+    const logsForDay = scopedAttendance.filter(a => getDowIndex(a.checked_in_at) === i);
+    const total = logsForDay.length;
+    if (!total) return 0;
+    const present = logsForDay.filter(l => l.status === 'present').length;
+    return Math.round((present / total) * 100);
+  });
+
+  const incidentsByDay = Array(7).fill(0).map((_, i) =>
+    scopedIncidents.filter(inc => getDowIndex(inc.created_at) === i).length
+  );
+
+  const performanceByDay = incidentsByDay.map(inc => {
+    const penalty = inc * 5;
+    const val = Math.max(0, Math.min(100, avgProfileScore - penalty));
+    return val;
+  });
+
+  const performanceData = performanceByDay;
+  const attendanceData = attendancePercentByDay;
+  const incidentData = incidentsByDay;
   const width = 600;
   const height = 240;
   const padding = 40;
   const chartWidth = width - (padding * 2);
   const chartHeight = height - (padding * 2);
-
+  
   // --- Scaling Calculations ---
   // Bars (Percentage 0-100)
   const getY = (val: number) => {
@@ -19,7 +62,7 @@ const PerformanceLineChart: React.FC = () => {
   };
 
   // Incident Line (0 to max incident count)
-  const maxIncidents = Math.max(...incidentData, 10); // Scale up to at least 10
+  const maxIncidents = Math.max(...incidentData, 10);
   const getIncY = (val: number) => {
     return padding + chartHeight - (val / maxIncidents) * chartHeight;
   };
@@ -40,9 +83,9 @@ const PerformanceLineChart: React.FC = () => {
   const individualBarWidth = barGroupWidth / 2.2;
 
   return (
-    <div className="w-full h-full min-h-[250px] md:min-h-[300px] relative">
+    <div className="w-full h-full min-h-[300px] md:min-h-[340px] relative">
       {/* Legend */}
-      <div className="absolute top-0 right-0 z-10 flex flex-wrap items-center gap-4 text-[9px] font-black uppercase tracking-[0.2em]">
+      <div className="static md:absolute md:top-0 md:right-0 z-10 flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-4 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] mb-3 md:mb-0 px-1">
         <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-primary rounded-sm" />
             <span className="text-slate-500">Performance</span>
@@ -57,7 +100,7 @@ const PerformanceLineChart: React.FC = () => {
         </div>
       </div>
 
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full pt-10">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full pt-12 md:pt-10">
         <defs>
           <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#0017AD" stopOpacity="1" />
@@ -165,14 +208,27 @@ const PerformanceLineChart: React.FC = () => {
           );
         })}
 
-        {/* X-Axis Labels */}
-        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day, i) => (
+        {/* X-Axis Labels (mobile: rotated for readability) */}
+        {days.map((day, i) => (
           <text
-            key={day}
+            key={`m-${day}`}
             x={getX(i)}
             y={height - padding + 20}
             textAnchor="middle"
-            className="fill-slate-400 text-[9px] font-black tracking-widest uppercase"
+            transform={`rotate(-45 ${getX(i)} ${height - padding + 20})`}
+            className="md:hidden fill-slate-400 text-[10px] font-black tracking-widest uppercase"
+          >
+            {day}
+          </text>
+        ))}
+        {/* X-Axis Labels (desktop: standard) */}
+        {days.map((day, i) => (
+          <text
+            key={`d-${day}`}
+            x={getX(i)}
+            y={height - padding + 20}
+            textAnchor="middle"
+            className="hidden md:block fill-slate-400 text-[9px] font-black tracking-widest uppercase"
           >
             {day}
           </text>
@@ -201,5 +257,4 @@ const PerformanceLineChart: React.FC = () => {
     </div>
   );
 };
-
 export default PerformanceLineChart;

@@ -33,5 +33,8 @@
     "**/*.js",
     "**/*.jsx",
     "**/*.d.ts"
+  ],
+  "exclude": [
+    "scripts.ts"
   ]
 }

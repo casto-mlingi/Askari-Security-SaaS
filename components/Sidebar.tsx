@@ -1,11 +1,13 @@
 
 import React from 'react';
-import { UserRole } from '../types';
+import { UserRole, Profile, Guard, ApplicationStatus } from '../types';
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   userRole: UserRole;
+  currentUser?: Profile | Guard | null;
+  noticesPublicCount?: number;
 }
 
 const ICONS = {
@@ -30,7 +32,7 @@ type NavItem = {
   tab: string;
 };
 
-const getNavItems = (role: UserRole): NavItem[] => {
+const getNavItems = (role: UserRole, currentUser?: Profile | Guard | null): NavItem[] => {
   const all: NavItem[] = [
     { label: 'Dashboard', icon: 'Dashboard', tab: 'overview' },
     { label: 'Intake', icon: 'Register', tab: 'intake' },
@@ -47,13 +49,53 @@ const getNavItems = (role: UserRole): NavItem[] => {
     { label: 'Companies', icon: 'Companies', tab: 'companies' },
   ];
 
+  // Applicant-specific navigation (e.g., sara@amini.co.tz)
+  if ((role as unknown as string)?.toLowerCase?.() === 'applicant') {
+    return [
+      { label: 'Continue With Application', icon: 'Register', tab: 'profile-update' },
+      { label: 'Application Status', icon: 'Applicants', tab: 'application-status' },
+      { label: 'Notices', icon: 'Monitor', tab: 'notice-board' },
+    ];
+  }
+  // Show applicant-style navigation for Guard accounts that are not ACTIVE yet
+  if (currentUser && !('role' in (currentUser as any))) {
+    const g = currentUser as Guard;
+    if (g.application_status !== ApplicationStatus.ACTIVE && g.application_status !== ApplicationStatus.ACTIVE_GUARD) {
+      return [
+        { label: 'Continue With Application', icon: 'Register', tab: 'profile-update' },
+        { label: 'Application Status', icon: 'Applicants', tab: 'application-status' },
+        { label: 'Notices', icon: 'Monitor', tab: 'notice-board' },
+      ];
+    }
+  }
+
+  // System HR role
+  if (role === UserRole.SYSTEM_HR) {
+    return [
+      { label: 'Dashboard', icon: 'Dashboard', tab: 'overview' },
+      { label: 'Wait for Approval', icon: 'Applicants', tab: 'wait-approval' },
+      { label: 'Vetting', icon: 'Applicants', tab: 'vetting' },
+      { label: 'Interview Report', icon: 'Report', tab: 'interview-report' },
+      { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklist' },
+      { label: 'Personnel', icon: 'Registry', tab: 'registry' },
+    ];
+  }
   switch (role) {
     case UserRole.SUPER_ADMIN:
       return all;
     case UserRole.COMPANY_ADMIN:
       return all.filter(item => item.tab !== 'companies');
     case UserRole.HR_OFFICER:
-      return all.filter(item => ['overview', 'intake', 'vetting', 'interview-report', 'disciplinary', 'blacklist', 'registry'].includes(item.tab));
+      return [
+        { label: 'Dashboard', icon: 'Dashboard', tab: 'overview' },
+        { label: 'Wait for Approval', icon: 'Applicants', tab: 'wait-approval' },
+        { label: 'Intake', icon: 'Register', tab: 'intake' },
+        { label: 'Vetting', icon: 'Applicants', tab: 'vetting' },
+        { label: 'Interview Report', icon: 'Report', tab: 'interview-report' },
+        { label: 'Disciplinary', icon: 'Disciplinary', tab: 'disciplinary' },
+        { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklist' },
+        { label: 'Personnel', icon: 'Registry', tab: 'registry' },
+      ];
     case UserRole.PROCUREMENT:
       return all.filter(item => ['overview', 'procurement', 'stock-in'].includes(item.tab));
     case UserRole.SUPERVISOR:
@@ -63,9 +105,11 @@ const getNavItems = (role: UserRole): NavItem[] => {
   }
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) => {
-  const navItems = getNavItems(userRole);
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, currentUser, noticesPublicCount }) => {
+  const navItems = getNavItems(userRole, currentUser);
   const isAdmin = [UserRole.SUPER_ADMIN, UserRole.COMPANY_ADMIN].includes(userRole);
+  const guardUser = currentUser && !('role' in (currentUser as any)) ? (currentUser as Guard) : undefined;
+  const privateNotesCount = guardUser ? ((guardUser.dossier_data as any)?.hr_private_notes?.length || 0) : 0;
 
   const renderNavItem = (item: NavItem) => {
     const Icon = ICONS[item.icon];
@@ -81,11 +125,22 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
         className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group relative overflow-hidden ${
           isActive
             ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
-            : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+            : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
         }`}
       >
         <Icon className="w-6 h-6" />
         <span className="text-sm tracking-tight">{item.label}</span>
+        {item.tab === 'notice-board' && (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
+              {`Public ${typeof noticesPublicCount === 'number' ? (noticesPublicCount > 99 ? '99+' : noticesPublicCount) : 3}`}
+            </span>
+            <span className={`relative text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${privateNotesCount > 0 ? 'bg-red-500/20 text-white border border-red-500/30' : 'bg-white/10 border border-white/20'}`}>
+              {`Private ${privateNotesCount}`}
+              {privateNotesCount > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+            </span>
+          </div>
+        )}
       </a>
     );
   };
@@ -102,9 +157,34 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
           </div>
           <div>
             <h1 className="font-black text-2xl leading-none tracking-tight bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">AMINI</h1>
-            <p className="text-slate-300 text-xs font-semibold tracking-wider uppercase mt-1">Security Platform</p>
+            <p className="text-white/70 text-xs font-semibold tracking-wider uppercase mt-1">Security Platform</p>
           </div>
         </div>
+        {currentUser && (
+          <div className="flex items-center gap-3 mb-6">
+            {guardUser ? (
+              guardUser.passport_photo_url ? (
+                <img src={guardUser.passport_photo_url} alt={guardUser.full_name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
+              ) : (
+                <div className="w-10 h-10 bg-white/10 text-white/80 rounded-full flex items-center justify-center font-black border border-white/20">
+                  {guardUser.full_name?.[0] || 'G'}
+                </div>
+              )
+            ) : (
+              (currentUser as Profile).avatar_url ? (
+                <img src={(currentUser as Profile).avatar_url as string} alt={(currentUser as Profile).full_name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
+              ) : (
+                <div className="w-10 h-10 bg-white/10 text-white/80 rounded-full flex items-center justify-center font-black border border-white/20">
+                  {(currentUser as Profile).full_name?.[0] || 'U'}
+                </div>
+              )
+            )}
+            <div>
+              <p className="text-sm font-bold">{(currentUser as any).full_name || 'User'}</p>
+              <p className="text-[10px] uppercase tracking-widest text-white/60">{('role' in (currentUser as any)) ? (currentUser as Profile).role : 'applicant'}</p>
+            </div>
+          </div>
+        )}
 
           <nav className="flex-grow space-y-3 overflow-y-auto pr-3 -mr-3">
           <div className="space-y-2">
@@ -128,7 +208,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
                 className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
                   activeTab === 'architecture'
                     ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+                    : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
                 }`}
               >
                 <ICONS.Registry className="w-6 h-6 group-hover:scale-110 transition-transform" />
@@ -140,7 +220,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
                 className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
                   activeTab === 'erd-view'
                     ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+                    : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
                 }`}
               >
                 <ICONS.Database className="w-6 h-6 group-hover:scale-110 transition-transform" />
@@ -152,7 +232,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
                 className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
                   activeTab === 'sql-schema'
                     ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5 hover:shadow-md'
+                    : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
                 }`}
               >
                 <ICONS.Operations className="w-6 h-6 group-hover:scale-110 transition-transform" />

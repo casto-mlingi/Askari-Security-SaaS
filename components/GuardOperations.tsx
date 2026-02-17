@@ -1,7 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Guard, Site, Profile, Announcement, LeaveRequest } from '../types';
 import FileUploader from './FileUploader';
+import { api } from '../services/api';
+import { generateAIResponse } from '../services/ai';
 
 interface GuardOperationsProps {
   guard: Guard;
@@ -22,9 +24,11 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
   onReportProblem,
   onRequestLeave
 }) => {
-  const [activeTab, setActiveTab] = useState<'report' | 'leave' | 'announcements'>('report');
+  const [activeTab, setActiveTab] = useState<'report' | 'leave' | 'announcements' | 'worktools' | 'help'>('report');
   
+  const [reportTitle, setReportTitle] = useState('');
   const [reportText, setReportText] = useState('');
+  const [reportSeverity, setReportSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
   const [evidence, setEvidence] = useState<string>('');
   const [isSyncingReport, setIsSyncingReport] = useState(false);
 
@@ -33,17 +37,65 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
   const [leaveEnd, setLeaveEnd] = useState('');
   const [leaveReason, setLeaveReason] = useState('');
   const [isSyncingLeave, setIsSyncingLeave] = useState(false);
+  const [items, setItems] = useState<Array<{ id: string; name: string; cost_per_unit: number }>>([]);
+  const [custody, setCustody] = useState<Array<{ id: string; guard_id: string; item_id: string; quantity: number; issued_at?: string }>>([]);
+  const [logs, setLogs] = useState<Array<{ id: string; action: 'issue' | 'return' | 'restock'; guard_id?: string | null; item_id: string; quantity: number; return_condition?: 'good' | 'damaged' | 'lost' | null; amount_owed?: number | null; created_at: string }>>([]);
+  const issuedRows = useMemo(() => {
+    return custody
+      .filter(c => c.guard_id === guard.id)
+      .map(c => {
+        const it = items.find(x => x.id === c.item_id);
+        const unit = it?.cost_per_unit || 0;
+        const total = unit * (c.quantity || 0);
+        return { id: c.id, name: it?.name || 'Unknown', qty: c.quantity, unit, total, issued_at: c.issued_at };
+      });
+  }, [custody, items, guard.id]);
+  const returnsRows = useMemo(() => {
+    return logs
+      .filter(l => l.action === 'return' && l.guard_id === guard.id)
+      .map(l => {
+        const it = items.find(x => x.id === l.item_id);
+        return { id: l.id, name: it?.name || 'Unknown', qty: l.quantity, condition: l.return_condition, amount: l.amount_owed || 0, created_at: l.created_at };
+      });
+  }, [logs, items, guard.id]);
+  const totalIssuedCost = useMemo(() => {
+    return issuedRows.reduce((sum, r) => sum + (r.total || 0), 0);
+  }, [issuedRows]);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [itemsRes, custodyRes, logsRes] = await Promise.all([
+          api.get('/inventory/items'),
+          api.get('/inventory/custody'),
+          api.get('/inventory/logs')
+        ]);
+        setItems((itemsRes.data || []) as any);
+        setCustody((custodyRes.data || []) as any);
+        setLogs((logsRes.data || []) as any);
+      } catch {
+        setItems([]);
+        setCustody([]);
+        setLogs([]);
+      }
+    };
+    load();
+  }, [guard.id]);
+  const [helpQuestion, setHelpQuestion] = useState('');
+  const [helpAnswer, setHelpAnswer] = useState('');
+  const [helpLoading, setHelpLoading] = useState(false);
 
   const handleSubmitReport = async () => {
-    if (!reportText) {
-      alert("Please provide a description of the issue.");
+    if (!reportTitle || !reportText) {
+      alert("Please provide a title and description of the incident.");
       return;
     }
     setIsSyncingReport(true);
     await new Promise(r => setTimeout(r, 1500));
-    onReportProblem(reportText, evidence);
+    onReportProblem(`${reportTitle}:::${reportSeverity}:::${reportText}`, evidence);
     setIsSyncingReport(false);
+    setReportTitle('');
     setReportText('');
+    setReportSeverity('low');
     setEvidence('');
     alert("Your report has been sent to your supervisor.");
   };
@@ -68,7 +120,23 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
       case 'report':
         return (
           <div className="space-y-6 animate-in fade-in duration-300">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Report a Site Issue</h3>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Report a Site Incident</h3>
+            <input
+              className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary transition-colors text-xs font-bold uppercase"
+              placeholder="Incident Title (e.g., Equipment Damage)"
+              value={reportTitle}
+              onChange={(e) => setReportTitle(e.target.value)}
+            />
+            <select
+              value={reportSeverity}
+              onChange={(e) => setReportSeverity(e.target.value as any)}
+              className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary transition-colors text-xs font-bold uppercase"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
             <textarea
               className="w-full h-40 p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary transition-colors text-sm font-medium"
               placeholder="Describe the incident or issue..."
@@ -147,6 +215,86 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
             ))}
           </div>
         );
+      case 'worktools':
+        return (
+          <div className="space-y-8 animate-in fade-in duration-300">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Currently Issued</h3>
+              <div className="space-y-3">
+                {issuedRows.map(r => (
+                  <div key={r.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{r.name}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Qty: {r.qty} • Unit: {Intl.NumberFormat('en-TZ', { style: 'currency', currency: 'TZS', maximumFractionDigits: 0 }).format(r.unit)}</p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-black uppercase tracking-widest">
+                      {new Intl.NumberFormat('en-TZ', { style: 'currency', currency: 'TZS', maximumFractionDigits: 0 }).format(r.total)}
+                    </span>
+                  </div>
+                ))}
+                {issuedRows.length === 0 && <p className="text-xs text-slate-400 italic">No active custody records.</p>}
+              </div>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</span>
+                <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-black uppercase tracking-widest">
+                  {new Intl.NumberFormat('en-TZ', { style: 'currency', currency: 'TZS', maximumFractionDigits: 0 }).format(totalIssuedCost)}
+                </span>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Returns & Condition</h3>
+              <div className="space-y-3">
+                {returnsRows.map(r => (
+                  <div key={r.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{r.name}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Qty: {r.qty} • Condition: {r.condition}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full ${r.amount ? 'bg-red-100 border border-red-200 text-red-600' : 'bg-slate-100 border border-slate-200 text-slate-600'} text-[10px] font-black uppercase tracking-widest`}>
+                      {r.amount ? Intl.NumberFormat('en-TZ', { style: 'currency', currency: 'TZS', maximumFractionDigits: 0 }).format(r.amount) : 'No charge'}
+                    </span>
+                  </div>
+                ))}
+                {returnsRows.length === 0 && <p className="text-xs text-slate-400 italic">No returns recorded.</p>}
+              </div>
+            </div>
+          </div>
+        );
+      case 'help':
+        return (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Help & Guidance</h3>
+            <textarea
+              value={helpQuestion}
+              onChange={e => setHelpQuestion(e.target.value)}
+              placeholder="Andika swali lako hapa..."
+              className="w-full h-28 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+            />
+            <button
+              onClick={async () => {
+                if (!helpQuestion.trim()) return;
+                setHelpLoading(true);
+                try {
+                  const ans = await generateAIResponse(`Jibu kwa Kiswahili: ${helpQuestion}`);
+                  setHelpAnswer(ans);
+                } catch {
+                  setHelpAnswer('Imeshindikana kupata jibu kwa sasa.');
+                } finally {
+                  setHelpLoading(false);
+                }
+              }}
+              className="w-full h-14 bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg active:scale-95 transition-all"
+            >
+              {helpLoading ? 'Inachakata...' : 'Tuma'}
+            </button>
+            {!!helpAnswer && (
+              <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Jibu</p>
+                <p className="text-sm text-slate-700 font-medium leading-relaxed">{helpAnswer}</p>
+              </div>
+            )}
+          </div>
+        );
     }
   };
 
@@ -170,6 +318,8 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
           <button onClick={() => setActiveTab('report')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'report' ? 'bg-white text-primary shadow' : 'text-slate-500'}`}>Report Issue</button>
           <button onClick={() => setActiveTab('leave')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'leave' ? 'bg-white text-primary shadow' : 'text-slate-500'}`}>Leave</button>
           <button onClick={() => setActiveTab('announcements')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'announcements' ? 'bg-white text-primary shadow' : 'text-slate-500'}`}>Notices</button>
+          <button onClick={() => setActiveTab('worktools')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'worktools' ? 'bg-white text-primary shadow' : 'text-slate-500'}`}>Worktools</button>
+          <button onClick={() => setActiveTab('help')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'help' ? 'bg-white text-primary shadow' : 'text-slate-500'}`}>Help</button>
         </div>
         <div className="p-6">
           {renderContent()}

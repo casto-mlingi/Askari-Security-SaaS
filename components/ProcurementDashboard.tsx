@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Guard } from '../types';
-import { supabase, READ_ONLY } from '../services/supabaseClient';
+import { READ_ONLY } from '../services/supabaseClient';
+import { api } from '../services/api';
 
 type InventoryItem = {
   id: string;
+  company_id?: string | null;
   name: string;
   cost_per_unit: number;
   stock_quantity: number;
-  condition?: 'new' | 'good' | 'better' | 'bad' | 'worse' | null;
+  condition?: 'new' | 'good' | 'fair' | 'better' | 'bad' | 'worse' | null;
 };
 
 type InventoryCustody = {
@@ -16,6 +18,7 @@ type InventoryCustody = {
   item_id: string;
   quantity: number;
   issued_at?: string;
+  condition_at_issue?: 'new' | 'good' | 'fair' | 'better' | 'bad' | 'worse' | null;
 };
 
 type InventoryLog = {
@@ -24,9 +27,11 @@ type InventoryLog = {
   guard_id?: string | null;
   item_id: string;
   quantity: number;
-  return_condition?: 'good' | 'damaged' | 'lost' | null;
+  return_condition?: 'good' | 'damaged' | 'lost' | 'bad' | 'worse' | null;
   amount_owed?: number | null;
   created_at: string;
+  payment_status?: 'paid' | 'unpaid' | 'n/a' | null;
+  paid_at?: string | null;
 };
 
 interface ProcurementDashboardProps {
@@ -46,11 +51,12 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
   const [restockQty, setRestockQty] = useState<number>(0);
   const [issueOpen, setIssueOpen] = useState(false);
   const [issueGuardId, setIssueGuardId] = useState<string>('');
-  const [issueRows, setIssueRows] = useState<Array<{ itemId: string; qty: number }>>([{ itemId: '', qty: 1 }]);
+  const [issueRows, setIssueRows] = useState<Array<{ itemId: string; qty: number; condition: 'new' | 'good' | 'fair' }>>([{ itemId: '', qty: 1, condition: 'new' }]);
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnCustody, setReturnCustody] = useState<InventoryCustody | null>(null);
-  const [returnCondition, setReturnCondition] = useState<'good' | 'damaged' | 'lost'>('good');
+  const [returnCondition, setReturnCondition] = useState<'good' | 'damaged' | 'lost' | 'bad' | 'worse'>('good');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [liabilityDebugRelax, setLiabilityDebugRelax] = useState(false);
   const issueDraftKey = useMemo(() => `procurement_issue_draft:${companyId || 'anon'}`, [companyId]);
   const restockDraftKey = useMemo(() => `procurement_restock_qty:${companyId || 'anon'}`, [companyId]);
 
@@ -58,9 +64,9 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
     try {
       const raw = localStorage.getItem(issueDraftKey);
       if (raw) {
-        const parsed = JSON.parse(raw) as { issueGuardId?: string; issueRows?: Array<{ itemId: string; qty: number }> };
+        const parsed = JSON.parse(raw) as { issueGuardId?: string; issueRows?: Array<{ itemId: string; qty: number; condition?: 'new' | 'good' | 'fair' }> };
         if (parsed && Array.isArray(parsed.issueRows)) {
-          setIssueRows(parsed.issueRows);
+          setIssueRows(parsed.issueRows.map(r => ({ itemId: r.itemId, qty: r.qty, condition: r.condition || 'new' })));
         }
         if (parsed && typeof parsed.issueGuardId === 'string') {
           setIssueGuardId(parsed.issueGuardId);
@@ -102,37 +108,18 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       let custodyData: any[] = [];
       let logsData: any[] = [];
       try {
-        const isUuid = !!companyId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId);
-        if (isUuid) {
-          const { data: itemsScoped } = await supabase
-            .from('inventory_items')
-            .select('*')
-            .eq('company_id', companyId)
-            .order('name', { ascending: true });
-          itemsFinal = itemsScoped || [];
-          const { data: custodyScoped } = await supabase
-            .from('inventory_custody')
-            .select('*')
-            .eq('company_id', companyId)
-            .order('issued_at', { ascending: false });
-          custodyData = custodyScoped || [];
-          const { data: logsScoped } = await supabase
-            .from('inventory_logs')
-            .select('*')
-            .eq('company_id', companyId)
-            .order('created_at', { ascending: false });
-          logsData = logsScoped || [];
-        } else {
-          const { data: itemsAll } = await supabase
-            .from('inventory_items')
-            .select('*')
-            .order('name', { ascending: true });
-          itemsFinal = itemsAll || [];
-          const { data: custodyAll } = await supabase.from('inventory_custody').select('*').order('issued_at', { ascending: false });
-          custodyData = custodyAll || [];
-          const { data: logsAll } = await supabase.from('inventory_logs').select('*').order('created_at', { ascending: false });
-          logsData = logsAll || [];
-        }
+        const TENANT_COMPANY_ID = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
+        let effectiveCompanyId = TENANT_COMPANY_ID;
+        try {
+          const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
+          effectiveCompanyId = parsed?.company_id || TENANT_COMPANY_ID;
+        } catch {}
+        const itemsRes = await api.get('/inventory/items?company_id=' + effectiveCompanyId);
+        itemsFinal = (itemsRes.data as any[]) || [];
+        const custodyRes = await api.get('/inventory/custody?company_id=' + effectiveCompanyId);
+        custodyData = (custodyRes.data as any[]) || [];
+        const logsRes = await api.get('/inventory/logs?company_id=' + effectiveCompanyId);
+        logsData = (logsRes.data as any[]) || []
       } catch (e) {
         itemsFinal = itemsFinal || [];
         custodyData = custodyData || [];
@@ -141,11 +128,7 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       const allowedGuardIds = new Set((guards || []).map(g => g.id));
       const filteredCustody = (custodyData || []).filter(c => allowedGuardIds.has(c.guard_id));
       const filteredLogs = (logsData || []).filter(l => !l.guard_id || allowedGuardIds.has(l.guard_id));
-      const allowedItemIds = new Set<string>();
-      filteredCustody.forEach(c => allowedItemIds.add(c.item_id));
-      filteredLogs.forEach(l => allowedItemIds.add(l.item_id));
-      const filteredItems = (itemsFinal || []).filter(i => allowedItemIds.size === 0 ? true : allowedItemIds.has(i.id));
-      setItems(filteredItems || []);
+      setItems(itemsFinal || []);
       setCustody(filteredCustody || []);
       setLogs(filteredLogs || []);
     };
@@ -161,15 +144,18 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
   }, [custody, guards, items]);
 
   const liabilityRows = useMemo(() => {
+    const unpaidFilter = (x: string | null | undefined) => String(x || '').toLowerCase() === 'unpaid';
     return logs
-      .filter(l => l.action === 'return' && (l.return_condition === 'damaged' || l.return_condition === 'lost'))
+      .filter(l => l.action === 'return' && (liabilityDebugRelax || unpaidFilter(l.payment_status)))
       .map(l => {
         const g = guards.find(x => x.id === l.guard_id);
         const it = items.find(x => x.id === l.item_id);
-        const amount = l.amount_owed || 0;
-        return { id: l.id, guardName: g?.full_name || 'Unknown', itemName: it?.name || 'Unknown', condition: l.return_condition, amount };
+        const unit = it?.cost_per_unit || 0;
+        const qty = l.quantity || 0;
+        const amount = (l.amount_owed != null ? l.amount_owed : unit * qty) || 0;
+        return { id: l.id, guardName: g?.full_name || 'Unknown Guard', itemName: it?.name || 'Unknown Item', condition: l.return_condition, amount, payment_status: l.payment_status, paid_at: l.paid_at };
       });
-  }, [logs, guards, items]);
+  }, [logs, guards, items, liabilityDebugRelax]);
 
   const issuedByGuard = useMemo(() => {
     const map = new Map<string, { guardId: string; guardName: string; items: Array<{ name: string; qty: number }>; total: number; names: Set<string> }>();
@@ -192,9 +178,46 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       .map(e => ({ guardId: e.guardId, guardName: e.guardName, items: e.items, total: e.total, distinctCount: e.names.size }))
       .sort((a, b) => a.guardName.localeCompare(b.guardName));
   }, [issuedWithNames]);
+  const recentIssuesByGuard = useMemo(() => {
+    const byGuard = new Map<string, Array<{ itemName: string; qty: number; created_at: string }>>();
+    for (const l of logs) {
+      if (l.action !== 'issue' || !l.guard_id) continue;
+      const gId = l.guard_id;
+      const item = items.find(i => i.id === l.item_id);
+      const name = item?.name || 'Unknown';
+      if (!byGuard.has(gId)) byGuard.set(gId, []);
+      byGuard.get(gId)!.push({ itemName: name, qty: l.quantity, created_at: l.created_at });
+    }
+    const result = new Map<string, Array<{ itemName: string; qty: number; created_at: string }>>();
+    for (const [gid, arr] of byGuard.entries()) {
+      const sorted = arr
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 3);
+      result.set(gid, sorted);
+    }
+    return result;
+  }, [logs, items]);
+  useEffect(() => {
+    if (tab === 'liability') {
+      setLiabilityDebugRelax(true);
+      setTimeout(() => setLiabilityDebugRelax(false), 2000);
+    }
+  }, [tab]);
+  useEffect(() => {
+    if (tab === 'liability') {
+      console.log('DEBUG Liability - All Logs:', logs);
+      console.log('DEBUG Liability - Guards:', guards);
+      console.log('DEBUG Liability - Items:', items);
+    }
+  }, [tab, logs, guards, items]);
   const eligibleGuards = useMemo(() => {
-    return guards.filter(g => g.application_status === 'hired' || g.application_status === 'active');
+    return guards.filter(g => g.application_status === 'hired' || g.application_status === 'active_guard');
   }, [guards]);
+  const hiredCount = useMemo(() => eligibleGuards.length, [eligibleGuards]);
+  useEffect(() => {
+    console.log('ProcurementDashboard: hired guards count', hiredCount);
+  }, [hiredCount]);
   const openRestock = (item: InventoryItem) => {
     setRestockItem(item);
     setRestockQty(0);
@@ -215,8 +238,8 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
     console.log('📦 Payload:', { itemId: restockItem.id, addQty: restockQty });
     setIsSyncing(true);
     const newQty = restockItem.stock_quantity + restockQty;
-    await supabase.from('inventory_items').update({ stock_quantity: newQty }).eq('id', restockItem.id);
-    await supabase.from('inventory_logs').insert({
+    await api.patch('/inventory/items/' + restockItem.id, { stock_quantity: newQty });
+    await api.post('/inventory/logs', {
       action: 'restock',
       company_id: companyId,
       item_id: restockItem.id,
@@ -238,66 +261,69 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
 
   const confirmIssue = async () => {
     console.log('🚀 Action Started: confirmIssue');
-    if (READ_ONLY) {
-      (window as any).showNotification?.('error', 'Production is read-only. Issue disabled.');
-      console.warn('❌ Validation Failed:', 'READ_ONLY mode');
-      return;
-    }
     const rows = issueRows.filter(r => r.itemId && r.qty > 0);
     if (!issueGuardId || rows.length === 0) {
       console.warn('❌ Validation Failed:', 'Missing issueGuardId or no valid rows', { issueGuardId, issueRows });
       return;
     }
-    console.log('📦 Payload:', { issueGuardId, rows });
+    const TENANT_COMPANY_ID = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
+    let effectiveCompanyId = TENANT_COMPANY_ID;
+    try {
+      const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
+      effectiveCompanyId = parsed?.company_id || TENANT_COMPANY_ID;
+    } catch {
+      effectiveCompanyId = TENANT_COMPANY_ID;
+    }
+    console.log('📦 Payload:', { issueGuardId, rows: rows.map(r => ({ ...r, company_id: effectiveCompanyId })), companyId: effectiveCompanyId });
     setIsSyncing(true);
-    const aggregate = rows.reduce<Record<string, number>>((acc, r) => {
-      acc[r.itemId] = (acc[r.itemId] || 0) + r.qty;
-      return acc;
-    }, {});
-    for (const [itemId, qty] of Object.entries(aggregate)) {
-      const item = items.find(i => i.id === itemId);
-      const qtyNum = Number(qty) || 0;
+    for (const row of rows) {
+      const item = items.find(i => i.id === row.itemId);
+      const qtyNum = parseInt(String(row.qty), 10) || 0;
       if (!item || qtyNum > item.stock_quantity) {
         setIsSyncing(false);
         return;
       }
-    }
-    for (const [itemId, qty] of Object.entries(aggregate)) {
-      const item = items.find(i => i.id === itemId)!;
-      const qtyNum = Number(qty) || 0;
       const newQty = item.stock_quantity - qtyNum;
-      try {
-        await supabase.from('inventory_items').update({ stock_quantity: newQty }).eq('id', item.id);
-      } catch (error) {
-        console.error('🔥 Supabase Error:', error);
-      }
-      const { data: insertedRows } = await supabase.from('inventory_custody').insert({
-        company_id: companyId,
+      await api.patch('/inventory/items/' + item.id, { stock_quantity: newQty });
+      console.log('Final Payload with Company ID:', { company_id: effectiveCompanyId, guard_id: issueGuardId, item_id: item.id, quantity: qtyNum, condition_at_issue: row.condition });
+      const inserted = await api.post('/inventory/custody', {
+        company_id: effectiveCompanyId,
         guard_id: issueGuardId,
         item_id: item.id,
         quantity: qtyNum,
         issued_at: new Date().toISOString(),
-      }).select('*');
-      try {
-        await supabase.from('inventory_logs').insert({
+        condition_at_issue: row.condition,
+      });
+      console.log('Final Payload with Company ID:', { company_id: effectiveCompanyId, guard_id: issueGuardId, item_id: item.id, quantity: qtyNum, action: 'issue', payment_status: 'n/a' });
+      await api.post('/inventory/logs', {
         action: 'issue',
-        company_id: companyId,
+        company_id: effectiveCompanyId,
         guard_id: issueGuardId,
         item_id: item.id,
         quantity: qtyNum,
+        payment_status: 'n/a',
         created_at: new Date().toISOString(),
       });
-      } catch (error) {
-        console.error('🔥 Supabase Error:', error);
-      }
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, stock_quantity: newQty } : i));
-      if (insertedRows && insertedRows.length > 0) setCustody(prev => [...insertedRows as any, ...prev]);
-      setLogs(prev => [{ id: `log-${Date.now()}`, action: 'issue', guard_id: issueGuardId, item_id: item.id, quantity: qtyNum, created_at: new Date().toISOString() } as InventoryLog, ...prev]);
+      if (inserted.data) setCustody(prev => [inserted.data as any, ...prev]);
+      setLogs(prev => [{ id: `log-${Date.now()}`, action: 'issue', guard_id: issueGuardId, item_id: item.id, quantity: qtyNum, payment_status: 'n/a', created_at: new Date().toISOString() } as InventoryLog, ...prev]);
     }
-    await supabase.from('guards').update({ application_status: 'active' }).eq('id', issueGuardId);
+    try {
+      const selectedGuard = guards.find(g => g.id === issueGuardId);
+      if (selectedGuard?.application_status === 'hired') {
+        await api.patch('/guards/' + issueGuardId, { application_status: 'active_guard' });
+        (window as any).showNotification?.('success', 'Tools issued and guard activated.');
+      } else {
+        (window as any).showNotification?.('success', 'Tools issued.');
+      }
+    } catch (e) {
+      console.error('Activation failed', e);
+      (window as any).showNotification?.('error', 'Issued tools saved. Activation skipped or failed.');
+    }
     setIsSyncing(false);
     setIssueOpen(false);
-    setIssueRows([{ itemId: '', qty: 1 }]);
+    setIssueRows([{ itemId: '', qty: 1, condition: 'new' }]);
+    setIssueGuardId('');
     try {
       localStorage.removeItem(issueDraftKey);
     } catch {}
@@ -305,11 +331,6 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
 
   const confirmReturn = async () => {
     console.log('🚀 Action Started: confirmReturn');
-    if (READ_ONLY) {
-      (window as any).showNotification?.('error', 'Production is read-only. Return disabled.');
-      console.warn('❌ Validation Failed:', 'READ_ONLY mode');
-      return;
-    }
     if (!returnCustody) {
       console.warn('❌ Validation Failed:', 'Missing returnCustody');
       return;
@@ -322,25 +343,48 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
     console.log('📦 Payload:', { custodyId: returnCustody.id, returnCondition, itemId: item.id });
     setIsSyncing(true);
     let updateStock = item.stock_quantity;
-    let updateDamaged = item.damaged_quantity;
     if (returnCondition === 'good') updateStock = item.stock_quantity + returnCustody.quantity;
-    if (returnCondition === 'damaged') updateDamaged = item.damaged_quantity + returnCustody.quantity;
-    await supabase.from('inventory_items').update({ stock_quantity: updateStock, damaged_quantity: updateDamaged }).eq('id', item.id);
-    const amount = (returnCondition === 'damaged' || returnCondition === 'lost') ? item.cost_per_unit * returnCustody.quantity : 0;
-    await supabase.from('inventory_logs').insert({
+    await api.patch('/inventory/items/' + item.id, { stock_quantity: updateStock });
+    const badOrWorse = returnCondition === 'bad' || returnCondition === 'worse';
+    const amount = (returnCondition === 'damaged' || returnCondition === 'lost' || badOrWorse) ? item.cost_per_unit * returnCustody.quantity : 0;
+    const TENANT_COMPANY_ID = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
+    let effectiveCompanyId = TENANT_COMPANY_ID;
+    try {
+      const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
+      effectiveCompanyId = parsed?.company_id || TENANT_COMPANY_ID;
+    } catch {
+      effectiveCompanyId = TENANT_COMPANY_ID;
+    }
+    const paymentStatus = returnCondition === 'good' ? 'n/a' : 'unpaid';
+    console.log('Final Payload with Company ID:', {
+      company_id: effectiveCompanyId,
+      guard_id: returnCustody.guard_id,
+      item_id: item.id,
+      quantity: returnCustody.quantity,
       action: 'return',
-      company_id: companyId,
+      payment_status: paymentStatus,
+      return_condition: returnCondition,
+      amount_owed: amount
+    });
+    const logRes = await api.post('/inventory/logs', {
+      action: 'return',
+      company_id: effectiveCompanyId,
       guard_id: returnCustody.guard_id,
       item_id: item.id,
       quantity: returnCustody.quantity,
       return_condition: returnCondition,
       amount_owed: amount,
+      payment_status: paymentStatus,
       created_at: new Date().toISOString(),
     });
-    await supabase.from('inventory_custody').delete().eq('id', returnCustody.id);
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, stock_quantity: updateStock, damaged_quantity: updateDamaged } : i));
+    await api.delete('/inventory/custody/' + returnCustody.id);
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, stock_quantity: updateStock } : i));
     setCustody(prev => prev.filter(c => c.id !== returnCustody.id));
-    setLogs(prev => [{ id: `log-${Date.now()}`, action: 'return', guard_id: returnCustody.guard_id, item_id: item.id, quantity: returnCustody.quantity, return_condition: returnCondition, amount_owed: amount, created_at: new Date().toISOString() } as InventoryLog, ...prev]);
+    if ((logRes as any)?.data) {
+      setLogs(prev => [((logRes as any).data as InventoryLog), ...prev]);
+    } else {
+      setLogs(prev => [{ id: `log-${Date.now()}`, action: 'return', guard_id: returnCustody.guard_id, item_id: item.id, quantity: returnCustody.quantity, return_condition: returnCondition, amount_owed: amount, payment_status: paymentStatus, created_at: new Date().toISOString() } as InventoryLog, ...prev]);
+    }
     setIsSyncing(false);
     setReturnOpen(false);
     setReturnCustody(null);
@@ -365,7 +409,7 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Inventory Items</h3>
-            <button onClick={() => setIssueOpen(true)} disabled={READ_ONLY} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">Issue Item</button>
+            <button onClick={() => setIssueOpen(true)} disabled={false} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">Issue Tools & Activate</button>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -402,8 +446,8 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       {tab === 'issue' && (
         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Issue Equipment</h3>
-            <button onClick={() => setIssueOpen(true)} disabled={READ_ONLY} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">New Issue</button>
+            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Issue Tools & Activate</h3>
+            <button onClick={() => setIssueOpen(true)} disabled={false} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">New Issue</button>
           </div>
           <div className="space-y-3">
             {issuedByGuard.map(g => (
@@ -426,6 +470,18 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
                     ))}
                   </div>
                 </div>
+                <div className="mt-3 flex items-center gap-2 overflow-x-auto">
+                  {(recentIssuesByGuard.get(g.guardId) || []).map((ri, idx) => (
+                    <span key={idx} className="px-3 py-1 rounded-full bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                      {ri.itemName} • {ri.qty}
+                    </span>
+                  ))}
+                  {(recentIssuesByGuard.get(g.guardId) || []).length === 0 && (
+                    <span className="px-3 py-1 rounded-full bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                      No recent issues
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
             {issuedByGuard.length === 0 && <p className="text-slate-400 font-black uppercase tracking-widest text-[10px]">No custody records</p>}
@@ -443,8 +499,11 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
                 <div>
                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{row.itemName}</p>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Guard: {row.guardName} • Qty: {row.custody.quantity}</p>
+                  {row.custody.condition_at_issue ? (
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Condition at Issue: {row.custody.condition_at_issue}</p>
+                  ) : null}
                 </div>
-                <button onClick={() => { setReturnCustody(row.custody); setReturnOpen(true); }} disabled={READ_ONLY} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">Return</button>
+                <button onClick={() => { setReturnCustody(row.custody); setReturnOpen(true); }} disabled={false} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">Return</button>
               </div>
             ))}
             {issuedWithNames.length === 0 && (
@@ -462,11 +521,37 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
           <div className="space-y-2">
             {liabilityRows.map(r => (
               <div key={r.id} className="p-4 bg-red-50 rounded-xl border border-red-100 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{r.guardName}</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{r.itemName} • {r.condition}</p>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{r.guardName}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{r.itemName} • {r.condition}</p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest ${r.payment_status === 'paid' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-100 border-red-200 text-red-700'}`}>
+                    {r.payment_status === 'paid' ? 'PAID' : 'UNPAID'}
+                  </span>
                 </div>
-                <span className="text-[10px] font-black text-red-600 font-hud">{Intl.NumberFormat().format(r.amount)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-black text-red-600 font-hud">{Intl.NumberFormat().format(r.amount)}</span>
+                  {r.payment_status !== 'paid' && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const TENANT_COMPANY_ID = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
+                          const res = await api.patch('/inventory/logs/' + r.id, { payment_status: 'paid', paid_at: new Date().toISOString(), company_id: TENANT_COMPANY_ID });
+                          const updated = (res as any)?.data as InventoryLog | undefined;
+                          if (updated?.id) {
+                            setLogs(prev => prev.map(l => l.id === updated.id ? updated : l));
+                          } else {
+                            setLogs(prev => prev.map(l => l.id === r.id ? { ...l, payment_status: 'paid', paid_at: new Date().toISOString() } : l));
+                          }
+                        } catch {}
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black uppercase rounded-lg"
+                    >
+                      Mark as Paid
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {liabilityRows.length === 0 && <p className="text-slate-400 font-black uppercase tracking-widest text-[10px]">No losses</p>}
@@ -492,35 +577,49 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
 
       {issueOpen && (
         <div className="fixed inset-0 z-[1200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl border border-white/20 overflow-hidden">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-white/20 overflow-hidden">
             <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Issue Item</h3>
+              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Issue Tools & Activate</h3>
               <button onClick={() => setIssueOpen(false)} className="w-8 h-8 bg-white border border-slate-200 rounded-full">✕</button>
             </div>
             <div className="p-6 space-y-4">
               <label htmlFor="issue-guard" className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Guard</label>
               <select id="issue-guard" name="issueGuard" value={issueGuardId} onChange={e => setIssueGuardId(e.target.value)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl">
                 <option value="">Select Guard</option>
-                {eligibleGuards.map(g => <option key={g.id} value={g.id}>{g.full_name}</option>)}
+                {eligibleGuards.map(g => {
+                  const statusLabel = g.application_status === 'hired' ? 'Hired' : (g.application_status === 'active_guard' ? 'Active' : g.application_status);
+                  return <option key={g.id} value={g.id}>{g.full_name} ({statusLabel})</option>;
+                })}
               </select>
               <div className="space-y-3">
                 {issueRows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-3 gap-3">
+                  <div key={idx} className="grid grid-cols-4 gap-3">
                     <div>
                       <label htmlFor={`issue-item-${idx}`} className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Item</label>
                       <select id={`issue-item-${idx}`} name={`issueItem-${idx}`} value={row.itemId} onChange={e => setIssueRows(prev => prev.map((r, i) => i === idx ? { ...r, itemId: e.target.value } : r))} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl">
                       <option value="">Item</option>
                       {items.map(i => <option key={i.id} value={i.id}>{i.name} ({i.stock_quantity})</option>)}
                       </select>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                        In Stock: {items.find(i => i.id === row.itemId)?.stock_quantity ?? 0}
+                      </p>
                     </div>
                     <div>
                       <label htmlFor={`issue-qty-${idx}`} className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Quantity</label>
                       <input id={`issue-qty-${idx}`} name={`issueQty-${idx}`} type="number" min={1} value={row.qty} onChange={e => setIssueRows(prev => prev.map((r, i) => i === idx ? { ...r, qty: Number(e.target.value) || 1 } : r))} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl" />
                     </div>
+                    <div>
+                      <label htmlFor={`issue-cond-${idx}`} className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Condition</label>
+                      <select id={`issue-cond-${idx}`} name={`issueCond-${idx}`} value={row.condition} onChange={e => setIssueRows(prev => prev.map((r, i) => i === idx ? { ...r, condition: e.target.value as 'new' | 'good' | 'fair' } : r))} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl">
+                        <option value="new">New</option>
+                        <option value="good">Good</option>
+                        <option value="fair">Fair</option>
+                      </select>
+                    </div>
                     <button onClick={() => setIssueRows(prev => prev.filter((_, i) => i !== idx))} className="h-12 bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black uppercase">Remove</button>
                   </div>
                 ))}
-                <button onClick={() => setIssueRows(prev => [...prev, { itemId: '', qty: 1 }])} className="w-full py-2 bg-slate-50 text-slate-900 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest">Add Item</button>
+                <button onClick={() => setIssueRows(prev => [...prev, { itemId: '', qty: 1, condition: 'new' }])} className="w-full py-2 bg-slate-50 text-slate-900 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest">Add Item</button>
               </div>
               <button onClick={confirmIssue} disabled={isSyncing || !issueGuardId} className="w-full py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl">{isSyncing ? 'Processing...' : 'Confirm'}</button>
             </div>
@@ -536,12 +635,18 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
               <button onClick={() => setReturnOpen(false)} className="w-8 h-8 bg-white border border-slate-200 rounded-full">✕</button>
             </div>
             <div className="p-6 space-y-4">
+              {returnCustody?.condition_at_issue ? (
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Condition at Issue: {returnCustody.condition_at_issue}</p>
+              ) : null}
               <label htmlFor="return-condition" className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Return Condition</label>
               <select id="return-condition" name="returnCondition" value={returnCondition} onChange={e => setReturnCondition(e.target.value as any)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl">
                 <option value="good">Good</option>
                 <option value="damaged">Damaged</option>
                 <option value="lost">Lost</option>
+                <option value="bad">Bad</option>
+                <option value="worse">Worse</option>
               </select>
+              <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">Comparison: Issue {returnCustody?.condition_at_issue || '—'} vs Return {returnCondition}</p>
               <button onClick={() => confirmReturn()} disabled={isSyncing} className="w-full py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl">{isSyncing ? 'Processing...' : 'Confirm'}</button>
             </div>
           </div>

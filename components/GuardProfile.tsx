@@ -1,7 +1,7 @@
 
 
 import React, { useMemo } from 'react';
-import { Guard } from '../types';
+import { Guard, ApplicationStatus } from '../types';
 
 interface GuardProfileProps {
   guard: Guard;
@@ -70,14 +70,22 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
       <div className="bg-slate-900 rounded-[2.5rem] p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full -mr-32 -mt-32 blur-3xl" />
         <div className="relative z-10 flex items-center gap-6">
-          <div className="w-20 h-20 rounded-[2rem] bg-white text-primary flex items-center justify-center text-3xl font-black shadow-xl">
-            {guard.full_name[0]}
-          </div>
+          {guard.passport_photo_url ? (
+            <img src={guard.passport_photo_url} alt={guard.full_name} className="w-20 h-20 rounded-2xl object-cover border border-white/20 shadow-xl" />
+          ) : (
+            <div className="w-20 h-20 rounded-[2rem] bg-white text-primary flex items-center justify-center text-3xl font-black shadow-xl">
+              {guard.full_name?.[0] || 'G'}
+            </div>
+          )}
           <div>
             <h2 className="text-2xl font-black uppercase tracking-tighter leading-none">{guard.full_name}</h2>
             <div className="flex items-center gap-3 mt-3">
-              <span className="px-3 py-1 bg-primary/20 text-primary-light border border-white/10 rounded-lg text-[9px] font-black uppercase tracking-widest">
-                Active Duty
+              <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                guard.application_status === ApplicationStatus.BLACKLISTED 
+                  ? 'bg-red-50 text-red-600 border-red-100' 
+                  : 'bg-primary/20 text-primary-light border-white/10'
+              }`}>
+                {guard.application_status === ApplicationStatus.BLACKLISTED ? 'Blacklisted' : 'Active Duty'}
               </span>
               <span className="text-[10px] font-mono text-white/40 font-bold">ID: {guard.id.slice(0, 8)}</span>
             </div>
@@ -88,10 +96,18 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           <div>
             <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Performance</p>
             <p className="text-4xl font-black font-hud text-emerald-400">{guard.performance_score || 100}%</p>
+            <div className="mt-3">
+              <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Readiness</p>
+              <p className="text-xl font-black font-hud text-primary-light">{typeof guard.readiness_score === 'number' ? guard.readiness_score : 0}%</p>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Status</p>
-            <p className="text-lg font-black uppercase tracking-tight text-white/90">Active</p>
+            <p className={`text-lg font-black uppercase tracking-tight ${
+              guard.application_status === ApplicationStatus.BLACKLISTED ? 'text-red-400' : 'text-white/90'
+            }`}>
+              {String(guard.application_status || 'active').replace('_',' ')}
+            </p>
           </div>
         </div>
       </div>
@@ -110,6 +126,42 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
             <DetailItem label="Current Shift" value={guard.current_shift?.toUpperCase() || 'NOT_ASSIGNED'} />
             <DetailItem label="Armed Status" value={guard.is_armed ? 'Armed' : 'Unarmed'} />
           </div>
+        </section>
+
+        <section>
+          <SectionHeader title="Dossier" icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18" strokeWidth="2.5" /></svg>} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+            <DetailItem label="Physical Address" value={(guard as any)?.dossier_data?.physical_address || 'N/A'} />
+            <DetailItem label="Emergency Contact" value={(guard as any)?.dossier_data?.emergency_contact || 'N/A'} />
+            <DetailItem label="Shirt Size" value={(guard as any)?.dossier_data?.uniform_shirt_size || 'N/A'} />
+            <DetailItem label="Boot Size" value={(guard as any)?.dossier_data?.uniform_boot_size || 'N/A'} />
+          </div>
+          <div className="mt-6 p-6 bg-slate-50 border border-slate-100 rounded-2xl">
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3">Guarantors</p>
+            {Array.isArray(guard.guarantors) && guard.guarantors.length > 0 ? (
+              <div className="space-y-4">
+                {guard.guarantors.map((g, i) => (
+                  <div key={g.id} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3">
+                    <DetailItem label={`Guarantor #${i + 1} Name`} value={g.name} />
+                    <DetailItem label={`Guarantor #${i + 1} Phone`} value={g.phone} mono />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">No guarantors listed.</p>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <SectionHeader title="Security Training" icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6v12m6-6H6" strokeWidth="2.5" /></svg>} />
+          {Array.isArray((guard as any).security_training) && (guard as any).security_training.length > 0 ? (
+            <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+              <p className="text-sm font-bold text-slate-700">{(guard as any).security_training.join(', ')}</p>
+            </div>
+          ) : (
+            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">No training listed.</p>
+          )}
         </section>
 
         {/* Support Network */}
@@ -137,7 +189,7 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
               guard.education_history.map(edu => (
                 <div key={edu.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-black text-slate-900 uppercase tracking-tight">{edu.level.replace('_', ' ')}</p>
+                    <p className="text-xs font-black text-slate-900 uppercase tracking-tight">{edu.level?.replace('_', ' ')}</p>
                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5 tracking-widest">Completed: {edu.year}</p>
                   </div>
                   {edu.weapon_proficiency === 'pass' && (
@@ -167,7 +219,7 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
                 </React.Fragment>
             ))}
             {guard.education_history?.map(edu => (
-                edu.certificate_url && <DocumentLink key={edu.id} label={`${edu.level.replace('_', ' ')} Cert (${edu.year})`} url={edu.certificate_url} onView={handleViewDocument} />
+                edu.certificate_url && <DocumentLink key={edu.id} label={`${edu.level?.replace('_', ' ')} Cert (${edu.year})`} url={edu.certificate_url} onView={handleViewDocument} />
             ))}
           </div>
         </section>

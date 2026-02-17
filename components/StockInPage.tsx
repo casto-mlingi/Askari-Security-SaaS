@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase, READ_ONLY } from '../services/supabaseClient';
+import { api } from '../services/api';
+import { READ_ONLY } from '../services/supabaseClient';
  
 type InventoryItem = {
   id: string;
@@ -17,13 +18,14 @@ type StockRow = {
 };
  
 interface StockInProps {
-  companyId?: string;
+  companyId: string;
 }
 
 const StockInPage: React.FC<StockInProps> = ({ companyId }) => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [rows, setRows] = useState<StockRow[]>([{ name: '', qty: 1, unitCost: 0, condition: 'new' }]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
   const [companyEquipmentNames, setCompanyEquipmentNames] = useState<string[]>([]);
   const storageKey = useMemo(() => `stock_in_rows:${companyId || 'anon'}`, [companyId]);
 
@@ -50,47 +52,19 @@ const StockInPage: React.FC<StockInProps> = ({ companyId }) => {
       try {
         const isUuid = !!companyId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId);
         if (isUuid) {
-          const { data: itemsScoped } = await supabase
-            .from('inventory_items')
-            .select('*')
-            .eq('company_id', companyId)
-            .order('name', { ascending: true });
-          setItems((itemsScoped || []) as any);
+          const res = await api.get<InventoryItem[]>(`/inventory/items?company_id=${companyId}`);
+          setItems((res.data || []) as any);
         } else {
-          const { data: itemsAll } = await supabase
-            .from('inventory_items')
-            .select('*')
-            .order('name', { ascending: true });
-          setItems((itemsAll || []) as any);
+          const res = await api.get<InventoryItem[]>(`/inventory/items`);
+          setItems((res.data || []) as any);
         }
       } catch {
-        const { data: itemsAll } = await supabase
-          .from('inventory_items')
-          .select('*')
-          .order('name', { ascending: true });
-        setItems((itemsAll || []) as any);
+        const res = await api.get<InventoryItem[]>(`/inventory/items`);
+        setItems((res.data || []) as any);
       }
     };
     load();
-    const channel = supabase
-      .channel('inventory_items_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, payload => {
-        const n: any = (payload as any).new;
-        const o: any = (payload as any).old;
-        const allowNew = !companyId || n?.company_id === companyId;
-        const allowOld = !companyId || o?.company_id === companyId;
-        if ((payload as any).eventType === 'INSERT') {
-          if (allowNew) setItems(prev => [n, ...prev.filter(i => i.id !== n.id)]);
-        } else if ((payload as any).eventType === 'UPDATE') {
-          if (allowNew) setItems(prev => prev.map(i => i.id === n.id ? n : i));
-        } else if ((payload as any).eventType === 'DELETE') {
-          if (allowOld) setItems(prev => prev.filter(i => i.id !== o.id));
-        }
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => {};
   }, [companyId, companyEquipmentNames]);
  
   const grandTotal = useMemo(() => {
@@ -107,109 +81,46 @@ const StockInPage: React.FC<StockInProps> = ({ companyId }) => {
  
   const confirmStockIn = async () => {
     console.log('🚀 Action Started: confirmStockIn');
-    if (READ_ONLY) {
-      alert('Production is read-only. Stock changes are disabled.');
-      console.warn('❌ Validation Failed:', 'READ_ONLY mode');
-      return;
-    }
+    console.log('Checking Company ID:', companyId);
     if (!companyId) {
-      alert('Missing company context. Please select a company.');
-      console.warn('❌ Validation Failed:', 'Missing companyId');
+      alert('System Error: Company ID is missing. Please refresh.');
+      console.error('❌ Validation Failed:', 'Missing companyId');
       return;
     }
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId);
-    if (!isUuid) {
-      alert('Invalid company ID. Please sign in with a real company context.');
-      console.warn('❌ Validation Failed:', 'companyId is not a valid UUID', { companyId });
+    const normalized = rows
+      .map(v => ({
+      ...v,
+        name: String(v.name || '').trim(),
+        qty: Number(v.qty) || 0,
+        unitCost: Number(String(v.unitCost).replace(/[^0-9.]/g, '')) || 0,
+        condition: String(v.condition || '').toLowerCase() as any
+      }))
+      .filter(v => v.name && v.qty > 0 && v.unitCost >= 0);
+    if (normalized.length === 0) {
+      const invalids = rows.map((r, idx) => {
+        const nameOk = String(r.name || '').trim() !== '';
+        const qtyOk = Number(r.qty) > 0;
+        const costOk = Number(String(r.unitCost).replace(/[^0-9.]/g, '')) >= 0;
+        return !nameOk || !qtyOk || !costOk ? `Row ${idx + 1}: ${!nameOk ? 'Missing name' : ''} ${!qtyOk ? 'Invalid qty' : ''} ${!costOk ? 'Invalid unit cost' : ''}`.trim() : null;
+      }).filter(Boolean).join(' • ');
+      setErrorMessage(invalids || 'No valid rows to process');
+      (window as any).showNotification?.('error', invalids || 'No valid rows');
+      try { alert(invalids || 'No valid rows'); } catch {}
+      console.warn('❌ Validation Failed:', invalids || 'No valid rows', { rows });
       return;
     }
-    const valid = rows.filter(r => r.name.trim() && r.qty > 0 && r.unitCost > 0);
-    if (valid.length === 0) {
-      console.warn('❌ Validation Failed:', 'No valid rows to process', { rows });
-      return;
-    }
-    console.log('📦 Payload:', { companyId, rows: valid });
+    console.log('📦 Payload:', { companyId, items: normalized });
     setIsSyncing(true);
     try {
-      for (const r of valid) {
-        const { data: existing, error: findErr, status } = await supabase
-          .from('inventory_items')
-          .select('id, stock_quantity')
-          .eq('name', r.name.trim())
-          .eq('company_id', companyId as any)
-          .maybeSingle();
-        if (findErr && status !== 406) {
-          setIsSyncing(false);
-          console.error('🔥 Supabase Error:', findErr);
-          alert('Failed to query inventory. Please check your database policies.');
-          return;
-        }
-        if (existing?.id) {
-          const newQty = (existing.stock_quantity || 0) + r.qty;
-          const { error: updErr } = await supabase
-            .from('inventory_items')
-            .update({ stock_quantity: newQty, cost_per_unit: r.unitCost, condition: r.condition })
-            .eq('id', existing.id);
-          if (updErr) {
-            setIsSyncing(false);
-            console.error('🔥 Supabase Error:', updErr);
-            alert('Failed to update item. Please check your database policies.');
-            return;
-          }
-          const { error: logErr } = await supabase.from('inventory_logs').insert({
-            action: 'restock',
-            company_id: companyId,
-            item_id: existing.id,
-            quantity: r.qty,
-            stock_condition: r.condition,
-            created_at: new Date().toISOString(),
-          });
-          if (logErr) {
-            setIsSyncing(false);
-            console.error('🔥 Supabase Error:', logErr);
-            alert('Failed to write restock log. Please check your database policies.');
-            return;
-          }
-          setItems(prev => prev.map(i => i.id === existing.id ? { ...i, stock_quantity: newQty, cost_per_unit: r.unitCost, condition: r.condition } : i));
-        } else {
-          const { data: createdRows, error: insErr } = await supabase
-            .from('inventory_items')
-            .insert([{
-              company_id: companyId,
-              name: r.name.trim(),
-              stock_quantity: r.qty,
-              condition: r.condition,
-              cost_per_unit: r.unitCost,
-            }])
-            .select('*');
-          if (insErr) {
-            setIsSyncing(false);
-            console.error('🔥 Supabase Error:', insErr);
-            alert('Failed to create item. Please check your database policies.');
-            return;
-          }
-          const created = Array.isArray(createdRows) ? createdRows[0] as any : createdRows as any;
-          if (created?.id) {
-            const { error: logErr2 } = await supabase.from('inventory_logs').insert({
-              action: 'restock',
-              company_id: companyId,
-              item_id: created.id,
-              quantity: r.qty,
-              stock_condition: r.condition,
-              created_at: new Date().toISOString(),
-            });
-            if (logErr2) {
-              setIsSyncing(false);
-              console.error('🔥 Supabase Error:', logErr2);
-              alert('Failed to write restock log. Please check your database policies.');
-              return;
-            }
-            setItems(prev => [created as InventoryItem, ...prev]);
-          }
-        }
-      }
+      await api.post('/inventory/stock-in', { company_id: companyId, items: normalized });
+      const res = await api.get<InventoryItem[]>(`/inventory/items?company_id=${companyId}`);
+      setItems((res.data || []) as any);
+      setErrorMessage('');
+      (window as any).showNotification?.('success', 'Stock updated');
     } catch (error) {
-      console.error('🔥 Supabase Error:', error);
+      console.error('Error during inventory update', error);
+      setErrorMessage('Stock update failed');
+      (window as any).showNotification?.('error', 'Stock update failed');
     }
     setIsSyncing(false);
     setRows([{ name: '', qty: 1, unitCost: 0, condition: 'new' }]);
@@ -230,10 +141,14 @@ const StockInPage: React.FC<StockInProps> = ({ companyId }) => {
             <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Total</span>{' '}
             <span className="text-lg font-black font-hud">{Intl.NumberFormat().format(grandTotal)}</span>
           </div>
+          {errorMessage && (
+            <div className="px-4 py-2 rounded-2xl bg-red-50 border border-red-200">
+              <span className="text-[10px] font-black text-red-600 uppercase tracking-widest">{errorMessage}</span>
+            </div>
+          )}
           <button
             onClick={confirmStockIn}
-            disabled={READ_ONLY || isSyncing || rows.filter(r => r.name.trim() && r.qty > 0 && r.unitCost > 0).length === 0}
-            className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+            className="px-5 py-2 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest"
           >
             {isSyncing ? 'Processing...' : 'Confirm'}
           </button>
@@ -326,8 +241,7 @@ const StockInPage: React.FC<StockInProps> = ({ companyId }) => {
             </button>
             <button
               onClick={confirmStockIn}
-            disabled={READ_ONLY || isSyncing || rows.filter(r => r.name.trim() && r.qty > 0 && r.unitCost > 0).length === 0}
-              className="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+              className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
             >
               {isSyncing ? 'Processing...' : 'Confirm'}
             </button>

@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const readOnlyOverride = import.meta.env.VITE_READ_ONLY;
-export const READ_ONLY =
+let READ_ONLY_BASE =
   readOnlyOverride === 'true'
     ? true
     : readOnlyOverride === 'false'
@@ -12,18 +12,42 @@ export const READ_ONLY =
       : (import.meta.env.PROD ?? false);
 
 // Safety check to ensure keys exist
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase keys are missing! Check your .env.local file.');
+const hasSupabaseKeys = !!supabaseUrl && !!supabaseAnonKey;
+export const READ_ONLY = hasSupabaseKeys ? READ_ONLY_BASE : true;
+// Silence noisy logs in production and dev when Supabase is disabled
+// The app will continue to use the local backend without any console warnings
+
+// Minimal stub to prevent runtime crashes when Supabase is disabled
+function createSupabaseStub() {
+  const makeResult = () => ({ data: null, error: { message: 'Supabase disabled' } });
+  const chain = () => ({
+    select: async () => makeResult(),
+    insert: async () => makeResult(),
+    update: async () => makeResult(),
+    delete: async () => makeResult(),
+    order: async () => makeResult(),
+    eq: async () => makeResult(),
+    maybeSingle: async () => makeResult(),
+  });
+  return {
+    from: () => chain(),
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: { message: 'Supabase disabled' } }),
+      signInWithPassword: async () => ({ data: null, error: { message: 'Supabase disabled' } }),
+      onAuthStateChange: (_cb: any) => ({ data: { subscription: { unsubscribe: () => {} } }, error: null })
+    },
+    channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
+    removeChannel: () => {},
+  } as any;
 }
 
 // Export the connection to be used throughout the app
-export const supabase = createClient(
-  supabaseUrl || '', 
-  supabaseAnonKey || ''
-);
+export const supabase = hasSupabaseKeys
+  ? createClient(supabaseUrl!, supabaseAnonKey!)
+  : createSupabaseStub();
 
 // Dev-only interceptor for Supabase REST requests
-if (typeof window !== 'undefined' && import.meta.env.DEV && supabaseUrl) {
+if (typeof window !== 'undefined' && import.meta.env.DEV && hasSupabaseKeys && supabaseUrl) {
   const originalFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : (input as Request).url;

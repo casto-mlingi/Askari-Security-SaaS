@@ -15,7 +15,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab, currentU
   if (!isGuard) return null; // Staff uses desktop sidebar structure mostly, or different mobile nav if needed
 
   const guard = currentUser as Guard;
-  const isActiveGuard = guard.application_status === ApplicationStatus.ACTIVE;
+  const isActiveGuard = guard.application_status === ApplicationStatus.ACTIVE || guard.application_status === ApplicationStatus.ACTIVE_GUARD;
 
   // Tabs for "Hold Applicant"
   const applicantTabs = [

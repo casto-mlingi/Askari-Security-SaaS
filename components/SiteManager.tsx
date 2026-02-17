@@ -13,7 +13,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, onSelect, 
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
-  const filtered = useMemo(() => options.filter(opt => opt.label.toLowerCase().includes(searchTerm.toLowerCase())), [options, searchTerm]);
+  const filtered = useMemo(() => options.filter(opt => (opt.label || '').toLowerCase().includes((searchTerm || '').toLowerCase())), [options, searchTerm]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false); };
@@ -143,7 +143,7 @@ const SiteManager: React.FC<SiteManagerProps> = ({ sites, profiles, guards, onAd
                     {activeGuards.filter(g => g.current_site_id === selectedSiteId).map(guard => (
                       <div key={guard.id} className="p-6 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm animate-in fade-in slide-in-from-right-5">
                          <div className="flex items-center gap-4">
-                           <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400">{guard.full_name[0]}</div>
+                          <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400">{guard.full_name?.[0] || 'G'}</div>
                            <div>
                              <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{guard.full_name}</p>
                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Performance {Math.round(guard.performance_score || 100)}%</p>

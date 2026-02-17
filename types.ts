@@ -5,6 +5,7 @@ export enum UserRole {
   HR_OFFICER = 'hr_officer',
   PROCUREMENT = 'procurement',
   SUPERVISOR = 'supervisor',
+  SYSTEM_HR = 'system_hr',
   GUARD = 'guard'
 }
 
@@ -17,13 +18,17 @@ export enum SubscriptionStatus {
 
 export enum ApplicationStatus {
   DRAFT = 'draft',
+  SUBMITTED_APPLICATION = 'submitted_application',
   PENDING = 'pending',
+  PENDING_INTAKE = 'pending_intake',
   POOL_APPLICANT = 'pool_applicant',
+  MARKET_POOL = 'market_pool',
   INTERVIEW_LOCKED = 'interview_locked',
   PROCUREMENT_PENDING = 'procurement_pending',
   INTERVIEWING = 'interviewing',
   HIRED = 'hired',
   ACTIVE = 'active',
+  ACTIVE_GUARD = 'active_guard',
   REJECTED = 'rejected',
   BLACKLISTED = 'blacklisted',
   DISQUALIFIED = 'disqualified',
@@ -96,11 +101,15 @@ export interface Site {
 }
 
 export type EducationLevel = 'primary' | 'secondary' | 'advanced' | 'nta4_5' | 'military';
+export type GuardEducationLevel = 'primary' | 'secondary' | 'college' | 'university' | 'military';
+export type SecurityLevel = 'standard' | 'armed' | 'supervisor' | 'elite';
+export type SecurityTraining = 'k9_handler' | 'fire_safety';
 
 export interface EducationRecord {
   id: string;
   guard_id: string;
   level: EducationLevel;
+  institution_name?: string;
   year: string;
   certificate_url?: string;
   weapon_proficiency?: 'pass' | 'fail' | '';
@@ -114,8 +123,9 @@ export interface Guarantor {
   name: string;
   phone: string;
   relationship: string;
-  letter_url: string;
-  residence_letter_url: string;
+  intro_letter_url?: string;
+  id_copy_url?: string;
+  residence_letter_url?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -166,6 +176,13 @@ export interface KitIssuance {
 export interface DossierData {
   interviewer_notes?: string;
   rejection_reason?: string;
+  allow_edit?: boolean;
+  hr_private_notes?: {
+    id: string;
+    author_id?: string;
+    note: string;
+    created_at: string;
+  }[];
   ai_analysis?: {
     reliability_score: number;
     reasoning: string;
@@ -176,13 +193,19 @@ export interface DossierData {
 
 export interface Guard {
   id: string;
+  email?: string;
   nida_number: string;
   full_name: string;
   dob: string;
   gender?: 'male' | 'female' | 'trans';
   profile_score: number;
   performance_score?: number;
+  readiness_score?: number;
+  education_level?: GuardEducationLevel;
+  security_level?: SecurityLevel;
+  security_training?: SecurityTraining[];
   application_status: ApplicationStatus;
+  system_verification_status?: 'pending' | 'verified' | 'rejected';
   current_site_id?: string;
   assigned_supervisor_id?: string; // References Profile.id
   company_id?: string; // Optional for POOL_APPLICANT
@@ -205,6 +228,7 @@ export interface Guard {
   birth_cert_url?: string;
   application_letter_url?: string;
   residence_letter_url?: string;
+  medical_report_url?: string;
   police_clearance_url?: string;
   cv_url?: string;
   passport_photo_url?: string;
@@ -304,12 +328,25 @@ export interface DisciplinaryCode {
 export interface IncidentReport {
   id: string;
   guard_id: string;
+  title?: string;
   code: string; // References DisciplinaryCode.code
   notes: string;
   evidence_url: string;
   evidence_urls?: string[];
+  evidence_image_url?: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
   reported_by: string; // Can be Profile.id or Profile.full_name
   site_id?: string; 
   site_name?: string; // Denormalized for display
+  created_at: string;
+}
+
+export interface DisciplinaryRecord {
+  id: string;
+  guard_id: string;
+  company_id: string;
+  formal_report: string;
+  penalty_points: number;
+  incident_code: string;
   created_at: string;
 }

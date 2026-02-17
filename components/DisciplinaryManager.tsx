@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Guard, IncidentReport, ApplicationStatus, DisciplinaryCode, Site, LeaveRequest, Profile } from '../types';
 import PerformanceLineChart from './PerformanceLineChart';
 // ✅ FIXED: Imported only once, using the correct relative path
-import { suggestDisciplinaryPolicy } from '../services/ai';
+import { suggestDisciplinaryPolicy, generateFormalDisciplinaryRecord } from '../services/ai';
+import { api } from '../services/api';
 
 interface DisciplinaryManagerProps {
   guards: Guard[];
@@ -16,6 +17,7 @@ interface DisciplinaryManagerProps {
   onAddPolicy?: (policy: DisciplinaryCode) => void;
   onDeletePolicy?: (code: string) => void;
   onUpdatePolicy?: (code: string, updates: Partial<DisciplinaryCode>) => void;
+  onAfterSaveRecord?: (guardId: string, penaltyPoints: number) => void;
 }
 
 const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({ 
@@ -29,7 +31,8 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
   onViewGuardAudit,
   onAddPolicy,
   onDeletePolicy,
-  onUpdatePolicy 
+  onUpdatePolicy,
+  onAfterSaveRecord
 }) => {
   const [view, setView] = useState<'performance' | 'incidents' | 'leave' | 'policies'>('performance');
   const [perfMode, setPerfMode] = useState<'grid' | 'list'>('grid');
@@ -46,16 +49,24 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
   const [editLabel, setEditLabel] = useState('');
   const [editPoints, setEditPoints] = useState(0);
   const [editDescription, setEditDescription] = useState('');
+  const [roughNotes, setRoughNotes] = useState('');
+  const [selectedGuardId, setSelectedGuardId] = useState('');
+  const [formalPreview, setFormalPreview] = useState<{ formal_report: string; incident_code: string; penalty_points: number } | null>(null);
+  const [isSavingRecord, setIsSavingRecord] = useState(false);
+  const [formalReportText, setFormalReportText] = useState('');
+  const [incidentCodeText, setIncidentCodeText] = useState('');
+  const [penaltyPointsValue, setPenaltyPointsValue] = useState<number>(0);
 
   const deployedGuards = useMemo(() => guards.filter(g => 
     g.application_status === ApplicationStatus.ACTIVE || 
+    g.application_status === ApplicationStatus.ACTIVE_GUARD || 
     g.application_status === ApplicationStatus.ON_LEAVE || 
     g.application_status === ApplicationStatus.AWOL
   ), [guards]);
 
   const filteredIncidents = useMemo(() => incidents.filter(i => {
     const g = guards.find(guard => guard.id === i.guard_id);
-    return g?.full_name.toLowerCase().includes(searchTerm.toLowerCase());
+    return ((g?.full_name || '').toLowerCase()).includes((searchTerm || '').toLowerCase());
   }), [incidents, guards, searchTerm]);
 
   const handleGeneratePolicy = async () => {
@@ -135,7 +146,7 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
                              {guard.passport_photo_url ? (
                                <img src={guard.passport_photo_url} alt={guard.full_name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
                              ) : (
-                               <div className="w-10 h-10 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{guard.full_name[0]}</div>
+                               <div className="w-10 h-10 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{guard.full_name?.[0] || 'G'}</div>
                              )}
                              <div>
                                  <h4 className="font-black text-slate-900 uppercase tracking-tight">{guard.full_name}</h4>
@@ -157,6 +168,109 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
 
       {view === 'incidents' && (
         <div className="space-y-6">
+            <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-4">Rough Field Notes → Formal Report</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <select value={selectedGuardId} onChange={e => setSelectedGuardId(e.target.value)} className="h-12 px-4 bg-white border border-slate-200 rounded-xl font-bold uppercase text-[10px]">
+                  <option value="">Select Guard</option>
+                  {guards.map(g => (
+                    <option key={g.id} value={g.id}>{g.full_name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={async () => {
+                    if (!roughNotes || !selectedGuardId) return;
+                    const result = await generateFormalDisciplinaryRecord(roughNotes, disciplinaryCodes);
+                    const data = (result && (result.formal_report || result.incident_code)) ? result : (result?.data || {});
+                    const fr = String(data.formal_report || '');
+                    const ic = String(data.incident_code || '');
+                    const pts = typeof data.penalty_points === 'number' ? data.penalty_points : Number(data.penalty_points || 0);
+                    setFormalReportText(fr);
+                    setIncidentCodeText(ic);
+                    setPenaltyPointsValue(pts);
+                    setFormalPreview({ formal_report: fr, incident_code: ic, penalty_points: pts });
+                  }}
+                  className="h-12 px-6 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                >
+                  Generate with AI
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!formalPreview || !selectedGuardId) return;
+                    setIsSavingRecord(true);
+                    let companyId = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
+                    try {
+                      const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
+                      companyId = parsed?.company_id || companyId;
+                    } catch {}
+                    const payload = {
+                      guard_id: selectedGuardId,
+                      company_id: companyId,
+                      formal_report: formalReportText,
+                      penalty_points: penaltyPointsValue <= 0 ? penaltyPointsValue : -Math.abs(penaltyPointsValue),
+                      incident_code: incidentCodeText,
+                      rough_notes: roughNotes
+                    };
+                    await api.post('/disciplinary/records', payload);
+                    try {
+                      const pts = Math.abs(penaltyPointsValue <= 0 ? penaltyPointsValue : -Math.abs(penaltyPointsValue));
+                      onAfterSaveRecord?.(selectedGuardId, pts);
+                    } catch {}
+                    setIsSavingRecord(false);
+                    setFormalPreview(null);
+                    setRoughNotes('');
+                    setSelectedGuardId('');
+                    setFormalReportText('');
+                    setIncidentCodeText('');
+                    setPenaltyPointsValue(0);
+                  }}
+                  disabled={isSavingRecord}
+                  className="h-12 px-6 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  {isSavingRecord ? 'Saving...' : 'Save to Record'}
+                </button>
+              </div>
+              <textarea
+                value={roughNotes}
+                onChange={e => setRoughNotes(e.target.value)}
+                placeholder="Enter Rough Field Notes..."
+                className="w-full h-28 mt-4 px-4 py-3 bg-white border border-slate-200 rounded-xl font-medium"
+              />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <textarea
+                  value={formalReportText}
+                  onChange={e => setFormalReportText(e.target.value)}
+                  placeholder="Formal Report (AI will fill this)"
+                  className="md:col-span-2 w-full h-28 px-4 py-3 bg-white border border-slate-200 rounded-xl font-medium"
+                />
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={incidentCodeText}
+                    onChange={e => setIncidentCodeText(e.target.value)}
+                    placeholder="Incident Code (e.g., S.1)"
+                    className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl font-bold uppercase text-[10px]"
+                  />
+                  <input
+                    type="number"
+                    value={penaltyPointsValue}
+                    onChange={e => setPenaltyPointsValue(Number(e.target.value || 0))}
+                    placeholder="Penalty Points (negative)"
+                    className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl font-bold uppercase text-[10px]"
+                  />
+                </div>
+              </div>
+              {formalPreview && (
+                <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Formal Report</p>
+                  <pre className="text-xs whitespace-pre-wrap text-slate-800">{formalPreview.formal_report}</pre>
+                  <div className="mt-2 flex items-center gap-3">
+                    <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black uppercase tracking-widest">{formalPreview.incident_code}</span>
+                    <span className="px-2 py-1 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-black uppercase tracking-widest">-{formalPreview.penalty_points} PTS</span>
+                  </div>
+                </div>
+              )}
+            </div>
             <input 
                 type="text" 
                 placeholder="Search incidents by guard name..."
@@ -220,7 +334,7 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
                     <div key={req.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-6">
                             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center font-black text-2xl">
-                                {guard?.full_name[0]}
+                                {guard?.full_name?.[0] || 'G'}
                             </div>
                             <div>
                                 <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">{guard?.full_name}</h4>

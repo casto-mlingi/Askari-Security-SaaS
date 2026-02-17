@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { EducationRecord, Guard, ApplicationStatus, UserRole, Guarantor } from '../types';
+import { EducationRecord, Guard, ApplicationStatus, UserRole, Guarantor, SecurityTraining } from '../types';
 import FileUploader from './FileUploader';
 import { guardService } from '../services/guardService';
-import { supabase } from '../services/supabaseClient';
+import { api } from '../services/api';
 
 interface WizardData {
   full_name: string;
@@ -13,6 +13,7 @@ interface WizardData {
   application_letter_url: string;
   nida_front_url: string;
   birth_cert_url: string;
+  medical_report_url?: string;
   police_clearance_url: string;
   cv_url: string;
   passport_photo_url: string;
@@ -29,6 +30,13 @@ interface WizardData {
   previous_experience: boolean;
   nssf_number?: string;
   previous_employer_letter_url?: string;
+  physical_address?: string;
+  street?: string;
+  ward?: string;
+  district?: string;
+  emergency_contact?: string;
+  uniform_shirt_size?: string;
+  uniform_boot_size?: string;
 }
 
 type ValidationErrors = {
@@ -57,7 +65,8 @@ const InputField: React.FC<{
     placeholder?: string;
     className?: string;
     rightElement?: React.ReactNode;
-}> = ({ label, name, value, onChange, error, type = 'text', placeholder, className, rightElement }) => (
+    disabled?: boolean;
+}> = ({ label, name, value, onChange, error, type = 'text', placeholder, className, rightElement, disabled }) => (
     <div className={`space-y-2 ${className}`}>
         <div className="flex justify-between items-end">
             <label htmlFor={name} className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{label}</label>
@@ -70,7 +79,8 @@ const InputField: React.FC<{
             placeholder={placeholder}
             value={value}
             onChange={onChange}
-            className={`w-full h-14 px-6 bg-slate-50 border-2 rounded-xl font-bold text-sm outline-none transition-all ${error ? 'border-red-300' : 'border-slate-100 focus:border-primary'}`}
+            disabled={!!disabled}
+            className={`w-full h-14 px-6 bg-slate-50 border-2 rounded-xl font-bold text-sm outline-none transition-all ${error ? 'border-red-300' : 'border-slate-100 focus:border-primary'} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         />
         {error && <p className="text-xs font-medium text-red-500 mt-1 ml-2">{error}</p>}
     </div>
@@ -78,9 +88,49 @@ const InputField: React.FC<{
 
 const STORAGE_KEY_PREFIX = 'amini_guard_wizard_draft_';
 
-export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initialData?: Partial<Guard>, onComplete: (guard: Guard, isApplicantFlow?: boolean) => void, isApplicantFlow?: boolean }> = ({ initialData, onComplete, isApplicantFlow = false }) => {
+export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initialData?: Partial<Guard>, onComplete: (guard: Guard, isApplicantFlow?: boolean) => void, isApplicantFlow?: boolean, isReadOnly?: boolean }> = ({ initialData, onComplete, isApplicantFlow = false, isReadOnly: readOnlyProp }) => {
   const STORAGE_KEY = initialData?.id ? `${STORAGE_KEY_PREFIX}${initialData.id}` : STORAGE_KEY_PREFIX + 'new';
   
+  const mapGuardToWizardData = (g: Partial<Guard>): WizardData => {
+    const dd = (g as any)?.dossier_data || {};
+    const guars = Array.isArray(g.guarantors) ? g.guarantors : [];
+    const edus = Array.isArray(g.education_history) ? g.education_history : [];
+    return {
+      full_name: g.full_name || '',
+      nida_number: g.nida_number || '',
+      phone: g.phone || '',
+      dob: g.dob || '',
+      gender: (g as any)?.gender || '',
+      application_letter_url: g.application_letter_url || '',
+      nida_front_url: g.nida_front_url || '',
+      birth_cert_url: g.birth_cert_url || '',
+      medical_report_url: (g as any)?.medical_report_url || '',
+      police_clearance_url: g.police_clearance_url || '',
+      cv_url: g.cv_url || '',
+      passport_photo_url: (g as any)?.passport_photo_url || '',
+      guarantors: guars as Guarantor[],
+      next_of_kin_name: (g as any)?.kin_name || g.next_of_kin_name || '',
+      next_of_kin_phone: (g as any)?.kin_phone || g.next_of_kin_phone || '',
+      next_of_kin_relationship: (g as any)?.kin_relationship || g.next_of_kin_relationship || '',
+      residence_letter_url: g.residence_letter_url || '',
+      education_history: edus as EducationRecord[],
+      is_armed: !!g.is_armed,
+      residence_lat: g.residence_lat,
+      residence_lng: g.residence_lng,
+      bank_account_number: g.bank_account_number || '',
+      previous_experience: !!(g as any)?.previous_experience,
+      nssf_number: g.nssf_number || '',
+      previous_employer_letter_url: (g as any)?.previous_employer_letter_url || '',
+      physical_address: ((g as any)?.physical_address ?? dd.physical_address) || '',
+      street: dd.street || '',
+      ward: dd.ward || '',
+      district: dd.district || '',
+      emergency_contact: ((g as any)?.emergency_contact ?? dd.emergency_contact) || '',
+      uniform_shirt_size: dd.uniform_shirt_size || '',
+      uniform_boot_size: dd.uniform_boot_size || ''
+    };
+  };
+
   const initialFormState: WizardData = {
     full_name: initialData?.full_name || '',
     nida_number: initialData?.nida_number || '',
@@ -90,6 +140,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     application_letter_url: initialData?.application_letter_url || '',
     nida_front_url: initialData?.nida_front_url || '',
     birth_cert_url: initialData?.birth_cert_url || '',
+    medical_report_url: (initialData as any)?.medical_report_url || '',
     police_clearance_url: initialData?.police_clearance_url || '',
     cv_url: initialData?.cv_url || '',
     passport_photo_url: (initialData as any)?.passport_photo_url || '',
@@ -106,18 +157,108 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     previous_experience: (initialData as any)?.previous_experience || false,
     nssf_number: initialData?.nssf_number || '',
     previous_employer_letter_url: (initialData as any)?.previous_employer_letter_url || '',
+    physical_address: (initialData as any)?.physical_address || (initialData as any)?.dossier_data?.physical_address || '',
+    street: (initialData as any)?.dossier_data?.street || '',
+    ward: (initialData as any)?.dossier_data?.ward || '',
+    district: (initialData as any)?.dossier_data?.district || '',
+    emergency_contact: (initialData as any)?.emergency_contact || (initialData as any)?.dossier_data?.emergency_contact || '',
+    uniform_shirt_size: (initialData as any)?.dossier_data?.uniform_shirt_size || '',
+    uniform_boot_size: (initialData as any)?.dossier_data?.uniform_boot_size || '',
   };
+
+  const [securityTraining, setSecurityTraining] = useState<SecurityTraining[]>(
+    Array.isArray((initialData as any)?.dossier_data?.security_training)
+      ? (initialData as any).dossier_data.security_training
+      : (Array.isArray((initialData as any)?.security_training) ? (initialData as any).security_training : [])
+  );
+  const [draftGuardId, setDraftGuardId] = useState<string | null>(initialData?.id ? String(initialData.id) : null);
+  
+  
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('amini_pending_guard');
+      if (!raw || !isApplicantFlow) return;
+      const ap = JSON.parse(raw);
+      const matchesNida = !!initialData?.nida_number && !!ap.nida_number && String(initialData?.nida_number).replace(/\D/g, '') === String(ap.nida_number).replace(/\D/g, '');
+      const matchesName = !!initialData?.full_name && !!ap.full_name && String(initialData?.full_name).trim().toLowerCase() === String(ap.full_name).trim().toLowerCase();
+      if (matchesNida || matchesName) {
+        setFormData(prev => ({
+          ...prev,
+          full_name: prev.full_name || ap.full_name || '',
+          nida_number: prev.nida_number || ap.nida_number || ''
+        }));
+        localStorage.removeItem('amini_pending_guard');
+      }
+    } catch {}
+  }, [isApplicantFlow, initialData?.nida_number, initialData?.full_name]);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<WizardData>(initialFormState);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [profileScore, setProfileScore] = useState(0);
+  const [autoSavePaused, setAutoSavePaused] = useState(false);
+  const statusValue = ((initialData?.application_status as any) || '') as string;
+  const isLockedByStatus = !!statusValue && String(statusValue).toLowerCase() !== String(ApplicationStatus.DRAFT).toLowerCase();
+  const isLocked = !!readOnlyProp || isLockedByStatus || hasSubmitted;
+  const isReadOnly = isLocked;
+
+  const safeMergeWizardData = (prev: WizardData, next: Partial<WizardData>): WizardData => {
+    const merged: any = { ...prev };
+    Object.keys(next || {}).forEach((k) => {
+      const val = (next as any)[k];
+      if (val === undefined || val === null) return;
+      if (typeof val === 'string') {
+        if (val !== '') merged[k] = val;
+        return;
+      }
+      if (Array.isArray(val)) {
+        if (val.length > 0 || (prev as any)[k] === undefined) merged[k] = val;
+        return;
+      }
+      merged[k] = val;
+    });
+    return merged as WizardData;
+  };
+  const isTZPhone = (v: string) => {
+    const t = (v || '').trim();
+    const digits = t.replace(/\D/g, '');
+    const starts = t.startsWith('0') || t.startsWith('+255');
+    const lenOk = digits.length >= 10 && digits.length <= 12;
+    return !!t && starts && lenOk;
+  };
+
+  const fieldError = (name: string, value: string): string | undefined => {
+    if (name === 'full_name' || name === 'dob' || name === 'gender' || name === 'next_of_kin_name') {
+      if (!value) return 'This field is required.';
+    }
+    if (name === 'phone' || name === 'next_of_kin_phone') {
+      if (!value) return 'This field is required.';
+      if (!isTZPhone(value)) return 'Please enter a valid Tanzanian phone number (e.g., 0755123456).';
+    }
+    if (name === 'physical_address' || name === 'emergency_contact') {
+      if (!value) return 'This field is required.';
+    }
+    if (name === 'nida_number') {
+      const clean = (value || '').replace(/\D/g, '');
+      if (!value) return 'This field is required.';
+      if (clean.length !== 20) return 'NIDA Number must be exactly 20 digits.';
+    }
+    if (name === 'nssf_number') {
+      if (value && !/^\d+$/.test(value)) return 'NSSF Number must contain digits only.';
+    }
+    if (name === 'bank_account_number') {
+      if (value && !/^\d+$/.test(value)) return 'Bank Account must be digits only.';
+    }
+    return undefined;
+  };
 
   // Load draft from local storage on mount
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved && !initialData) {
+    if (saved) {
       try {
         const parsed = JSON.parse(saved);
         setFormData(prev => ({ ...prev, ...parsed }));
@@ -125,7 +266,25 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         console.error("Failed to load draft", e);
       }
     }
-  }, [STORAGE_KEY, initialData]);
+  }, [STORAGE_KEY]);
+
+  // Re-hydrate from database on mount if an ID exists
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const id = initialData?.id ? String(initialData.id) : null;
+        if (!id) return;
+        const res = await guardService.getGuardById(id);
+        if (res.data) {
+          const wd = mapGuardToWizardData(res.data);
+          setFormData(prev => safeMergeWizardData(prev, wd));
+          setSecurityTraining(Array.isArray((res.data as any).security_training) ? (res.data as any).security_training : []);
+        }
+      } catch {}
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?.id]);
 
   // Auto-extract DOB from NIDA number
   useEffect(() => {
@@ -167,6 +326,26 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     setProfileScore(Math.min(100, s));
   }, [formData]);
 
+  useEffect(() => {
+    if (isReadOnly) return;
+    const patchSkills = async () => {
+      try {
+        const guardId = await ensureGuardId();
+        if (!guardId) return;
+        if (autoSavePaused) return;
+        const res = await api.patch<Guard>(`/guards/${guardId}`, { security_training: securityTraining });
+        if (res?.error) {
+          setAutoSavePaused(true);
+          (window as any).showNotification?.('warning', 'Autosave paused (server error).');
+          return;
+        }
+        (window as any).showNotification?.('success', 'Skills updated.');
+      } catch {
+        (window as any).showNotification?.('warning', 'Offline: skills saved locally.');
+      }
+    };
+    if (Array.isArray(securityTraining)) patchSkills();
+  }, [securityTraining, isReadOnly, autoSavePaused]);
   // Save draft on change
   useEffect(() => {
     if (!initialData) { 
@@ -184,7 +363,10 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                     ...e, certificate_url: isHeavy(e.certificate_url) ? '' : e.certificate_url
                 }));
                 dataToSave.guarantors = dataToSave.guarantors.map(g => ({
-                    ...g, letter_url: isHeavy(g.letter_url) ? '' : g.letter_url, residence_letter_url: isHeavy(g.residence_letter_url) ? '' : g.residence_letter_url
+                    ...g,
+                    intro_letter_url: isHeavy((g as any).intro_letter_url) ? '' : (g as any).intro_letter_url,
+                    id_copy_url: isHeavy((g as any).id_copy_url) ? '' : (g as any).id_copy_url,
+                    residence_letter_url: isHeavy((g as any).residence_letter_url) ? '' : (g as any).residence_letter_url
                 }));
 
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
@@ -196,15 +378,21 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     }
   }, [formData, STORAGE_KEY, initialData]);
 
+  
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
     }));
-    if (errors[name]) {
-      setErrors(prev => { const newErrors = { ...prev }; delete newErrors[name]; return newErrors; });
-    }
+    const msg = fieldError(name, value);
+    setErrors(prev => {
+      const next = { ...prev };
+      if (msg) next[name] = msg;
+      else delete next[name];
+      return next;
+    });
   };
 
   const handleFileChange = (field: keyof WizardData, url: string) => {
@@ -212,54 +400,98 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     if (errors[field as string]) {
       setErrors(prev => { const newErrors = { ...prev }; delete newErrors[field as string]; return newErrors; });
     }
+    const patchDoc = async () => {
+      try {
+        const guardId = await ensureGuardId();
+        if (!guardId) return;
+        const payload: any = { [field]: url };
+        if (autoSavePaused) return;
+        const res = await api.patch<Guard>(`/guards/${guardId}`, payload);
+        if (res?.error) {
+          setAutoSavePaused(true);
+          (window as any).showNotification?.('warning', 'Autosave paused (server error).');
+          return;
+        }
+        if (res?.data) {
+          (window as any).showNotification?.('success', 'Document saved.');
+        }
+      } catch {
+        (window as any).showNotification?.('warning', 'Offline: document saved locally.');
+      }
+    };
+    if (!isReadOnly) patchDoc();
+  };
+
+  const getStepErrors = (step: number): ValidationErrors => {
+    if (isReadOnly) return {};
+    const newErrors: ValidationErrors = {};
+    if (step === 1) {
+      if (!formData.full_name) newErrors.full_name = 'This field is required.';
+      const nidErr = fieldError('nida_number', formData.nida_number);
+      if (nidErr) newErrors.nida_number = nidErr;
+      const phErr = fieldError('phone', formData.phone);
+      if (phErr) newErrors.phone = phErr;
+      if (!formData.dob) newErrors.dob = 'This field is required.';
+      if (!formData.gender) newErrors.gender = 'This field is required.';
+      if (formData.nssf_number && fieldError('nssf_number', formData.nssf_number)) newErrors.nssf_number = 'NSSF Number must contain digits only.';
+      if (formData.bank_account_number && fieldError('bank_account_number', formData.bank_account_number)) newErrors.bank_account_number = 'Bank Account must be digits only.';
+    }
+    if (step === 2) {
+      if (!formData.passport_photo_url) newErrors.passport_photo_url = 'This field is required.';
+      if (!formData.nida_front_url) newErrors.nida_front_url = 'This field is required.';
+      if (!formData.birth_cert_url) newErrors.birth_cert_url = 'This field is required.';
+      if (!formData.application_letter_url) newErrors.application_letter_url = 'This field is required.';
+      if (!formData.police_clearance_url) newErrors.police_clearance_url = 'This field is required.';
+      if (!formData.cv_url) newErrors.cv_url = 'This field is required.';
+      if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
+    }
+    if (step === 4) {
+      if (!formData.next_of_kin_name) newErrors.next_of_kin_name = 'This field is required.';
+      const kinPhErr = fieldError('next_of_kin_phone', formData.next_of_kin_phone);
+      if (kinPhErr) newErrors.next_of_kin_phone = kinPhErr;
+      if (!formData.next_of_kin_relationship) newErrors.next_of_kin_relationship = 'This field is required.';
+      if (!formData.physical_address) newErrors.physical_address = 'This field is required.';
+      if (!formData.emergency_contact) newErrors.emergency_contact = 'This field is required.';
+      if (formData.guarantors.length < 2) {
+        newErrors.guarantors = 'At least 2 guarantors are required';
+      } else {
+        formData.guarantors.forEach((g, idx) => {
+          if (!g.name) newErrors[`g_name_${idx}`] = 'This field is required.';
+          if (!g.relationship) newErrors[`g_rel_${idx}`] = 'This field is required.';
+          if (!(g as any)?.guarantor_letter_url && !(g as any)?.intro_letter_url) newErrors[`g_guarantor_letter_${idx}`] = 'This field is required.';
+          if (!(g as any)?.id_copy_url) newErrors[`g_id_copy_${idx}`] = 'This field is required.';
+          if (!(g as any)?.residence_letter_url) newErrors[`g_residence_letter_${idx}`] = 'This field is required.';
+          if (!g.phone || !isTZPhone(g.phone)) newErrors[`g_phone_${idx}`] = 'Please enter a valid Tanzanian phone number (e.g., 0755123456).';
+        });
+      }
+    }
+    return newErrors;
   };
 
   const validateStep = (step: number): boolean => {
-    const newErrors: ValidationErrors = {};
-    let isValid = true;
-
-    if (step === 1) {
-      if (!formData.full_name) newErrors.full_name = 'Required';
-      if (!formData.nida_number) newErrors.nida_number = 'Required';
-      if (!formData.phone) newErrors.phone = 'Required';
-      if (!formData.dob) newErrors.dob = 'Required';
-    }
-
-    if (step === 2) {
-      if (!formData.nida_front_url) newErrors.nida_front_url = 'NIDA ID document is mandatory';
-      if (!formData.birth_cert_url) newErrors.birth_cert_url = 'Birth Certificate is mandatory';
-      if (!formData.application_letter_url) newErrors.application_letter_url = 'Application Letter is mandatory';
-      if (!formData.police_clearance_url) newErrors.police_clearance_url = 'Police Clearance is mandatory';
-    }
-
-    if (step === 4) {
-        if (!formData.next_of_kin_name) newErrors.next_of_kin_name = 'Required';
-        if (!formData.next_of_kin_phone) newErrors.next_of_kin_phone = 'Required';
-        if (!formData.next_of_kin_relationship) newErrors.next_of_kin_relationship = 'Required';
-        
-        if (formData.guarantors.length < 2) {
-             newErrors.guarantors = 'At least 2 guarantors are required';
-        } else {
-             formData.guarantors.forEach((g, idx) => {
-                 if(!g.name || !g.phone || !g.relationship || !g.letter_url || !g.residence_letter_url) {
-                      newErrors[`guarantor_${idx}`] = 'Incomplete guarantor details';
-                 }
-             });
-        }
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      isValid = false;
-    }
-
-    return isValid;
+    if (isReadOnly) return true;
+    const newErrors = getStepErrors(step);
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleNext = () => {
-    if (validateStep(currentStep)) {
+    const proceed = () => {
       setCurrentStep(prev => prev + 1);
       window.scrollTo(0, 0);
+    };
+    if (isReadOnly) {
+      proceed();
+      return;
+    }
+    const newErrors = getStepErrors(currentStep);
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length === 0) {
+      autoSaveCurrentStep(true).then(() => proceed()).catch(() => proceed());
+    } else {
+      const firstKey = Object.keys(newErrors)[0];
+      const el = document.getElementById(firstKey);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
@@ -272,78 +504,194 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   //  CORE LOGIC: THE SUBMIT FUNCTION
   // ------------------------------------------------------------------
   const handleSubmit = async () => {
-      if (!validateStep(currentStep)) return;
+      if (isReadOnly) {
+        (window as any).showNotification?.('warning', 'Editing is locked. Please request HR unlock to submit changes.');
+        return;
+      }
+      if (isSubmitting) return;
+      const allErrors: ValidationErrors = {
+        ...getStepErrors(1),
+        ...getStepErrors(2),
+        ...getStepErrors(4),
+      };
+      if (Object.keys(allErrors).length > 0) {
+        setErrors(allErrors);
+        const firstKey = Object.keys(allErrors)[0];
+        const el = document.getElementById(firstKey);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const friendly = (() => {
+          // Map common keys to helpful Swahili messages
+          if (allErrors['nida_front_url']) return 'Tafadhali pakia NIDA (mbele).';
+          if (allErrors['cv_url']) return 'Tafadhali pakia CV yako.';
+          if (allErrors['residence_letter_url']) return 'Tafadhali pakia Barua ya Mkazi (Serikali ya Mtaa).';
+          const gKey = Object.keys(allErrors).find(k => k.startsWith('g_guarantor_letter_'));
+          if (gKey) {
+            const idx = Number(gKey.split('_').pop() || '0');
+            return `Tafadhali pakia Barua ya Mdhamini (#${(idx || 0) + 1}).`;
+          }
+          const grKey = Object.keys(allErrors).find(k => k.startsWith('g_residence_letter_'));
+          if (grKey) {
+            const idx = Number(grKey.split('_').pop() || '0');
+            return `Tafadhali pakia Barua ya Mkazi ya Mdhamini (#${(idx || 0) + 1}).`;
+          }
+          const idKey = Object.keys(allErrors).find(k => k.startsWith('g_id_copy_'));
+          if (idKey) {
+            const idx = Number(idKey.split('_').pop() || '0');
+            return `Tafadhali pakia Nakala ya Kitambulisho cha Mdhamini (#${(idx || 0) + 1}).`;
+          }
+          return 'Tafadhali kamilisha taarifa zote zilizokosekana.';
+        })();
+        (window as any).showNotification?.('warning', friendly);
+        try { console.warn('SUBMIT_BLOCKED', { errors: allErrors, message: friendly }); } catch {}
+        return;
+      }
 
       setIsSubmitting(true);
       try {
+
           // 1. Separate core guard data from related arrays (guarantors, education)
           // We must strip these arrays because 'guards' table doesn't have these columns.
           const { guarantors, education_history, ...coreGuardData } = formData;
 
+          const ecRaw = String(coreGuardData.emergency_contact || '').trim();
+          const phoneMatch = ecRaw.match(/(\+?\d[\d\s\-]{6,})$/);
+          const emergency_contact_phone = phoneMatch ? phoneMatch[1].trim() : undefined;
+          const emergency_contact_name = ecRaw ? ecRaw.replace(phoneMatch?.[1] || '', '').replace(/[,\-]$/, '').trim() : undefined;
           const guardPayload = {
               ...coreGuardData,
-              application_status: isApplicantFlow ? ApplicationStatus.POOL_APPLICANT : (initialData?.application_status || ApplicationStatus.PENDING),
+              application_status: isApplicantFlow ? ApplicationStatus.SUBMITTED_APPLICATION : ApplicationStatus.INTERVIEWING,
               profile_score: profileScore,
               gender: coreGuardData.gender || undefined,
+              physical_address: coreGuardData.physical_address || undefined,
+              emergency_contact: coreGuardData.emergency_contact || undefined,
+              emergency_contact_name,
+              emergency_contact_phone,
               previous_experience: coreGuardData.previous_experience || false,
               previous_employer_letter_url: coreGuardData.previous_employer_letter_url || undefined,
-              dossier_data: { ...(initialData as any)?.dossier_data, intake_locked: true, intake_submitted_at: new Date().toISOString() },
+              kin_name: coreGuardData.next_of_kin_name || (initialData as any)?.kin_name || undefined,
+              kin_phone: coreGuardData.next_of_kin_phone || (initialData as any)?.kin_phone || undefined,
+              kin_relationship: coreGuardData.next_of_kin_relationship || (initialData as any)?.kin_relationship || undefined,
+              dossier_data: { 
+                ...(initialData as any)?.dossier_data, 
+                intake_locked: true, 
+                intake_submitted_at: new Date().toISOString(), 
+                allow_edit: false,
+                street: coreGuardData.street || (initialData as any)?.dossier_data?.street || '',
+                ward: coreGuardData.ward || (initialData as any)?.dossier_data?.ward || '',
+                district: coreGuardData.district || (initialData as any)?.dossier_data?.district || '',
+                uniform_shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.uniform_shirt_size || '',
+                uniform_boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.uniform_boot_size || '',
+                shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.shirt_size || '',
+                boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
+              },
+              security_training: (securityTraining.length ? securityTraining : undefined),
+              ...(isApplicantFlow ? { company_id: null } : {}),
               // Ensure we don't accidentally send undefined for ID if it's new
           };
 
-          let guardId = initialData?.id;
-
-          // 2. Insert or Update the Core Guard Record
-          if (guardId) {
-              // Edit Mode
-              await guardService.updateGuard(guardId, guardPayload);
+          let savedGuard: Guard | undefined;
+          const hasTokenSubmit = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
+          if (initialData?.id) {
+            const patchUrl = hasTokenSubmit ? `/guards/${initialData.id}` : `/public/guards/${initialData.id}`;
+            const patchResult = await api.patch<Guard>(patchUrl, guardPayload);
+            if (patchResult.error || !patchResult.data) {
+              console.warn(patchResult.error || 'guard update warning');
+            }
+            savedGuard = patchResult.data as unknown as Guard;
           } else {
-              // Create Mode
-              const { data, error } = await guardService.createGuard(guardPayload);
-              if (error || !data) throw new Error(error || 'Failed to create guard record');
-              guardId = data.id;
+            const createUrl = hasTokenSubmit ? '/guards' : '/public/guards';
+            const createResult = await api.post<Guard>(createUrl, guardPayload);
+            if (createResult.error || !createResult.data) {
+              console.warn(createResult.error || 'guard save warning');
+            }
+            savedGuard = createResult.data as unknown as Guard;
           }
 
-          if (!guardId) throw new Error("Guard ID is missing after creation.");
-
-          // 3. Insert Guarantors using service method
-          if (guarantors.length > 0) {
-              const guarantorResult = await guardService.createGuarantors(guardId, guarantors);
-              if (guarantorResult.error) {
-                  console.error("Guarantor insert error:", guarantorResult.error);
-                  // Optional: Could throw error or show warning
+          let upsertsOk = true;
+          try {
+            const gid = String(savedGuard?.id || initialData?.id || '');
+            if (gid) {
+              if (Array.isArray(formData.education_history)) {
+                const records = formData.education_history.filter(e => !!e.level || !!e.year || !!e.certificate_url);
+                if (records.length > 0) {
+                  if (hasTokenSubmit) {
+                    const res = await guardService.createEducationRecords(gid, records);
+                    if (res.error) throw new Error(res.error);
+                  } else {
+      const payload = records.map(e => ({
+                      institution_name: (e as any).institution_name || null,
+                      level: e.level,
+                      graduation_year: e.year ? Number(e.year) : null,
+                      certificate_url: e.certificate_url || null
+                    }));
+                    const res = await api.post(`/guards/${gid}/education_records`, payload);
+                    if (res.error) throw new Error(res.error as any);
+                  }
+                }
               }
+              if (Array.isArray(formData.guarantors)) {
+                const guarantors = formData.guarantors.filter(g => !!g.name || !!g.phone || !!g.relationship || !!(g as any).intro_letter_url || !!(g as any).id_copy_url);
+                if (guarantors.length > 0) {
+                  if (hasTokenSubmit) {
+                    const res = await guardService.createGuarantors(gid, guarantors);
+                    if (res.error) throw new Error(res.error);
+                  } else {
+                    const payload = guarantors.map(g => ({
+                      full_name: g.name,
+                      occupation: (g as any)?.occupation || null,
+                      phone: g.phone,
+                      relationship: g.relationship,
+                      id_copy_url: (g as any)?.id_copy_url || null,
+                      guarantor_letter_url: (g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || null,
+                      residence_letter_url: (g as any)?.residence_letter_url || null
+                    }));
+                    const res = await api.post(`/guards/${gid}/guarantors`, payload);
+                    if (res.error) throw new Error(res.error as any);
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            upsertsOk = false;
+            (window as any).showNotification?.('error', 'Failed to save Education or Guarantors. Please try again.');
           }
 
-          // 4. Insert Education Records using service method
-          if (education_history.length > 0) {
-              const educationResult = await guardService.createEducationRecords(guardId, education_history);
-              if (educationResult.error) {
-                  console.error("Education insert error:", educationResult.error);
+          try {
+            const idToRefresh = String(savedGuard?.id || initialData?.id || '');
+            if (idToRefresh) {
+              const res = await guardService.getGuardById(idToRefresh);
+              if (res.data) {
+                const wd = mapGuardToWizardData(res.data);
+                setFormData(prev => safeMergeWizardData(prev, wd));
+                setSecurityTraining(Array.isArray((res.data as any).security_training) ? (res.data as any).security_training : []);
               }
-          }
+            }
+          } catch {}
 
           // 5. Cleanup & Notify
           localStorage.removeItem(STORAGE_KEY);
-          
-          // Fetch the FULL object (with relations) to pass back to the parent component
-          const { data: completeGuard } = await guardService.getGuardById(guardId);
-          
-          if (completeGuard) {
-              onComplete(completeGuard, isApplicantFlow);
-          } else {
-              // Fallback if fetch fails
-              onComplete({ id: guardId, ...formData, application_status: ApplicationStatus.POOL_APPLICANT } as Guard, isApplicantFlow);
+          if (isApplicantFlow && upsertsOk) {
+            (window as any).showNotification?.(
+              'success',
+              'Hongera! Usajili wako umepokelewa na System HR. Utapata taarifa hapa hapa kwenye Dashboard yako pindi utakapohakikiwa na kuwekwa kwenye Marketplace kwa ajili ya kuajiriwa na kampuni za ulinzi. Kaa tayari!'
+            );
           }
+          setHasSubmitted(true);
+          
+          await Promise.resolve(onComplete(savedGuard, isApplicantFlow));
 
-          // Reset Form
-          setFormData(initialFormState);
-          setCurrentStep(1);
-          setErrors({});
+          // Do not reset form; keep data visible for post-submit review
 
       } catch (error: any) {
-          console.error('Submission error:', error);
-          alert(`Failed to submit application: ${error.message || 'Unknown error'}`);
+          const msg = String(error?.message || '').toLowerCase();
+          if (msg.includes('unauthorized')) {
+            (window as any).showNotification?.('warning', 'Please login to submit your application.');
+            alert('Login required to submit. Open the login screen and try again.');
+          } else if (msg.includes('forbidden')) {
+            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to resubmit.');
+          } else {
+            (window as any).showNotification?.('error', `Failed to submit application: ${error?.message || 'Unknown error'}`);
+          }
       } finally {
           setIsSubmitting(false);
       }
@@ -354,7 +702,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           ...prev,
           education_history: [
               ...prev.education_history, 
-              { id: `temp-${Date.now()}`, guard_id: '', level: 'secondary', year: '', certificate_url: '' }
+              { id: `temp-${Date.now()}`, guard_id: '', level: 'secondary', institution_name: '', year: '', certificate_url: '' }
           ]
       }));
   };
@@ -371,23 +719,197 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       setFormData(prev => ({ ...prev, education_history: updated }));
   };
 
+  const ensureGuardId = async (): Promise<string | null> => {
+      if (initialData?.id) return String(initialData.id);
+      if (draftGuardId) return draftGuardId;
+      try {
+        const hasToken = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
+        const payload: Partial<Guard> = {
+          full_name: formData.full_name,
+          nida_number: formData.nida_number,
+          phone: formData.phone,
+          dob: formData.dob,
+          gender: formData.gender || undefined,
+          application_status: ApplicationStatus.DRAFT,
+          dossier_data: {
+            ...(initialData as any)?.dossier_data,
+            physical_address: formData.physical_address || '',
+            emergency_contact: formData.emergency_contact || '',
+            uniform_shirt_size: (formData as any).uniform_shirt_size || '',
+            uniform_boot_size: (formData as any).uniform_boot_size || ''
+          }
+        } as any;
+        const res = hasToken
+          ? await guardService.createGuard(payload)
+          : await api.post<Guard>('/public/guards', payload);
+        const g = res.data as Guard | undefined;
+        if (g?.id) {
+          setDraftGuardId(String(g.id));
+          return String(g.id);
+        }
+      } catch {}
+      return null;
+  };
+
+  const autoSaveCurrentStep = async (force: boolean = false): Promise<void> => {
+      const guardId = await ensureGuardId();
+      if (!guardId) return;
+      try {
+        const hasToken = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
+        if (autoSavePaused && !force) return;
+        if (currentStep === 1) {
+          const payload: any = {
+            full_name: formData.full_name,
+            nida_number: formData.nida_number,
+            phone: formData.phone,
+            dob: formData.dob,
+            gender: formData.gender || undefined,
+            physical_address: formData.physical_address || undefined,
+            emergency_contact: formData.emergency_contact || undefined,
+            is_armed: formData.is_armed || false,
+            bank_account_number: formData.bank_account_number || undefined,
+            previous_experience: formData.previous_experience || false,
+            nssf_number: formData.nssf_number || undefined,
+            kin_name: formData.next_of_kin_name,
+            kin_phone: formData.next_of_kin_phone,
+            kin_relationship: formData.next_of_kin_relationship,
+            security_training: securityTraining.length ? securityTraining : undefined,
+            dossier_data: {
+              ...(initialData as any)?.dossier_data,
+              street: formData.street || (initialData as any)?.dossier_data?.street || '',
+              ward: formData.ward || (initialData as any)?.dossier_data?.ward || '',
+              district: formData.district || (initialData as any)?.dossier_data?.district || '',
+              uniform_shirt_size: (formData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.uniform_shirt_size || '',
+              uniform_boot_size: (formData as any).uniform_boot_size || (initialData as any)?.dossier_data?.uniform_boot_size || '',
+              shirt_size: (formData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.shirt_size || '',
+              boot_size: (formData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
+            }
+          };
+          const url1 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
+          const resPatch = await api.patch<Guard>(url1, payload);
+          if (resPatch.error && String(resPatch.error).toLowerCase().includes('forbidden')) {
+            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
+            return;
+          }
+          if (resPatch.error) {
+            setAutoSavePaused(true);
+            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
+            return;
+          }
+        } else if (currentStep === 2) {
+          const payload: any = {
+            nida_front_url: formData.nida_front_url || '',
+            birth_cert_url: formData.birth_cert_url || '',
+            application_letter_url: formData.application_letter_url || '',
+            residence_letter_url: formData.residence_letter_url || '',
+            medical_report_url: formData.medical_report_url || '',
+            police_clearance_url: formData.police_clearance_url || '',
+            cv_url: formData.cv_url || '',
+            passport_photo_url: formData.passport_photo_url || '',
+            previous_employer_letter_url: formData.previous_employer_letter_url || ''
+          };
+          const url2 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
+          const resPatch2 = await api.patch<Guard>(url2, payload);
+          if (resPatch2.error && String(resPatch2.error).toLowerCase().includes('forbidden')) {
+            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
+            return;
+          }
+          if (resPatch2.error) {
+            setAutoSavePaused(true);
+            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
+            return;
+          }
+        } else if (currentStep === 3) {
+          const url3 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
+          const resPatch3 = await api.patch<Guard>(url3, { profile_score: profileScore });
+          if (resPatch3.error && String(resPatch3.error).toLowerCase().includes('forbidden')) {
+            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
+            return;
+          }
+          if (resPatch3.error) {
+            setAutoSavePaused(true);
+            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
+            return;
+          }
+        } else if (currentStep === 4) {
+          const payload: any = {
+            kin_name: formData.next_of_kin_name,
+            kin_phone: formData.next_of_kin_phone,
+            kin_relationship: formData.next_of_kin_relationship
+          };
+          const url4 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
+          const resPatch4 = await api.patch<Guard>(url4, payload);
+          if (resPatch4.error && String(resPatch4.error).toLowerCase().includes('forbidden')) {
+            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
+            return;
+          }
+          if (resPatch4.error) {
+            setAutoSavePaused(true);
+            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
+            return;
+          }
+        }
+        try {
+          if (hasToken) {
+            const res = await guardService.getGuardById(guardId);
+            if (res.data) {
+              const wd = mapGuardToWizardData(res.data);
+              setFormData(prev => safeMergeWizardData(prev, wd));
+              setSecurityTraining(
+                Array.isArray((res.data as any)?.dossier_data?.security_training)
+                  ? (res.data as any).dossier_data.security_training
+                  : (Array.isArray((res.data as any)?.security_training) ? (res.data as any).security_training : [])
+              );
+            }
+          } else {
+            const res = await api.get<Guard>(`/public/guards/${guardId}`);
+            if (!res.error && res.data) {
+              const wd = mapGuardToWizardData(res.data as Guard);
+              setFormData(prev => safeMergeWizardData(prev, wd));
+              setSecurityTraining(Array.isArray((res.data as any).security_training) ? (res.data as any).security_training : []);
+            }
+          }
+        } catch {}
+        (window as any).showNotification?.('success', hasToken ? 'Auto-saved.' : 'Saved as draft (no login)');
+      } catch {
+        (window as any).showNotification?.('warning', 'Offline: autosave saved locally.');
+      }
+  };
   const addGuarantor = () => {
       if (formData.guarantors.length >= 3) return;
       setFormData(prev => ({
           ...prev,
           guarantors: [
               ...prev.guarantors,
-              { id: `temp-${Date.now()}`, guard_id: '', name: '', phone: '', relationship: '', letter_url: '', residence_letter_url: '' }
+              { id: `temp-${Date.now()}`, guard_id: '', name: '', phone: '', relationship: '', occupation: '', guarantor_letter_url: '', id_copy_url: '', residence_letter_url: '' } as any
           ]
       }));
   };
 
-  const updateGuarantor = (index: number, field: keyof Guarantor, value: any) => {
+  const updateGuarantor = (index: number, field: any, value: any) => {
       const updated = [...formData.guarantors];
       updated[index] = { ...updated[index], [field]: value };
       setFormData(prev => ({ ...prev, guarantors: updated }));
-      if (errors[`guarantor_${index}`]) {
-          setErrors(prev => { const newErrors = { ...prev }; delete newErrors[`guarantor_${index}`]; return newErrors; });
+      const nameMap: Record<string, string> = {
+        name: `g_name_${index}`,
+        phone: `g_phone_${index}`,
+        relationship: `g_rel_${index}`,
+        guarantor_letter_url: `g_guarantor_letter_${index}`,
+        id_copy_url: `g_id_copy_${index}`,
+        residence_letter_url: `g_residence_letter_${index}`,
+      };
+      const key = nameMap[field as string];
+      if (key) {
+        setErrors(prev => {
+          const next = { ...prev };
+          const msg =
+            field === 'phone'
+              ? (!value ? 'This field is required.' : (isTZPhone(String(value)) ? undefined : 'Please enter a valid Tanzanian phone number (e.g., 0755123456).'))
+              : (!value ? 'This field is required.' : undefined);
+          if (msg) next[key] = msg;
+          else delete next[key];
+          return next;
+        });
       }
   };
   
@@ -404,11 +926,18 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
               return (
                   <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
                       <SectionHeader number="01" title="Identity & Contact" />
+                      {isApplicantFlow && (
+                        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-700">
+                          <p className="text-[10px] font-black uppercase tracking-widest">
+                            Company itapangwa na HR baadaye; company ID si lazima wakati wa intake.
+                          </p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <InputField label="Full Official Name" name="full_name" value={formData.full_name} onChange={handleChange} error={errors.full_name} placeholder="AS PER NIDA CARD" />
-                        <InputField label="NIDA Number" name="nida_number" value={formData.nida_number} onChange={handleChange} error={errors.nida_number} placeholder="19900101-..." />
-                        <InputField label="Mobile Phone" name="phone" value={formData.phone} onChange={handleChange} error={errors.phone} placeholder="+255..." />
-                        <InputField label="Date of Birth" name="dob" type="date" value={formData.dob} onChange={handleChange} error={errors.dob} />
+                        <InputField label="Full Official Name" name="full_name" value={formData.full_name} onChange={handleChange} error={errors.full_name} placeholder="AS PER NIDA CARD" disabled={isReadOnly} />
+                        <InputField label="NIDA Number" name="nida_number" value={formData.nida_number} onChange={handleChange} error={errors.nida_number} placeholder="19900101-..." disabled={isReadOnly} />
+                        <InputField label="Mobile Phone" name="phone" value={formData.phone} onChange={handleChange} error={errors.phone} placeholder="+255..." disabled={isReadOnly} />
+                        <InputField label="Date of Birth" name="dob" type="date" value={formData.dob} onChange={handleChange} error={errors.dob} disabled={isReadOnly} />
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Gender</label>
                           <select
@@ -416,6 +945,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                             value={formData.gender}
                             onChange={handleChange}
                             className="w-full h-14 px-4 bg-slate-50 border-2 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                            disabled={isReadOnly}
                           >
                             <option value="">Select Gender</option>
                             <option value="male">Male</option>
@@ -424,10 +954,56 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                           </select>
                         </div>
                       </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Security Training</label>
+                          <div className="flex items-center gap-4 px-2">
+                            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={securityTraining.includes('k9_handler')}
+                                onChange={(e) => {
+                                  const set = new Set(securityTraining);
+                                  if (e.target.checked) set.add('k9_handler'); else set.delete('k9_handler');
+                                  setSecurityTraining(Array.from(set));
+                                }}
+                                disabled={isReadOnly}
+                              />
+                              K-9 Handler 🐕
+                            </label>
+                            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={securityTraining.includes('fire_safety')}
+                                onChange={(e) => {
+                                  const set = new Set(securityTraining);
+                                  if (e.target.checked) set.add('fire_safety'); else set.delete('fire_safety');
+                                  setSecurityTraining(Array.from(set));
+                                }}
+                                disabled={isReadOnly}
+                              />
+                              Fire Safety 🔥
+                            </label>
+                          </div>
+                        </div>
+                      </div>
                       
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <InputField label="Physical Address" name="physical_address" value={formData.physical_address || ''} onChange={handleChange} placeholder="Street, Ward, District" disabled={isReadOnly} />
+                        <InputField label="Emergency Contact" name="emergency_contact" value={formData.emergency_contact || ''} onChange={handleChange} placeholder="Name & Phone" disabled={isReadOnly} />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <InputField label="Street" name="street" value={formData.street || ''} onChange={handleChange} placeholder="Street" disabled={isReadOnly} />
+                        <InputField label="Ward" name="ward" value={formData.ward || ''} onChange={handleChange} placeholder="Ward" disabled={isReadOnly} />
+                        <InputField label="District" name="district" value={formData.district || ''} onChange={handleChange} placeholder="District" disabled={isReadOnly} />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <InputField label="Uniform Shirt Size" name="uniform_shirt_size" value={formData.uniform_shirt_size || ''} onChange={handleChange} placeholder="S / M / L / XL" disabled={isReadOnly} />
+                        <InputField label="Uniform Boot Size" name="uniform_boot_size" value={formData.uniform_boot_size || ''} onChange={handleChange} placeholder="EU 38-46" disabled={isReadOnly} />
+                      </div>
                       <div className="pt-6 border-t border-slate-100">
                          <label className="flex items-center gap-4 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-primary/50 hover:bg-slate-50 transition-all">
-                             <input type="checkbox" name="is_armed" checked={formData.is_armed} onChange={handleChange} className="w-6 h-6 rounded border-slate-300 text-primary focus:ring-primary" />
+                             <input type="checkbox" name="is_armed" checked={formData.is_armed} onChange={handleChange} className="w-6 h-6 rounded border-slate-300 text-primary focus:ring-primary" disabled={isReadOnly} />
                              <div>
                                  <span className="block text-sm font-black uppercase text-slate-800 tracking-wide">Armed Guard Certified</span>
                                  <span className="block text-xs text-slate-400 mt-1">Check this if you possess valid weapon handling certification</span>
@@ -436,9 +1012,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <InputField label="Bank Account Number" name="bank_account_number" value={formData.bank_account_number || ''} onChange={handleChange} placeholder="1234-5678-..." />
+                        <InputField label="Bank Account Number" name="bank_account_number" value={formData.bank_account_number || ''} onChange={handleChange} placeholder="1234-5678-..." disabled={isReadOnly} />
                         <label className="flex items-center gap-4 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-primary/50 hover:bg-slate-50 transition-all">
-                          <input type="checkbox" name="previous_experience" checked={formData.previous_experience} onChange={handleChange} className="w-6 h-6 rounded border-slate-300 text-primary focus:ring-primary" />
+                          <input type="checkbox" name="previous_experience" checked={formData.previous_experience} onChange={handleChange} className="w-6 h-6 rounded border-slate-300 text-primary focus:ring-primary" disabled={isReadOnly} />
                           <div>
                             <span className="block text-sm font-black uppercase text-slate-800 tracking-wide">Previous Experience</span>
                             <span className="block text-xs text-slate-400 mt-1">Toggle on if previously employed; provide supporting documents</span>
@@ -447,24 +1023,40 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                       </div>
                       {formData.previous_experience && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <InputField label="NSSF Number" name="nssf_number" value={formData.nssf_number || ''} onChange={handleChange} placeholder="NSSF-XXXX" />
-                          <FileUploader label="Letter from Previous Employer" fileUrl={formData.previous_employer_letter_url || ''} onUpload={(url) => handleFileChange('previous_employer_letter_url', url)} onRemove={() => handleFileChange('previous_employer_letter_url', '')} />
+                          <InputField label="NSSF Number" name="nssf_number" value={formData.nssf_number || ''} onChange={handleChange} placeholder="NSSF-XXXX" disabled={isReadOnly} />
+                          <FileUploader label="Letter from Previous Employer" fileUrl={formData.previous_employer_letter_url || ''} onUpload={(url) => handleFileChange('previous_employer_letter_url', url)} onRemove={() => handleFileChange('previous_employer_letter_url', '')} disabled={isReadOnly} />
                         </div>
                       )}
                   </div>
               );
           case 2:
+              const coreDocs = [
+                formData.nida_front_url,
+                formData.birth_cert_url,
+                formData.application_letter_url,
+                formData.residence_letter_url,
+                formData.medical_report_url,
+                formData.police_clearance_url,
+                formData.cv_url,
+                formData.passport_photo_url
+              ];
+              const docsProvided = coreDocs.reduce((acc, v) => acc + (v && String(v).trim() !== '' ? 1 : 0), 0);
+              const docsTotal = coreDocs.length;
               return (
                   <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
                       <SectionHeader number="02" title="Core Documentation" />
+                      <div className="flex justify-end">
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-xl border border-slate-200">Docs {docsProvided}/{docsTotal}</span>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <FileUploader label="NIDA ID Card (Front)" fileUrl={formData.nida_front_url} onUpload={(url) => handleFileChange('nida_front_url', url)} onRemove={() => handleFileChange('nida_front_url', '')} error={!!errors.nida_front_url} />
-                          <FileUploader label="Birth Certificate" fileUrl={formData.birth_cert_url} onUpload={(url) => handleFileChange('birth_cert_url', url)} onRemove={() => handleFileChange('birth_cert_url', '')} error={!!errors.birth_cert_url} />
-                          <FileUploader label="Handwritten Application Letter" fileUrl={formData.application_letter_url} onUpload={(url) => handleFileChange('application_letter_url', url)} onRemove={() => handleFileChange('application_letter_url', '')} error={!!errors.application_letter_url} />
-                          <FileUploader label="Local Govt Residence Letter" fileUrl={formData.residence_letter_url} onUpload={(url) => handleFileChange('residence_letter_url', url)} onRemove={() => handleFileChange('residence_letter_url', '')} />
-                          <FileUploader label="Police Clearance Certificate" fileUrl={formData.police_clearance_url} onUpload={(url) => handleFileChange('police_clearance_url', url)} onRemove={() => handleFileChange('police_clearance_url', '')} />
-                          <FileUploader label="Curriculum Vitae (CV)" fileUrl={formData.cv_url} onUpload={(url) => handleFileChange('cv_url', url)} onRemove={() => handleFileChange('cv_url', '')} />
-          <FileUploader label="Passport Photo (Profile)" fileUrl={formData.passport_photo_url} onUpload={(url) => handleFileChange('passport_photo_url', url)} onRemove={() => handleFileChange('passport_photo_url', '')} />
+                          <FileUploader label="NIDA ID Card (Front)" fileUrl={formData.nida_front_url} onUpload={(url) => handleFileChange('nida_front_url', url)} onRemove={() => handleFileChange('nida_front_url', '')} error={!!errors.nida_front_url} disabled={isReadOnly} />
+                          <FileUploader label="Birth Certificate" fileUrl={formData.birth_cert_url} onUpload={(url) => handleFileChange('birth_cert_url', url)} onRemove={() => handleFileChange('birth_cert_url', '')} error={!!errors.birth_cert_url} disabled={isReadOnly} />
+                          <FileUploader label="Handwritten Application Letter" fileUrl={formData.application_letter_url} onUpload={(url) => handleFileChange('application_letter_url', url)} onRemove={() => handleFileChange('application_letter_url', '')} error={!!errors.application_letter_url} disabled={isReadOnly} />
+                          <FileUploader label="Local Govt Residence Letter" fileUrl={formData.residence_letter_url} onUpload={(url) => handleFileChange('residence_letter_url', url)} onRemove={() => handleFileChange('residence_letter_url', '')} disabled={isReadOnly} />
+                          <FileUploader label="Medical Report" fileUrl={formData.medical_report_url || ''} onUpload={(url) => handleFileChange('medical_report_url', url)} onRemove={() => handleFileChange('medical_report_url', '')} disabled={isReadOnly} />
+                          <FileUploader label="Police Clearance Certificate" fileUrl={formData.police_clearance_url} onUpload={(url) => handleFileChange('police_clearance_url', url)} onRemove={() => handleFileChange('police_clearance_url', '')} disabled={isReadOnly} />
+                          <FileUploader label="Curriculum Vitae (CV)" fileUrl={formData.cv_url} onUpload={(url) => handleFileChange('cv_url', url)} onRemove={() => handleFileChange('cv_url', '')} disabled={isReadOnly} />
+                          <FileUploader label="Passport Photo (Profile)" fileUrl={formData.passport_photo_url} onUpload={(url) => handleFileChange('passport_photo_url', url)} onRemove={() => handleFileChange('passport_photo_url', '')} disabled={isReadOnly} imagesOnly acceptTypes="image/jpeg,image/png" />
                       </div>
                   </div>
               );
@@ -475,7 +1067,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                       <div className="space-y-6">
                         {formData.education_history.map((edu, index) => (
                             <div key={index} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative">
-                                <button onClick={() => removeEducation(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors">
+                                <button type="button" onClick={() => removeEducation(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                                 </button>
                                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Record #{index + 1}</h4>
@@ -486,20 +1078,24 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                                             value={edu.level} 
                                             onChange={(e) => updateEducation(index, 'level', e.target.value)}
                                             className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl font-bold text-xs uppercase outline-none"
+                                            disabled={isReadOnly}
                                         >
                                             <option value="primary">Primary School</option>
                                             <option value="secondary">Secondary (O-Level)</option>
                                             <option value="advanced">Advanced (A-Level)</option>
                                             <option value="nta4_5">NTA Level 4/5</option>
+                                            <option value="college">College</option>
+                                            <option value="university">University</option>
                                             <option value="military">Military/JKT</option>
                                         </select>
                                      </div>
-                                     <InputField label="Completion Year" name={`edu_year_${index}`} value={edu.year} onChange={(e) => updateEducation(index, 'year', e.target.value)} placeholder="YYYY" />
+                                     <InputField label="Institution/School Name" name={`edu_institution_${index}`} value={(edu as any).institution_name || ''} onChange={(e) => updateEducation(index, 'institution_name', e.target.value)} placeholder="Enter institution name" disabled={isReadOnly} />
+                                     <InputField label="Completion Year" name={`edu_year_${index}`} value={edu.year} onChange={(e) => updateEducation(index, 'year', e.target.value)} placeholder="YYYY" disabled={isReadOnly} />
                                 </div>
-                                <FileUploader label="Certificate Scan" fileUrl={edu.certificate_url} onUpload={(url) => updateEducation(index, 'certificate_url', url)} onRemove={() => updateEducation(index, 'certificate_url', '')} className="h-28" />
+                                <FileUploader label="Certificate Scan" fileUrl={edu.certificate_url} onUpload={(url) => updateEducation(index, 'certificate_url', url)} onRemove={() => updateEducation(index, 'certificate_url', '')} className="h-28" disabled={isReadOnly} />
                             </div>
                         ))}
-                        <button onClick={addEducation} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all">
+                        <button type="button" onClick={addEducation} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all" disabled={isReadOnly}>
                             + Add Qualification
                         </button>
                       </div>
@@ -514,8 +1110,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                          <h4 className="text-xs font-black text-primary uppercase tracking-widest mb-4">Next of Kin (Emergency)</h4>
                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                              <InputField label="Full Name" name="next_of_kin_name" value={formData.next_of_kin_name} onChange={handleChange} error={errors.next_of_kin_name} />
-                             <InputField label="Phone" name="next_of_kin_phone" value={formData.next_of_kin_phone} onChange={handleChange} error={errors.next_of_kin_phone} />
-                             <InputField label="Relationship" name="next_of_kin_relationship" value={formData.next_of_kin_relationship} onChange={handleChange} error={errors.next_of_kin_relationship} />
+                            <InputField label="Phone" name="next_of_kin_phone" value={formData.next_of_kin_phone} onChange={handleChange} error={errors.next_of_kin_phone} disabled={isReadOnly} />
+                            <InputField label="Relationship" name="next_of_kin_relationship" value={formData.next_of_kin_relationship} onChange={handleChange} error={errors.next_of_kin_relationship} disabled={isReadOnly} />
                          </div>
                       </div>
 
@@ -528,23 +1124,27 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                         
                         {formData.guarantors.map((g, index) => (
                              <div key={index} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative">
-                                <button onClick={() => removeGuarantor(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors">
+                                <button type="button" onClick={() => removeGuarantor(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors" disabled={isReadOnly}>
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                                 </button>
                                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Guarantor #{index + 1}</h4>
                                 {errors[`guarantor_${index}`] && <p className="text-[10px] font-bold text-red-500 mb-2">Incomplete Details</p>}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                     <InputField label="Full Name" name={`g_name_${index}`} value={g.name} onChange={(e) => updateGuarantor(index, 'name', e.target.value)} />
-                                     <InputField label="Phone" name={`g_phone_${index}`} value={g.phone} onChange={(e) => updateGuarantor(index, 'phone', e.target.value)} />
-                                     <InputField label="Relationship" name={`g_rel_${index}`} value={g.relationship} onChange={(e) => updateGuarantor(index, 'relationship', e.target.value)} />
+                                    <InputField label="Full Name" name={`g_name_${index}`} value={g.name} onChange={(e) => updateGuarantor(index, 'name', e.target.value)} error={errors[`g_name_${index}`]} disabled={isReadOnly} />
+                                    <InputField label="Occupation / Kazi" name={`g_occ_${index}`} value={(g as any).occupation || ''} onChange={(e) => updateGuarantor(index, 'occupation', e.target.value)} disabled={isReadOnly} />
+                                    <InputField label="Phone" name={`g_phone_${index}`} value={g.phone} onChange={(e) => updateGuarantor(index, 'phone', e.target.value)} error={errors[`g_phone_${index}`]} disabled={isReadOnly} />
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <FileUploader label="Intro Letter" fileUrl={g.letter_url} onUpload={(url) => updateGuarantor(index, 'letter_url', url)} onRemove={() => updateGuarantor(index, 'letter_url', '')} className="h-24" />
-                                    <FileUploader label="Residence ID/Letter" fileUrl={g.residence_letter_url} onUpload={(url) => updateGuarantor(index, 'residence_letter_url', url)} onRemove={() => updateGuarantor(index, 'residence_letter_url', '')} className="h-24" />
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <InputField label="Relationship" name={`g_rel_${index}`} value={g.relationship} onChange={(e) => updateGuarantor(index, 'relationship', e.target.value)} error={errors[`g_rel_${index}`]} disabled={isReadOnly} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <FileUploader label="Guarantor Letter" fileUrl={(g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'guarantor_letter_url', url)} onRemove={() => updateGuarantor(index, 'guarantor_letter_url', '')} className="h-24" disabled={isReadOnly} />
+                                    <FileUploader label="ID Copy" fileUrl={(g as any)?.id_copy_url || ''} onUpload={(url) => updateGuarantor(index, 'id_copy_url', url)} onRemove={() => updateGuarantor(index, 'id_copy_url', '')} className="h-24" disabled={isReadOnly} />
+                                    <FileUploader label="Residence Letter (Serikali ya Mtaa)" fileUrl={(g as any)?.residence_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'residence_letter_url', url)} onRemove={() => updateGuarantor(index, 'residence_letter_url', '')} className="h-24" disabled={isReadOnly} />
                                 </div>
                             </div>
                         ))}
-                         <button onClick={addGuarantor} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all">
+                         <button type="button" onClick={addGuarantor} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all" disabled={isReadOnly}>
                             + Add Guarantor
                         </button>
                       </div>
@@ -555,8 +1155,53 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       }
   };
 
+  const handleSave = async () => {
+      try {
+          const { guarantors, education_history, ...coreGuardData } = formData;
+          const payload = {
+              ...coreGuardData,
+              gender: coreGuardData.gender || undefined,
+              previous_experience: coreGuardData.previous_experience || false,
+              previous_employer_letter_url: coreGuardData.previous_employer_letter_url || undefined,
+              kin_name: coreGuardData.next_of_kin_name || (initialData as any)?.kin_name || undefined,
+              kin_phone: coreGuardData.next_of_kin_phone || (initialData as any)?.kin_phone || undefined,
+              kin_relationship: coreGuardData.next_of_kin_relationship || (initialData as any)?.kin_relationship || undefined,
+              dossier_data: {
+                ...(initialData as any)?.dossier_data,
+                physical_address: coreGuardData.physical_address || (initialData as any)?.dossier_data?.physical_address || '',
+                street: coreGuardData.street || (initialData as any)?.dossier_data?.street || '',
+                ward: coreGuardData.ward || (initialData as any)?.dossier_data?.ward || '',
+                district: coreGuardData.district || (initialData as any)?.dossier_data?.district || '',
+                emergency_contact: coreGuardData.emergency_contact || (initialData as any)?.dossier_data?.emergency_contact || '',
+              uniform_shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.uniform_shirt_size || '',
+              uniform_boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.uniform_boot_size || '',
+              shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.shirt_size || '',
+              boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
+              }
+          };
+          if (initialData?.id) {
+            await api.patch<Guard>(`/guards/${initialData.id}`, payload);
+            (window as any).showNotification?.('success', 'Changes saved.');
+          }
+      } catch (e) {
+          (window as any).showNotification?.('error', 'Failed to save changes.');
+      }
+  };
+
   return (
-    <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-500 relative overflow-hidden">
+    <form
+      id="intakeForm"
+      className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-500 relative overflow-hidden"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (isLocked) return;
+        if (currentStep === 4) {
+          handleSubmit();
+        } else {
+          handleNext();
+        }
+      }}
+    >
         {/* Progress Bar */}
         <div className="absolute top-0 left-0 w-full h-2 bg-slate-100">
             <div className="h-full bg-primary transition-all duration-500 ease-out" style={{ width: `${(currentStep / 4) * 100}%` }} />
@@ -577,33 +1222,50 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
 
         <div className="flex gap-4 mt-12 pt-8 border-t border-slate-100">
             {currentStep > 1 && (
-                <button onClick={handleBack} className="px-8 py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all">
+                <button type="button" onClick={handleBack} className="px-8 py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all" disabled={isLocked}>
                     Back
                 </button>
             )}
             <button
-                onClick={currentStep === 4 ? handleSubmit : handleNext}
-                disabled={isSubmitting}
-                className="flex-grow py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-primary transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-wait"
+                type="button"
+                onClick={handleSave}
+                className="px-8 py-4 bg-white border border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 transition-all"
+                disabled={isLocked}
             >
-                {isSubmitting ? (
-                    <>
-                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Processing...
-                    </>
-                ) : (
-                    <>
-                        {currentStep === 4 ? 'Submit Application' : 'Next Step'}
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                    </>
-                )}
+                Save
             </button>
+            {isLocked && currentStep === 4 ? (
+              <div className="flex-grow py-4 bg-slate-50 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl border border-slate-200 text-center">
+                Maombi yako yameshatumwa na yanahakikiwa.
+              </div>
+            ) : (
+              <button
+                  type={currentStep === 4 ? "submit" : "button"}
+                  onClick={currentStep === 4 ? handleSubmit : handleNext}
+                  disabled={isLocked || isSubmitting}
+                  className="relative group flex-grow py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:from-primary hover:via-primary-dark hover:to-primary-light transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                  {isSubmitting ? (
+                      <>
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Processing...
+                      </>
+                  ) : (
+                      <>
+                          {currentStep === 4 ? 'Submit Application' : 'Next Step'}
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          <div className="absolute inset-0 rounded-2xl opacity-0 group-active:opacity-20 bg-primary transition-opacity duration-150 pointer-events-none"></div>
+                      </>
+                  )}
+              </button>
+            )}
         </div>
-    </div>
+       
+    </form>
   );
 };

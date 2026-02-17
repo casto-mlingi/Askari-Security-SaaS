@@ -1,4 +1,5 @@
 import { Guard, IncidentReport } from '../types';
+import { DisciplinaryCode } from '../types';
 
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const SITE_URL = 'http://localhost:3000';
@@ -105,12 +106,12 @@ export const analyzeGuardDossier = async (guard: Guard, incidents: IncidentRepor
 // 3. INCIDENT ANALYSIS (Operations)
 // ==========================================
 
-export const analyzeIncident = async (description: string, type: string) => {
+export const analyzeIncident = async (description: string, matrix: any) => {
   const prompt = `
     You are a Security Operations Center (SOC) Commander. 
-    Analyze this incident report and recommend immediate action.
+    Analyze this incident report and recommend immediate action, plus map it to a disciplinary code from the provided matrix.
 
-    INCIDENT TYPE: ${type}
+    CODE MATRIX: ${JSON.stringify(matrix)}
     DESCRIPTION: ${description}
 
     TASK:
@@ -119,7 +120,9 @@ export const analyzeIncident = async (description: string, type: string) => {
       "severity": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
       "recommended_action": "string",
       "is_police_matter": boolean,
-      "requires_backup": boolean
+      "requires_backup": boolean,
+      "recommended_code": "string",
+      "formal_notes": "string"
     }
   `;
 
@@ -129,7 +132,9 @@ export const analyzeIncident = async (description: string, type: string) => {
     severity: "MEDIUM",
     recommended_action: "Investigate immediately.",
     is_police_matter: false,
-    requires_backup: false
+    requires_backup: false,
+    recommended_code: "OTHER",
+    formal_notes: description
   });
 };
 
@@ -152,6 +157,33 @@ export const suggestDisciplinaryPolicy = async (topic: string) => {
     label: topic,
     description: "Policy definition pending (AI Busy).",
     points: 10
+  });
+};
+
+export const generateFormalDisciplinaryRecord = async (notes: string, matrix: DisciplinaryCode[]) => {
+  const codes = matrix.map(m => ({ code: m.code, label: m.label, points: m.points }));
+  const prompt = `
+    You are an HR Officer. Transform the rough notes into a formal disciplinary record.
+    Rough Notes: "${notes}"
+    Codes: ${JSON.stringify(codes)}
+    Return STRICT JSON:
+    {
+      "date": "YYYY-MM-DD",
+      "incident_description": "string",
+      "action_taken": "string",
+      "incident_code": "string (format like 'S.1' or 'T.4')",
+      "penalty_points": number (negative integer, e.g., -5, -10),
+      "formal_report": "Date: <date>\\nIncident: <incident_description>\\nAction Taken: <action_taken>"
+    }
+  `;
+  const responseText = await generateAIResponse(prompt);
+  return parseJSON(responseText, {
+    date: new Date().toISOString().slice(0,10),
+    incident_description: notes,
+    action_taken: "Verbal warning issued.",
+    incident_code: (matrix[0]?.code || 'OTHER_REPORT'),
+    penalty_points: -Math.abs(matrix[0]?.points || 0),
+    formal_report: `Date: ${new Date().toISOString().slice(0,10)}\nIncident: ${notes}\nAction Taken: Verbal warning issued.`
   });
 };
 

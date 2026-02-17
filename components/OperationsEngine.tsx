@@ -2,6 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { Guard, ApplicationStatus, Site, DisciplinaryCode, IncidentReport, Profile, Company } from '../types';
 import FileUploader from './FileUploader';
 import { analyzeIncident } from '../services/ai';
+import { api } from '../services/api';
+import ForensicDisclosure from './ForensicDisclosure';
+import { getPerfCategory } from '../utils/performance';
+import PerformanceCircle from './PerformanceCircle';
 
 interface OperationsEngineProps {
   guards: Guard[];
@@ -45,9 +49,20 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const SEVERITY_THRESHOLDS = { critical: 30, high: 15, medium: 7 };
+  const getSeverityBadgeClass = (pts: number) => {
+    const p = Math.abs(pts || 0);
+    if (p >= SEVERITY_THRESHOLDS.critical) return 'bg-red-100 text-red-700 border-red-200';
+    if (p >= SEVERITY_THRESHOLDS.high) return 'bg-amber-100 text-amber-700 border-amber-200';
+    if (p >= SEVERITY_THRESHOLDS.medium) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+    return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+  };
+  
 
   const activeGuards = useMemo(() => {
-    const base = guards.filter(g => g.application_status === ApplicationStatus.ACTIVE);
+    const base = guards
+      .filter(g => g.application_status === ApplicationStatus.ACTIVE || g.application_status === ApplicationStatus.ACTIVE_GUARD)
+      .filter(g => (typeof g.performance_score === 'number' ? g.performance_score : 0) > 5);
     if (currentUser?.role === 'supervisor') {
       const allowedSiteIds = new Set(sites.filter(s => s.supervisor_id === currentUser.id).map(s => s.id));
       return base.filter(g => g.current_site_id && allowedSiteIds.has(g.current_site_id));
@@ -68,11 +83,14 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
   const handleAnalyze = async () => {
     if (!roughNotes) return;
     setIsAnalyzing(true);
-    const result = await analyzeIncident(roughNotes, disciplinaryCodes.map(c => c.code));
+    const result = await analyzeIncident(roughNotes, disciplinaryCodes.map(c => ({ code: c.code, label: c.label, points: c.points })));
     
     if (result) {
-        setIncidentCode(result.recommended_code);
-        setIncidentNotes(result.formal_notes);
+        const data = (result && (result.recommended_code || result.formal_notes)) ? result : (result?.data || {});
+        const code = String(data.recommended_code || '');
+        const notes = String(data.formal_notes || roughNotes);
+        setIncidentCode(code);
+        setIncidentNotes(notes);
     }
     setIsAnalyzing(false);
   };
@@ -99,6 +117,28 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
         site_name: siteName,
         reported_by: userName
     });
+    try {
+      let companyId = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
+      try {
+        const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
+        companyId = parsed?.company_id || companyId;
+      } catch {}
+      const selected = disciplinaryCodes.find(c => c.code === incidentCode);
+      const points = selected ? -Math.abs(selected.points || 0) : -5;
+      const rn = `${roughNotes}\nEvidence: ${evidences.join(', ')}`;
+      const resp = await api.post('/disciplinary/records', {
+        guard_id: selectedGuardId,
+        company_id: companyId,
+        formal_report: incidentNotes,
+        incident_code: incidentCode,
+        penalty_points: points,
+        rough_notes: rn
+      });
+      const wasBlacklisted = Boolean((resp as any)?.data && (resp as any).data.blacklisted);
+      if (wasBlacklisted) {
+        (window as any).showNotification?.('warning', 'Guard has been automatically blacklisted due to low performance (<= 5%).');
+      }
+    } catch {}
 
     setIsSyncing(false);
     setIsModalOpen(false);
@@ -117,7 +157,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-10 pb-24 animate-in fade-in duration-500">
+    <div className="max-w-7xl mx-auto space-y-10 pb-24 animate-in fade-in duration-500 px-4 sm:px-0">
       <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-10">
         <div>
            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">Field Operations</h2>
@@ -152,49 +192,47 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
       </div>
 
       {panelTab === 'operations' && (
-      <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8' : 'space-y-4'}`}>
+      <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8' : 'space-y-4'}`}>
         {incidentByGuard.map(({ guard, count, points }) => {
           const g = guard;
-          const guarantor = (g.guarantors || [])[0];
-          const site = sites.find(s => s.id === g.current_site_id);
-          const companyName = companies.find(c => c.id === (g.company_id || site?.company_id))?.name;
-          const supervisorProfile = profiles.find(p => p.id === (g.assigned_supervisor_id || site?.supervisor_id));
+          const openDetail = async (gx: Guard) => {
+            try {
+              const res = await api.get<Guard>(`/guards/${gx.id}`);
+              if ((res as any)?.data) {
+                setDetailGuard((res as any).data as Guard);
+              } else {
+                setDetailGuard(gx);
+              }
+            } catch {
+              setDetailGuard(gx);
+            }
+          };
           return (
             <div 
               key={g.id} 
-              className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col gap-4 cursor-pointer"
-              onClick={() => setDetailGuard(g)}
+              className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => openDetail(g)}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  {g.passport_photo_url ? (
-                    <img src={g.passport_photo_url} alt={g.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
-                  ) : (
-                    <div className="w-12 h-12 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{g.full_name[0]}</div>
-                  )}
-                  <div>
-                    <h4 className="font-black text-slate-900 uppercase tracking-tight">{g.full_name}</h4>
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Phone: {g.phone || 'N/A'}</p>
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Company: {companyName || 'N/A'}</p>
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Supervisor: {supervisorProfile?.full_name || 'N/A'}</p>
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Site: {site?.name || 'N/A'}</p>
-                    {guarantor && (
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Guarantor: {guarantor.name} • {guarantor.phone}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-black text-emerald-600 font-hud">{g.performance_score}%</p>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{count} Incidents</p>
+              <div className="flex items-center gap-4 flex-1">
+                {g.passport_photo_url ? (
+                  <img src={g.passport_photo_url} alt={g.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                ) : (
+                  <div className="w-12 h-12 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{g.full_name?.[0] || 'G'}</div>
+                )}
+                <div>
+                  <h4 className="font-black text-slate-900 uppercase tracking-tight">{g.full_name}</h4>
+                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">NIDA: {g.nida_number?.slice(0,10)}...</p>
+                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Phone: {g.phone || 'N/A'}</p>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Incidents: {count}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-3">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onClockIn?.(g.id, g.current_site_id); }} 
-                  className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-700"
-                >
-                  Clock In
-                </button>
+              <div className="self-start sm:self-auto">
+                <div className="block sm:hidden">
+                  <PerformanceCircle score={g.performance_score || 0} size={48} />
+                </div>
+                <div className="hidden sm:block">
+                  <PerformanceCircle score={g.performance_score || 0} size={64} />
+                </div>
               </div>
             </div>
           );
@@ -204,81 +242,12 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
 
       {/* Incidents Panel */}
       {panelTab === 'incidents' && (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Grouped by Guard */}
-        {activeGuards.map(g => {
-          const items = incidents.filter(i => i.guard_id === g.id).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-          if (items.length === 0) return null;
-          return (
-            <div key={g.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  {g.passport_photo_url ? (
-                    <img src={g.passport_photo_url} alt={g.full_name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
-                  ) : (
-                    <div className="w-10 h-10 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{g.full_name[0]}</div>
-                  )}
-                  <div>
-                    <h4 className="font-black text-slate-900 uppercase tracking-tight">{g.full_name}</h4>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{items.length} Incidents</p>
-                  </div>
-                </div>
-                <button onClick={() => setDetailGuard(g)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest">View Details</button>
-              </div>
-              <div className="space-y-3">
-                {items.map(i => {
-                  const code = disciplinaryCodes.find(c => c.code === i.code);
-                  return (
-                    <div key={i.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
-                      <div>
-                        <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{code?.label}</p>
-                        <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">{new Date(i.created_at).toLocaleString()}</p>
-                      </div>
-                      <span className="text-[10px] font-black text-red-600 font-hud">-{code?.points || 0}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+        <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
+          <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">Details moved to Forensic Disclosure. Click a guard card.</p>
+        </div>
       )}
 
-      {/* Incident Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {incidents.length > 0 ? incidents.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(inc => {
-             const guard = guards.find(g => g.id === inc.guard_id);
-             const code = disciplinaryCodes.find(c => c.code === inc.code);
-             return (
-               <div key={inc.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col gap-4">
-                  <div className="flex justify-between items-start">
-                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center font-black text-lg border border-red-100">
-                           -{code?.points || 0}
-                        </div>
-                        <div>
-                           <h4 className="font-black text-slate-900 uppercase tracking-tight">{guard?.full_name || 'Unknown'}</h4>
-                           <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 py-0.5 rounded-md">{code?.label}</span>
-                        </div>
-                     </div>
-                     <span className="text-[9px] font-mono font-bold text-slate-400">{new Date(inc.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <p className="text-sm font-medium text-slate-600 italic border-l-2 border-slate-100 pl-4">
-                     "{inc.notes}"
-                  </p>
-                  <div className="flex items-center justify-between mt-2 pt-4 border-t border-slate-50">
-                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Site: {inc.site_name || 'Unspecified'}</span>
-                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">By: {inc.reported_by}</span>
-                  </div>
-               </div>
-             );
-        }) : (
-            <div className="col-span-full py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
-                <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No incidents recorded</p>
-            </div>
-        )}
-      </div>
+      {/* Incident Feed removed from main view for Supervisor focus */}
 
 
       {/* Report Modal */}
@@ -293,6 +262,14 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                  <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors">✕</button>
               </div>
 
+      {detailGuard && (
+        <ForensicDisclosure 
+          guard={detailGuard} 
+          incidents={incidents} 
+          disciplinaryCodes={disciplinaryCodes} 
+          onClose={() => setDetailGuard(null)} 
+        />
+      )}
               <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
@@ -422,52 +399,13 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
         </div>
       )}
       {detailGuard && (
-        <div className="fixed inset-0 z-[1300] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl overflow-hidden border border-white/20">
+        <div className="fixed inset-0 z-[1300] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-full sm:max-w-4xl mx-2 sm:mx-0 rounded-[2rem] sm:rounded-[3rem] shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto overscroll-contain">
             <div className="p-8 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Guard Details</h3>
+              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Guard Detail</h3>
               <button onClick={() => setDetailGuard(null)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors">✕</button>
             </div>
-            <div className="p-8 space-y-6">
-              <div className="flex items-center gap-4">
-                {detailGuard.passport_photo_url ? (
-                  <img src={detailGuard.passport_photo_url} alt={detailGuard.full_name} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
-                ) : (
-                  <div className="w-14 h-14 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{detailGuard.full_name[0]}</div>
-                )}
-                <div>
-                  <h4 className="font-black text-slate-900 uppercase tracking-tight">{detailGuard.full_name}</h4>
-                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Phone: {detailGuard.phone || 'N/A'}</p>
-                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Status: {detailGuard.application_status}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Guarantors</p>
-                  {(detailGuard.guarantors || []).map(g => (
-                    <div key={g.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <p className="text-sm font-black text-slate-900 uppercase">{g.name}</p>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{g.phone}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Incidents</p>
-                  {incidents.filter(i => i.guard_id === detailGuard.id).map(i => {
-                    const code = disciplinaryCodes.find(c => c.code === i.code);
-                    return (
-                      <div key={i.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-black text-slate-900 uppercase">{code?.label}</p>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{new Date(i.created_at).toLocaleString()}</p>
-                        </div>
-                        <span className="text-[10px] font-black text-red-600 font-hud">-{code?.points || 0}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <ForensicDisclosure guard={detailGuard} incidents={incidents} disciplinaryCodes={disciplinaryCodes} onClose={() => setDetailGuard(null)} />
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { Profile, Company, UserRole, Guard, ApplicationStatus, Site } from '../types';
-import { supabase } from '../services/supabaseClient';
+import { Profile, Company, UserRole, Guard, ApplicationStatus, Site, SecurityTraining } from '../types';
+import { api } from '../services/api';
 
 interface PersonnelRegistryProps {
   profiles: Profile[];
@@ -12,6 +12,7 @@ interface PersonnelRegistryProps {
   onAddStaff: (staffData: Omit<Profile, 'id' | 'created_at' | 'is_active'>) => void;
   onViewGuardAudit: (guard: Guard) => void;
   currentUser: Profile;
+  onOpenIntakeEditor?: (guard: Guard) => void;
 }
 
 const getRoleBadge = (role: UserRole) => {
@@ -38,12 +39,17 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
   onUpdateStaff,
   onAddStaff,
   onViewGuardAudit,
-  currentUser
+  currentUser,
+  onOpenIntakeEditor
 }) => {
   const [view, setView] = useState<'staff' | 'guards'>('staff');
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [resetTarget, setResetTarget] = useState<Profile | null>(null);
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [locallyDeletedGuardIds, setLocallyDeletedGuardIds] = useState<string[]>([]);
 
   // Form State
   const [newName, setNewName] = useState('');
@@ -67,8 +73,8 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
     // If Super Admin, 'data' remains all profiles (cross-company visibility)
 
     return data.filter(p => 
-      p.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      p.email.toLowerCase().includes(searchTerm.toLowerCase())
+      (p.full_name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
+      (p.email || '').toLowerCase().includes((searchTerm || '').toLowerCase())
     );
   }, [profiles, isSuperAdmin, currentCompanyId, searchTerm]);
 
@@ -80,12 +86,13 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
       data = data.filter(g => g.company_id === currentCompanyId);
     }
     // If Super Admin, 'data' includes all guards
+    data = data.filter(g => !locallyDeletedGuardIds.includes(g.id));
 
     return data.filter(g => 
-      g.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      g.nida_number.includes(searchTerm)
+      (g.full_name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
+      (g.nida_number || '').includes(searchTerm || '')
     );
-  }, [guards, isSuperAdmin, currentCompanyId, searchTerm]);
+  }, [guards, isSuperAdmin, currentCompanyId, searchTerm, locallyDeletedGuardIds]);
 
   const availableRoles = useMemo(() => {
     if (isSuperAdmin) {
@@ -118,21 +125,20 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
         return;
     }
 
-    console.log('Checking Supabase Client:', supabase);
-    if (!supabase) {
-        console.error('❌ Function Aborted: Missing User/Client');
-        return;
-    }
     setIsSyncing(true);
     try {
-        await new Promise(r => setTimeout(r, 1000));
-        onAddStaff({
-            full_name: newName,
-            email: newEmail,
-            role: newRole,
-            company_id: targetCompanyId || undefined,
-            password: newPassword
+        const { api } = await import('../services/api');
+        const result = await api.post('/profiles', {
+          full_name: newName,
+          email: newEmail,
+          role: newRole,
+          company_id: targetCompanyId || undefined,
+          password: newPassword
         });
+        if (result.error || !result.data) {
+          throw new Error(result.error || 'Failed to create user');
+        }
+        onAddStaff(result.data as Profile);
     } catch (err) {
         console.error('🔥 Crash during Supabase Call:', err);
     }
@@ -190,12 +196,25 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                     <div className="flex justify-between items-start mb-6">
                         <div className="flex items-center gap-4">
                              <div className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center font-black text-xl group-hover:bg-slate-900 group-hover:text-white transition-colors duration-300">
-                                {profile.full_name[0]}
+                                {profile.full_name?.[0] || 'U'}
                              </div>
                              <div>
                                 <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{profile.full_name}</h4>
                                 <p className="text-[10px] font-bold text-slate-400 mt-1 lowercase">{profile.email}</p>
                              </div>
+                        </div>
+                        <div className="flex gap-2">
+                          {(
+                            (isSuperAdmin) ||
+                            (currentCompanyId && profile.company_id === currentCompanyId && [UserRole.HR_OFFICER, UserRole.PROCUREMENT, UserRole.SUPERVISOR].includes(profile.role))
+                          ) && (
+                            <button
+                              onClick={() => { setResetTarget(profile); setNewPass(''); setConfirmPass(''); }}
+                              className="px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl bg-primary text-white shadow hover:opacity-90 transition-all"
+                            >
+                              Set Password
+                            </button>
+                          )}
                         </div>
                     </div>
                     
@@ -212,6 +231,43 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</span>
                              <span className={`text-[10px] font-black uppercase tracking-widest ${profile.is_active ? 'text-emerald-500' : 'text-red-500'}`}>{profile.is_active ? 'Active' : 'Inactive'}</span>
                         </div>
+                        {isSuperAdmin && (
+                          <div className="pt-4 flex items-center gap-3">
+                            {profile.role === UserRole.COMPANY_ADMIN ? (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const { data } = await api.post('/profiles/' + profile.id + '/deactivate', {});
+                                    if (data) {
+                                      onUpdateStaff?.(profile.id, { is_active: false });
+                                    }
+                                    (window as any).showNotification?.('success', 'Company Admin deactivated.');
+                                  } catch {
+                                    (window as any).showNotification?.('error', 'Failed to deactivate.');
+                                  }
+                                }}
+                                className="px-4 py-2 bg-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl"
+                              >
+                                Deactivate
+                              </button>
+                            ) : (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.delete('/profiles/' + profile.id);
+                                    onUpdateStaff?.(profile.id, { deleted: true });
+                                    (window as any).showNotification?.('success', 'User deleted.');
+                                  } catch {
+                                    (window as any).showNotification?.('error', 'Failed to delete.');
+                                  }
+                                }}
+                                className="px-4 py-2 bg-red-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        )}
                     </div>
                 </div>
             ))}
@@ -223,7 +279,7 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                     <div className="flex justify-between items-start mb-6">
                         <div className="flex items-center gap-4">
                              <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors duration-300">
-                                {guard.full_name[0]}
+                                {guard.full_name?.[0] || 'G'}
                              </div>
                              <div>
                                 <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{guard.full_name}</h4>
@@ -236,9 +292,17 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                         <div className="flex justify-between items-center py-2 border-b border-slate-50">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</span>
                             <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border ${
-                                guard.application_status === ApplicationStatus.ACTIVE ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                                (guard.application_status === ApplicationStatus.ACTIVE || guard.application_status === ApplicationStatus.ACTIVE_GUARD) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
                                 'bg-slate-50 text-slate-500 border-slate-200'
-                            }`}>{guard.application_status.replace('_', ' ')}</span>
+                            }`}>{guard.application_status?.replace('_', ' ')}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-b border-slate-50">
+                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Training</span>
+                             <div className="flex items-center gap-2">
+                               {((guard.security_training || []).includes('k9_handler')) && <span title="K-9 Handler">🐕</span>}
+                               {((guard.security_training || []).includes('fire_safety')) && <span title="Fire Safety">🔥</span>}
+                               {(!guard.security_training || guard.security_training.length === 0) && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">None</span>}
+                             </div>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b border-slate-50">
                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Site</span>
@@ -259,11 +323,132 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                     <button onClick={() => onViewGuardAudit(guard)} className="w-full py-4 bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-900 hover:text-white transition-all">
                         View Dossier
                     </button>
+                    {currentUser.role !== UserRole.SUPERVISOR && currentUser.role !== UserRole.SUPER_ADMIN && (guard.application_status !== ApplicationStatus.ACTIVE && guard.application_status !== ApplicationStatus.ACTIVE_GUARD) && (
+                      <button
+                        onClick={() => onOpenIntakeEditor?.(guard)}
+                        className="w-full mt-3 py-4 bg-primary text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:opacity-90 transition-all"
+                      >
+                        Open Intake
+                      </button>
+                    )}
+                    <div className="mt-4">
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={(guard.security_training || []).includes('k9_handler')}
+                            onChange={async (e) => {
+                              try {
+                                const checked = e.target.checked;
+                                const prev = new Set(guard.security_training || []);
+                                if (checked) prev.add('k9_handler'); else prev.delete('k9_handler');
+                                const next = Array.from(prev) as SecurityTraining[];
+                                await api.patch(`/guards/${guard.id}`, { security_training: next });
+                                guard.security_training = next;
+                                (window as any).showNotification?.('success', 'Training updated');
+                              } catch {}
+                            }}
+                          />
+                          K-9 Handler 🐕
+                        </label>
+                        <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={(guard.security_training || []).includes('fire_safety')}
+                            onChange={async (e) => {
+                              try {
+                                const checked = e.target.checked;
+                                const prev = new Set(guard.security_training || []);
+                                if (checked) prev.add('fire_safety'); else prev.delete('fire_safety');
+                                const next = Array.from(prev) as SecurityTraining[];
+                                await api.patch(`/guards/${guard.id}`, { security_training: next });
+                                guard.security_training = next;
+                                (window as any).showNotification?.('success', 'Training updated');
+                              } catch {}
+                            }}
+                          />
+                          Fire Safety 🔥
+                        </label>
+                      </div>
+                    </div>
+                    {isSuperAdmin && (
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.delete('/guards/' + guard.id);
+                              setLocallyDeletedGuardIds(prev => [...prev, guard.id]);
+                              (window as any).showNotification?.('success', 'Guard deleted.');
+                            } catch {
+                              (window as any).showNotification?.('error', 'Failed to delete guard.');
+                            }
+                          }}
+                          className="flex-1 px-4 py-3 bg-red-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl"
+                        >
+                          Delete Guard
+                        </button>
+                        <span className="text-[9px] font-mono text-slate-400">ID: {guard.id.slice(0, 8)}</span>
+                      </div>
+                    )}
                  </div>
             ))}
         </div>
       )}
 
+      {resetTarget && (
+        <div className="fixed inset-0 z-[1200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-10 space-y-6 border border-white/20">
+            <div className="text-center">
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Set Password</h3>
+              <p className="text-sm font-medium text-slate-500 mt-1">{resetTarget.full_name}</p>
+            </div>
+            <div className="space-y-4">
+              <input
+                type="password"
+                value={newPass}
+                onChange={e => setNewPass(e.target.value)}
+                placeholder="New password"
+                className="w-full h-12 px-5 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-primary"
+              />
+              <input
+                type="password"
+                value={confirmPass}
+                onChange={e => setConfirmPass(e.target.value)}
+                placeholder="Confirm password"
+                className="w-full h-12 px-5 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-primary"
+              />
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={async () => {
+                  if (!newPass || newPass !== confirmPass) return;
+                  setIsSyncing(true);
+                  const r = await api.post(`/profiles/${resetTarget.id}/reset-password`, { new_password: newPass });
+                  setIsSyncing(false);
+                  if (r.error) {
+                    alert(r.error);
+                  } else {
+                    (window as any).showNotification?.('success', 'Password updated.');
+                    setResetTarget(null);
+                    setNewPass('');
+                    setConfirmPass('');
+                  }
+                }}
+                className="px-6 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-primary transition-all active:scale-95 shadow-xl disabled:opacity-60"
+                disabled={isSyncing || !newPass || newPass !== confirmPass}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setResetTarget(null)}
+                className="px-6 py-3 bg-slate-100 text-slate-900 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all active:scale-95 border border-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Add Staff Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[1200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">

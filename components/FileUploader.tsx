@@ -1,35 +1,50 @@
-import React from 'react';
-
-export const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
-};
+import React, { useState } from 'react';
+import { uploadToAmini } from '../services/uploadService';
 
 interface FileUploaderProps {
   label: string;
   fileUrl?: string;
-  onUpload: (base64: string) => void;
+  onUpload: (url: string) => void;
   onRemove: () => void;
   className?: string;
   error?: boolean;
+  disabled?: boolean;
+  imagesOnly?: boolean;
+  acceptTypes?: string;
 }
 
-const FileUploader: React.FC<FileUploaderProps> = ({ label, fileUrl, onUpload, onRemove, className = 'md:h-36', error }) => {
+const FileUploader: React.FC<FileUploaderProps> = ({ label, fileUrl, onUpload, onRemove, className = 'md:h-36', error, disabled, imagesOnly, acceptTypes }) => {
+  const [previewOpen, setPreviewOpen] = useState(false);
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const file = e.target.files?.[0];
     if (file) {
-      const base64 = await fileToBase64(file);
-      onUpload(base64);
+      try {
+        const nameLower = (file.name || '').toLowerCase();
+        const isImage = file.type.startsWith('image/') || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || nameLower.endsWith('.png');
+        if (imagesOnly && !isImage) {
+          (window as any).showNotification?.('error', 'Tafadhali pakia picha ya pasipoti (Image) pekee.');
+          e.target.value = '';
+          return;
+        }
+        const url = await uploadToAmini(file);
+        onUpload(url);
+        (window as any).showNotification?.('success', 'Upload completed.');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Upload failed. Try again.';
+        (window as any).showNotification?.('error', msg);
+      }
     }
     e.target.value = ''; // Allow re-uploading the same file
   };
   
   const hasError = error && !fileUrl;
   const isPdf = fileUrl?.startsWith('data:application/pdf');
+  const isPdfUrl = !!fileUrl && fileUrl.toLowerCase().endsWith('.pdf');
 
   return (
     <div className={`relative transition-all duration-300 group
@@ -45,11 +60,17 @@ const FileUploader: React.FC<FileUploaderProps> = ({ label, fileUrl, onUpload, o
         : 'border-slate-200 bg-slate-50 md:border-slate-100 md:hover:border-primary'
       }
     `}>
-      <input type="file" onChange={handleFileChange} className="absolute inset-0 opacity-0 z-10 cursor-pointer" accept="image/*,.pdf" />
+      <input
+        type="file"
+        onChange={handleFileChange}
+        className={`absolute inset-0 opacity-0 z-10 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+        accept={acceptTypes ? acceptTypes : (imagesOnly ? 'image/*' : 'image/*,.pdf')}
+        disabled={!!disabled}
+      />
       
       {fileUrl ? (
         <div className="w-full h-full flex items-center p-3 md:p-0">
-          {isPdf ? (
+          {(isPdf || isPdfUrl) ? (
             <div className="w-16 h-16 md:w-full md:h-full flex items-center justify-center bg-slate-100 shrink-0 rounded-lg md:rounded-none">
               <div className="flex flex-col items-center justify-center text-red-500">
                 <svg className="w-8 h-8 md:w-10 md:h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
@@ -65,15 +86,24 @@ const FileUploader: React.FC<FileUploaderProps> = ({ label, fileUrl, onUpload, o
             <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-1">✓ Uploaded</p>
           </div>
 
-          <div className="md:absolute md:inset-0 md:bg-slate-900/60 flex items-center justify-center md:opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20">
+          <div className={`md:absolute md:inset-0 md:bg-slate-900/60 flex items-center justify-center ${disabled ? 'md:opacity-0' : 'md:opacity-0 group-hover:opacity-100'} transition-opacity duration-300 z-20 gap-3`}>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPreviewOpen(true); }}
+              className="w-10 h-10 flex items-center justify-center bg-white/80 text-slate-700 rounded-lg md:px-4 md:py-2 text-xs font-bold uppercase tracking-wider shadow-sm md:shadow-none"
+              disabled={!!disabled}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7zm10 3a3 3 0 100-6 3 3 0 000 6z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
             <button
                 type="button"
                 onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onRemove();
+                    if (!disabled) onRemove();
                 }}
-                className="w-10 h-10 md:w-auto md:h-auto shrink-0 flex items-center justify-center bg-white/80 text-slate-500 md:bg-red-600 md:text-white rounded-lg md:px-4 md:py-2 text-xs font-bold uppercase tracking-wider shadow-sm md:shadow-none"
+                className={`w-10 h-10 md:w-auto md:h-auto shrink-0 flex items-center justify-center ${disabled ? 'bg-white/50 text-slate-400 cursor-not-allowed' : 'bg-white/80 text-slate-500 md:bg-red-600 md:text-white'} rounded-lg md:px-4 md:py-2 text-xs font-bold uppercase tracking-wider shadow-sm md:shadow-none`}
+                disabled={!!disabled}
             >
                 <span className="md:hidden">✕</span>
                 <span className="hidden md:inline">Remove</span>
@@ -93,6 +123,29 @@ const FileUploader: React.FC<FileUploaderProps> = ({ label, fileUrl, onUpload, o
           <div className="text-left md:text-center pl-4 md:pl-0">
             <span className={`text-xs font-black uppercase tracking-widest ${hasError ? 'text-red-600' : 'text-slate-400'}`}>{label}</span>
             {hasError && <span className="block text-[9px] font-bold text-red-500 uppercase tracking-widest mt-1">Required</span>}
+          </div>
+        </div>
+      )}
+      {previewOpen && fileUrl && (
+        <div className="fixed inset-0 z-[1500] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden relative">
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(false)}
+              className="absolute top-3 right-3 w-10 h-10 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+            >
+              ✕
+            </button>
+            <div className="bg-slate-50 border-b border-slate-100 p-4">
+              <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
+            </div>
+            <div className="max-h-[80vh] overflow-auto">
+              {(isPdf || isPdfUrl) ? (
+                <iframe src={fileUrl} className="w-full h-[80vh]" title="Document Preview" />
+              ) : (
+                <img src={fileUrl} alt={label} className="w-full h-auto object-contain" />
+              )}
+            </div>
           </div>
         </div>
       )}

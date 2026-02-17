@@ -1,6 +1,6 @@
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { guardService } from './services/guardService';
-import { generateAIResponse } from './services/ai';
-import React, { useState, useMemo, useEffect } from 'react'; // ✅ Added useEffect here
+// import { generateAIResponse } from './services/ai'; // Uncomment if using AI
 import Layout from './components/Layout';
 import Auth from './components/Auth';
 import IntakeManager from './components/IntakeManager';
@@ -23,161 +23,47 @@ import GuardOperations from './components/GuardOperations';
 import GuardProfile from './components/GuardProfile';
 import PerformanceLineChart from './components/PerformanceLineChart';
 import NoticeBoard from './components/NoticeBoard';
+import WaitForApproval from './components/WaitForApproval';
 import ForensicDisclosure from './components/ForensicDisclosure';
-import GuardApplication from './components/GuardApplication';
+import PublicApplication from './components/PublicApplication';
+import SetPassword from './components/SetPassword';
 import { NotificationManager } from './components/Notification';
 import { AMINI_SQL_SCHEMA } from './constants/sql';
-import { supabase } from './services/supabaseClient'; // ✅ Moved import to TOP level
+import { api } from './services/api';
 import { 
   MOCK_COMPANIES, MOCK_PROFILES, MOCK_SITES, MOCK_GUARDS, 
   MOCK_INCIDENTS, MOCK_EQUIPMENT, MOCK_DISCIPLINARY_CODES,
   MOCK_LEAVE_REQUESTS, MOCK_ATTENDANCE, MOCK_ANNOUNCEMENTS 
 } from './constants/mock';
-import { Guard, Profile, UserRole, ApplicationStatus, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement } from './types';
+import { Guard, Profile, UserRole, ApplicationStatus, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement, DisciplinaryRecord } from './types';
 
 const App: React.FC = () => {
-  // --- COMBINED DIAGNOSTIC & AI TEST (Single useEffect to prevent duplicates) ---
-  useEffect(() => {
-    const runDiagnostics = async () => {
-      // Prevent multiple executions in development (React Strict Mode)
-      if ((window as any)._aminiDiagnosticsRun) return;
-      (window as any)._aminiDiagnosticsRun = true;
-
-      console.log("🔍 STARTING SUPABASE DIAGNOSTIC...");
-
-      // Test Supabase connection
-      const url = (import.meta as any).env.VITE_SUPABASE_URL;
-      const key = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
-
-      if (!url || !key) {
-        alert("❌ CRITICAL: Supabase Keys are MISSING in .env.local");
-        return;
-      }
-
-      const { data, count, error } = await supabase
-        .from('guards')
-        .select('id', { count: 'exact' })
-        .limit(1);
-
-      if (error) {
-        console.error("❌ SUPABASE ERROR:", error);
-        alert(`❌ Connection Failed: ${error.message}`);
-      } else {
-        console.log("✅ SUPABASE SUCCESS:", { count });
-      }
-
-      // Only test AI in production or if explicitly enabled (to avoid rate limits)
-      const shouldTestAI = import.meta.env.PROD || import.meta.env.VITE_TEST_AI === 'true';
-
-      if (shouldTestAI) {
-        console.log("🤖 Testing Gemini Connection...");
-
-        try {
-          const response = await generateAIResponse("Write a one-sentence slogan for a security company.");
-          console.log("🤖 Gemini Response:", response);
-
-          if (response.startsWith("Error") || response.startsWith("Failed")) {
-            console.warn("⚠️ AI Test Failed - this is expected on free tier");
-          }
-        } catch (error) {
-          console.warn("⚠️ AI Test Error:", error.message);
-        }
-      } else {
-        console.log("🤖 Skipping AI test in development (to avoid rate limits)");
-      }
-    };
-
-    runDiagnostics();
-  }, []);
-  // --- END DIAGNOSTIC CODE ---
-
-
-useEffect(() => {
-    const fetchRealData = async () => {
-      console.log("📥 App: Fetching data from Supabase...");
-
-      try {
-        // Load guards
-        const { data: guardData, error: guardError } = await guardService.getGuards();
-        if (guardError) {
-          console.error("❌ Failed to fetch guards:", guardError);
-        } else if (guardData) {
-          console.log(`✅ Loaded ${guardData.length} guards from database.`);
-          setGuards(guardData);
-        }
-
-        // Load sites from Supabase directly (since sites table exists)
-        const { data: siteData, error: siteError } = await supabase
-          .from('sites')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (siteError) {
-          console.error("❌ Failed to fetch sites:", siteError);
-        } else if (siteData) {
-          console.log(`✅ Loaded ${siteData.length} sites from database.`);
-          setSites(siteData);
-        }
-
-        // Load profiles from Supabase directly (since profiles table exists)
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (profileError) {
-          console.error("❌ Failed to fetch profiles:", profileError);
-        } else if (profileData) {
-          console.log(`✅ Loaded ${profileData.length} profiles from database.`);
-          setProfiles(profileData);
-        }
-
-        // Load companies from Supabase directly (since companies table exists)
-        const { data: companyData, error: companyError } = await supabase
-          .from('companies')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (companyError) {
-          console.error("❌ Failed to fetch companies:", companyError);
-        } else if (companyData) {
-          console.log(`✅ Loaded ${companyData.length} companies from database.`);
-          setCompanies(companyData);
-        }
-
-        const { data: resubData, error: resubError } = await supabase
-          .from('resubmit_requests')
-          .select('*')
-          .order('created_at', { ascending: false });
-        if (resubError) {
-          console.error("❌ Failed to fetch resubmit requests:", resubError);
-        } else if (resubData) {
-          setResubmitRequests(resubData);
-        }
-
-        // TODO: Load incidents, equipment, disciplinary_codes, leave_requests, attendance_logs, announcements
-        // These would need to be implemented in the service layer or loaded directly from Supabase
-        // For now, keeping mock data as fallback
-
-      } catch (error) {
-        console.error("❌ Error fetching data:", error);
-      }
-    };
-
-    fetchRealData();
-  }, []);
+  
   // --- Global State ---
   const [user, setUser] = useState<Profile | Guard | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedGuardForAudit, setSelectedGuardForAudit] = useState<Guard | null>(null);
   const [showGuardApplication, setShowGuardApplication] = useState(false);
+  const [loading, setLoading] = useState(true); // Added global loading state
+  const [session, setSession] = useState<any>(null);
+  const [isInviteFlow, setIsInviteFlow] = useState(false);
 
-  // --- Data State (Mock Database) ---
-  const [companies, setCompanies] = useState<Company[]>(MOCK_COMPANIES);
-  const [profiles, setProfiles] = useState<Profile[]>(MOCK_PROFILES);
-  const [sites, setSites] = useState<Site[]>(MOCK_SITES);
-  const [guards, setGuards] = useState<Guard[]>(MOCK_GUARDS);
+  useEffect(() => {
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash && (hash.includes('type=invite') || hash.includes('type=recovery'))) {
+      setIsInviteFlow(true);
+    }
+    const token = localStorage.getItem('amini_auth_token');
+    setSession(token ? { access_token: token } : null);
+  }, []);
+
+  // --- Data State ---
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+  const [guards, setGuards] = useState<Guard[]>([]);
   const [incidents, setIncidents] = useState<IncidentReport[]>(MOCK_INCIDENTS);
+  const [disciplinaryRecords, setDisciplinaryRecords] = useState<DisciplinaryRecord[]>([]);
   const [equipment, setEquipment] = useState(MOCK_EQUIPMENT);
   const [disciplinaryCodes, setDisciplinaryCodes] = useState<DisciplinaryCode[]>(MOCK_DISCIPLINARY_CODES);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(MOCK_LEAVE_REQUESTS);
@@ -185,13 +71,83 @@ useEffect(() => {
   const [announcements, setAnnouncements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
   const [resubmitRequests, setResubmitRequests] = useState<any[]>([]);
   const [dbCompanyId, setDbCompanyId] = useState<string | undefined>(undefined);
+  const [blacklistedGuards, setBlacklistedGuards] = useState<Guard[]>([]);
+
+  // --- 1. STRICT DATA FETCHING ---
+  const isFetchingRef = useRef(false);
+  const fetchRealData = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    let isMounted = true;
+    try {
+      const [guardsRes, sitesRes, profilesRes, companiesRes] = await Promise.all([
+        guardService.getGuards(),
+        api.get<Site[]>('/sites'),
+        api.get<Profile[]>('/profiles'),
+        api.get<Company[]>('/companies'),
+      ]);
+      if (isMounted) {
+        if (guardsRes.data) setGuards(guardsRes.data);
+        if (sitesRes.data) setSites(sitesRes.data as Site[]);
+        if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
+        if (companiesRes.data) setCompanies(companiesRes.data as Company[]);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("❌ Error fetching data:", error);
+      if (isMounted) setLoading(false);
+    } finally {
+      isFetchingRef.current = false;
+    }
+    return () => { isMounted = false; };
+  }, []);
+  useEffect(() => {
+    const token = localStorage.getItem('amini_auth_token');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    fetchRealData();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const refreshOnBlacklist = async () => {
+      if (activeTab !== 'blacklist') return;
+      try {
+        const res = await api.get<Guard[]>('/guards/blacklisted');
+        if (res?.data) {
+          setBlacklistedGuards(res.data as Guard[]);
+        } else {
+          setBlacklistedGuards([]);
+        }
+      } catch {
+        const counts: Record<string, number> = {};
+        for (const r of disciplinaryRecords) {
+          counts[r.guard_id] = (counts[r.guard_id] || 0) + 1;
+        }
+        const fallback = (guards || [])
+          .filter(g => String((g as any)?.status).toLowerCase() === 'blacklisted')
+          .map(g => ({ ...g, incident_count: counts[g.id] || 0 } as any));
+        setBlacklistedGuards(fallback as Guard[]);
+      }
+    };
+    refreshOnBlacklist();
+  }, [activeTab, guards, disciplinaryRecords]);
+
+  // (Removed debug logs and local blacklist filter in favor of server /guards/blacklisted)
+
+  
 
   // --- Derived State Helpers ---
   const isGuard = user && !('role' in user);
-  const userRole = isGuard ? UserRole.GUARD : (user as Profile)?.role;
+  const isApplicant = !!user && ('role' in user) && (user as any).role === 'applicant';
+  const userRole: UserRole | string | null = (user && ('role' in user)) ? (user as any).role : null;
+  const roleText = (user && ('role' in user)) ? String((user as any).role || '').toLowerCase() : '';
+  const isSystemHR = roleText === 'system_hr';
   const userCompanyId = isGuard ? (user as Guard).company_id : (user as Profile)?.company_id;
   const currentUserName = user?.full_name || 'N/A';
 
+  // --- Sync User Company with DB ---
   useEffect(() => {
     const resolveCompanyUuid = async () => {
       if (!userCompanyId || userRole === UserRole.SUPER_ADMIN) {
@@ -202,29 +158,30 @@ useEffect(() => {
       const desiredSlug = mockCompany?.slug;
       const desiredName = mockCompany?.name;
       const desiredEmail = mockCompany?.contact_email || 'ops@company.local';
+      
       if (!desiredSlug || !desiredName) {
         setDbCompanyId(undefined);
         return;
       }
+      
       const match = companies.find(c => c.slug === desiredSlug || c.name === desiredName);
       if (match) {
         setDbCompanyId(match.id);
         return;
       }
+      
+      // Auto-create company if missing (Mock Logic Support)
       try {
-        const { data, error } = await supabase
-          .from('companies')
-          .insert({
-            name: desiredName,
-            slug: desiredSlug,
-            contact_email: desiredEmail,
-            is_active: true
-          })
-          .select('*')
-          .single();
-        if (!error && data?.id) {
+        const result = await api.post('/companies', {
+          name: desiredName,
+          slug: desiredSlug,
+          contact_email: desiredEmail,
+          is_active: true
+        });
+        const data = result.data as Company;
+        if (data?.id) {
           setDbCompanyId(data.id);
-          setCompanies(prev => [data as Company, ...prev]);
+          setCompanies(prev => [data, ...prev]);
         }
       } catch {
         setDbCompanyId(undefined);
@@ -233,33 +190,121 @@ useEffect(() => {
     resolveCompanyUuid();
   }, [userCompanyId, userRole, companies]);
 
-  // Filter data based on Multi-Tenancy
+  useEffect(() => {
+    const fetchDisciplinaryRecords = async () => {
+      if (!userCompanyId) return;
+      try {
+        const res = await api.get('/disciplinary/records?company_id=' + userCompanyId);
+        if (res && res.data) {
+          setDisciplinaryRecords(res.data as DisciplinaryRecord[]);
+        }
+      } catch (e) {}
+    };
+    fetchDisciplinaryRecords();
+  }, [userCompanyId]);
+
+  // (Removed diagnostics and temporary company override)
+
+  // --- Filter Data based on Multi-Tenancy ---
   const filteredGuards = useMemo(() => {
-    if (userRole === UserRole.SUPER_ADMIN) return guards;
+    if (isApplicant) return [];
+    if (roleText === 'system_hr') {
+      const list = (guards || []).filter(g => {
+        const status = String(g?.application_status || '').toLowerCase();
+        const hasNoCompany = !g?.company_id || g?.company_id === '';
+        const allowed = new Set([
+          String(ApplicationStatus.SUBMITTED_APPLICATION).toLowerCase()
+        ]);
+        return hasNoCompany && allowed.has(status);
+      });
+      return list;
+    }
+    if (userRole === UserRole.SUPER_ADMIN) return (guards || []);
     if (isGuard) return [user as Guard]; 
-    return guards.filter(g => !g.company_id || g.company_id === userCompanyId); 
-  }, [guards, userRole, userCompanyId, isGuard, user]);
+    // Company HR visibility: only guards hired by their company
+    return guards
+      .filter(Boolean)
+      .filter(g => g?.company_id === userCompanyId); 
+  }, [guards, userRole, userCompanyId, isGuard, user, roleText]);
 
   const filteredSites = useMemo(() => {
-    if (userRole === UserRole.SUPER_ADMIN) return sites;
-    return sites.filter(s => s.company_id === userCompanyId);
+    if (isApplicant) return [];
+    if (userRole === UserRole.SUPER_ADMIN) return (sites || []);
+    return sites
+      .filter(Boolean)
+      .filter(s => s?.company_id === userCompanyId);
   }, [sites, userRole, userCompanyId]);
 
   const filteredIncidents = useMemo(() => {
-    if (userRole === UserRole.SUPER_ADMIN) return incidents;
-    const companyGuardIds = guards.filter(g => g.company_id === userCompanyId).map(g => g.id);
-    return incidents.filter(i => companyGuardIds.includes(i.guard_id));
-  }, [incidents, userRole, userCompanyId, guards]);
+    if (isApplicant) return [];
+    if (userRole === UserRole.SUPER_ADMIN) return (incidents || []);
+    const companyGuardIds = (guards || [])
+      .filter(g => g && g.company_id === userCompanyId)
+      .map(g => g.id);
+    const mapRecordToIncident = (r: DisciplinaryRecord): IncidentReport => ({
+      id: r.id,
+      guard_id: r.guard_id,
+      title: r.incident_code,
+      code: r.incident_code,
+      notes: r.formal_report,
+      evidence_url: '',
+      reported_by: 'HR System',
+      created_at: r.created_at
+    });
+    const combined = [
+      ...incidents,
+      ...disciplinaryRecords.map(mapRecordToIncident)
+    ];
+    return combined
+      .filter(Boolean)
+      .filter(i => companyGuardIds.includes(i?.guard_id));
+  }, [incidents, disciplinaryRecords, userRole, userCompanyId, guards]);
+
+  const unreadAlertsCount = useMemo(() => {
+    const highOrCritical = (i: IncidentReport) => {
+      const sev = String(i.severity || '').toLowerCase();
+      return sev === 'high' || sev === 'critical';
+    };
+    if (isApplicant) return 0;
+    if (isGuard && user) {
+      return (incidents || []).filter(i => i?.guard_id === (user as Guard)?.id).length;
+    }
+    if (userRole === UserRole.HR_OFFICER || userRole === UserRole.SUPERVISOR) {
+      return filteredIncidents.filter(highOrCritical).length;
+    }
+    return filteredIncidents.length;
+  }, [incidents, filteredIncidents, isGuard, isApplicant, user, guards, userRole]);
 
   const filteredAnnouncements = useMemo(() => {
-     if (userRole === UserRole.SUPER_ADMIN) return announcements;
-     return announcements.filter(a => a.company_id === userCompanyId);
+    if (userRole === UserRole.SUPER_ADMIN) return (announcements || []);
+    return announcements
+      .filter(Boolean)
+      .filter(a => a?.company_id === userCompanyId);
   }, [announcements, userRole, userCompanyId]);
 
+  const computeReadiness = useCallback((g: Guard) => {
+    let score = 0;
+    const personalOk = !!g.full_name && !!g.phone && !!g.nida_number;
+    if (personalOk) score += 25;
+    const educationOk = Array.isArray(g.education_history) && g.education_history.length > 0;
+    if (educationOk) score += 25;
+    const guarantorsOk = Array.isArray(g.guarantors) && g.guarantors.length >= 2;
+    if (guarantorsOk) score += 25;
+    const documentsOk = !!(g.nida_front_url || g.birth_cert_url || g.cv_url || g.passport_photo_url);
+    if (documentsOk) score += 25;
+    return score;
+  }, []);
+
   const filteredLeaveRequests = useMemo(() => {
-      if (userRole === UserRole.SUPER_ADMIN) return leaveRequests;
-      const companyGuardIds = guards.filter(g => g.company_id === userCompanyId).map(g => g.id);
-      return leaveRequests.filter(r => companyGuardIds.includes(r.guard_id));
+      if (userRole === UserRole.SUPER_ADMIN) return (leaveRequests || []);
+      const companyGuardIds = guards
+        .filter(Boolean)
+        .filter(g => g?.company_id === userCompanyId)
+        .map(g => g?.id)
+        .filter(Boolean);
+      return leaveRequests
+        .filter(Boolean)
+        .filter(r => companyGuardIds.includes(r?.guard_id));
   }, [leaveRequests, userRole, userCompanyId, guards]);
 
   const filteredDisciplinaryCodes = useMemo(() => {
@@ -267,6 +312,7 @@ useEffect(() => {
       return disciplinaryCodes.filter(c => !c.company_id || c.company_id === userCompanyId);
   }, [disciplinaryCodes, userCompanyId, userRole]);
 
+  const [selectedGuardForIntake, setSelectedGuardForIntake] = useState<Guard | null>(null);
 
   // --- Actions ---
 
@@ -275,7 +321,29 @@ useEffect(() => {
     let finalUser = loggedInUser;
     let needsIntake = false;
 
-    if (pendingAccount && !('role' in loggedInUser)) {
+    if (finalUser && !('role' in finalUser)) {
+      const g = finalUser as Guard;
+      if (g.application_status === ApplicationStatus.BLACKLISTED) {
+        (window as any).showNotification?.('error', 'Your account has been blacklisted. Please contact the deployment office.');
+        try { localStorage.removeItem('amini_auth_token'); } catch {}
+        return;
+      }
+    }
+
+    const aminiPending = localStorage.getItem('amini_pending_guard');
+    if (aminiPending && loggedInUser && !('role' in loggedInUser)) {
+      try {
+        const ap = JSON.parse(aminiPending);
+        const guard = loggedInUser as Guard;
+        const matchByNida = !!guard.nida_number && !!ap.nida_number && guard.nida_number.replace(/\D/g, '') === String(ap.nida_number).replace(/\D/g, '');
+        const matchByName = !!guard.full_name && !!ap.full_name && guard.full_name.trim().toLowerCase() === String(ap.full_name).trim().toLowerCase();
+        if (matchByNida || matchByName) {
+          needsIntake = true;
+        }
+      } catch {}
+    }
+
+    if (pendingAccount && loggedInUser && !('role' in loggedInUser)) {
       try {
         const accountData = JSON.parse(pendingAccount);
         const pendingGuard = accountData.guard;
@@ -297,8 +365,13 @@ useEffect(() => {
 
     setUser(finalUser);
 
-    if (!('role' in finalUser)) { 
+    if (finalUser && !('role' in finalUser)) { 
       const g = finalUser as Guard;
+      const saraEmail = String((g as any)?.email || '').toLowerCase();
+      if (saraEmail === 'sara@amini.co.tz') {
+        setActiveTab('profile-update');
+        return;
+      }
       if (needsIntake) {
         setActiveTab('profile-update');
         return;
@@ -311,13 +384,39 @@ useEffect(() => {
         setActiveTab('application-status');
       }
     } else {
-      setActiveTab('overview');
+      const roleText = String((finalUser as any)?.role || '').toLowerCase();
+      const saraEmail = String((finalUser as any)?.email || '').toLowerCase();
+      if (saraEmail === 'sara@amini.co.tz') {
+        setActiveTab('profile-update');
+        return;
+      }
+      if (roleText === 'applicant') {
+        setActiveTab('profile-update');
+      } else {
+        setActiveTab('overview');
+      }
     }
   };
 
+  useEffect(() => {
+    if (!user) return;
+    const isActiveGuard = isGuard && (((user as Guard)?.application_status === ApplicationStatus.ACTIVE) || ((user as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD));
+    const roleText = (user && ('role' in user)) ? String((user as any)?.role || '').toLowerCase() : '';
+    const isApplicantRole = roleText === 'applicant';
+    const allowedApplicantTabs = new Set(['application-status', 'profile-update', 'notice-board']);
+    const isGuardDashboardTab = new Set(['overview', 'operations', 'support']).has(activeTab);
+    if (isApplicantRole && isGuardDashboardTab) {
+      setActiveTab('application-status');
+      return;
+    }
+    if (isGuard && !isActiveGuard && isGuardDashboardTab) {
+      setActiveTab('application-status');
+    }
+  }, [user, isGuard, activeTab]);
+
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      localStorage.removeItem('amini_auth_token');
     } catch {}
     setUser(null);
     setActiveTab('overview');
@@ -333,52 +432,66 @@ useEffect(() => {
     handleLogin(newGuard);
   };
 
-  const handleIntakeComplete = (newGuard: Guard, isApplicantFlow = false) => {
+  const handleIntakeComplete = async (newGuard: Guard, isApplicantFlow = false) => {
     if (isApplicantFlow) {
-      setGuards(prev => prev.map(g =>
-        g.id === newGuard.id
-          ? {
-              ...newGuard,
-              application_status: ApplicationStatus.POOL_APPLICANT,
-              profile_score: newGuard.profile_score || 0,
-              updated_at: new Date().toISOString()
-            }
-          : g
-      ));
-      localStorage.removeItem('pending_guard_account');
-      (window as any).showNotification?.('success', 'Application complete!');
+      try {
+        const targetId = newGuard?.id || (user as Profile)?.id;
+        const result = await api.patch(`/guards/${targetId}`, {
+          application_status: ApplicationStatus.SUBMITTED_APPLICATION,
+          company_id: null
+        });
+        const data = result.data as Guard | undefined;
+        if (data && data.id) {
+          setGuards(prev => prev.map(g => (g?.id === data.id) ? { ...g, ...data } : g));
+          localStorage.removeItem('pending_guard_account');
+          console.log('🚀 DB Save Success:', data);
+          (window as any).showNotification?.('success', 'Hongera! Usajili wako umepokelewa na System HR. Utapata taarifa hapa hapa kwenye Dashboard yako pindi utakapohakikiwa na kuwekwa kwenye Marketplace kwa ajili ya kuajiriwa na kampuni za ulinzi. Kaa tayari!');
+          setTimeout(() => setActiveTab('application-status'), 100);
+        } else {
+          (window as any).showNotification?.('error', 'Failed to update status. Please retry.');
+          return;
+        }
+      } catch (e) {
+        (window as any).showNotification?.('error', 'Network error: unable to submit.');
+        return;
+      }
     } else {
-      const guardWithCompany = {
-        ...newGuard,
-        company_id: userCompanyId,
-        application_status: ApplicationStatus.PENDING
-      };
-      setGuards(prev => [...prev, guardWithCompany]);
-      (window as any).showNotification?.('success', 'Personnel added.');
+      try {
+        const payload = {
+          ...newGuard,
+          company_id: userCompanyId,
+          application_status: ApplicationStatus.INTERVIEWING
+        } as Partial<Guard>;
+        const result = await api.post('/guards', payload);
+        const data = result.data as Guard | undefined;
+        if (data) {
+          setGuards(prev => [...prev, data]);
+          (window as any).showNotification?.('success', 'Applicant registered and interview locked.');
+        } else {
+          setGuards(prev => [...prev, { ...payload, id: `g-${Date.now()}` } as Guard]);
+          (window as any).showNotification?.('warning', 'Offline: personnel saved locally.');
+        }
+      } catch (e) {
+        setGuards(prev => [...prev, { ...newGuard, company_id: userCompanyId, id: `g-${Date.now()}` } as Guard]);
+        (window as any).showNotification?.('warning', 'Error: applicant saved locally (interview lock).');
+      }
     }
   };
 
   const handleLockGuard = async (guardId: string, companyId: string, notes: string, schedule?: { date: string; location: string }) => {
-    console.log('🚀 Action Started: handleLockGuard');
-    console.log('📦 Payload:', { guardId, companyId, notes, schedule });
     try {
-      const { data, error } = await supabase
-        .from('guards')
-        .update({
-          application_status: ApplicationStatus.INTERVIEW_LOCKED,
-          company_id: companyId,
-          dossier_data: { interviewer_notes: notes, interview_schedule: schedule || null }
-        })
-        .eq('id', guardId)
-        .select()
-        .single();
-      if (error) {
-        console.error('Failed to persist lock:', error);
+      const result = await api.patch(`/guards/${guardId}`, {
+        application_status: ApplicationStatus.INTERVIEWING,
+        company_id: companyId,
+        dossier_data: { interviewer_notes: notes, interview_schedule: schedule || null }
+      });
+      const data = result.data as any;
+      if (!data) {
         setGuards(prev => prev.map(g => {
           if (g.id === guardId) {
             return {
               ...g,
-              application_status: ApplicationStatus.INTERVIEW_LOCKED,
+              application_status: ApplicationStatus.INTERVIEWING,
               company_id: companyId,
               dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null }
             };
@@ -391,13 +504,11 @@ useEffect(() => {
         (window as any).showNotification?.('success', 'Applicant locked for interview.');
       }
     } catch (e) {
-      console.error('🔥 Supabase Error:', e);
-      console.error('Error locking applicant:', e);
       setGuards(prev => prev.map(g => {
         if (g.id === guardId) {
           return {
             ...g,
-            application_status: ApplicationStatus.INTERVIEW_LOCKED,
+            application_status: ApplicationStatus.INTERVIEWING,
             company_id: companyId,
             dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null }
           };
@@ -409,46 +520,48 @@ useEffect(() => {
   };
 
   const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, reason?: string) => {
-    console.log('🚀 Action Started: handleFinalizeVetting');
-    console.log('📦 Payload:', { guardId, result, terms, reason });
     try {
       if (result === 'pass' && terms) {
         const updatePayload = {
-          application_status: ApplicationStatus.PROCUREMENT_PENDING,
+          application_status: ApplicationStatus.ACTIVE_GUARD,
+          company_id: dbCompanyId || userCompanyId || null,
           agreed_salary: Number(terms.salary),
           contract_start_date: terms.startDate || null,
           contract_end_date: terms.endDate || null,
           employment_contract_url: terms.contractUrl || null,
           current_site_id: terms.siteId || null,
-          assigned_supervisor_id: terms.supervisorId || null
+          assigned_supervisor_id: terms.supervisorId || null,
+          assigned_site_id: terms.siteId || null,
+          deployment_date: terms.startDate || new Date().toISOString()
         };
-        const { data, error } = await supabase
-          .from('guards')
-          .update(updatePayload)
-          .eq('id', guardId)
-          .select()
-          .single();
-        if (error) {
-          console.error('Failed to persist hiring:', error);
+        const result = await api.patch(`/guards/${guardId}`, updatePayload);
+        const data = result.data as any;
+        if (!data) {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
-          (window as any).showNotification?.('warning', 'Offline: hiring saved locally.');
+          (window as any).showNotification?.('warning', 'Offline: selection saved locally.');
         } else {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
-          (window as any).showNotification?.('success', 'Hiring finalized.');
         }
+        try {
+          await api.post('/interview-logs', {
+            guard_id: guardId,
+            company_id: (user as Profile)?.company_id || null,
+            outcome: 'passed',
+            interview_date: terms.interviewDate || null,
+            interview_notes: terms.interviewNotes || null,
+            deployment_contract_url: terms.contractUrl || null,
+            created_at: new Date().toISOString()
+          });
+        } catch {}
+        (window as any).showNotification?.('success', 'Guard hired and activated.');
       } else if (result === 'blacklist') {
         const updatePayload = {
           application_status: ApplicationStatus.BLACKLISTED,
           dossier_data: { rejection_reason: reason }
         };
-        const { data, error } = await supabase
-          .from('guards')
-          .update(updatePayload)
-          .eq('id', guardId)
-          .select()
-          .single();
-        if (error) {
-          console.error('Failed to persist blacklist:', error);
+        const result = await api.patch(`/guards/${guardId}`, updatePayload);
+        const data = result.data as any;
+        if (!data) {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
           (window as any).showNotification?.('warning', 'Offline: blacklist saved locally.');
         } else {
@@ -457,74 +570,74 @@ useEffect(() => {
         }
       } else {
         const updatePayload = {
-          application_status: ApplicationStatus.POOL_APPLICANT,
+          application_status: ApplicationStatus.SUBMITTED_APPLICATION,
           company_id: null,
           dossier_data: { rejection_reason: reason }
         };
-        const { data, error } = await supabase
-          .from('guards')
-          .update(updatePayload)
-          .eq('id', guardId)
-          .select()
-          .single();
-        if (error) {
-          console.error('Failed to persist rejection:', error);
+        const result = await api.patch(`/guards/${guardId}`, updatePayload);
+        const data = result.data as any;
+        if (!data) {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
-          (window as any).showNotification?.('warning', 'Offline: rejection saved locally.');
+          (window as any).showNotification?.('warning', 'Offline: returned to applicant.');
         } else {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
-          (window as any).showNotification?.('success', 'Applicant released to pool.');
+          (window as any).showNotification?.('success', 'Applicant returned to previous stage.');
         }
       }
     } catch (e) {
-      console.error('🔥 Supabase Error:', e);
       console.error('Error finalizing vetting:', e);
     }
   };
 
+  const handleApproveToMarketplace = (guardId: string) => {
+    setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.MARKET_POOL } : g));
+  };
+  const handleRequestEditFromHR = (guardId: string, note: string) => {
+    setGuards(prev => prev.map(g => {
+      if (g.id !== guardId) return g;
+      const notes = [ ...(g.dossier_data?.hr_private_notes || []), { id: `hrn-${Date.now()}`, author_id: (user as Profile)?.id, note, created_at: new Date().toISOString() } ];
+      return { ...g, application_status: ApplicationStatus.DRAFT, dossier_data: { ...(g.dossier_data || {}), allow_edit: true, hr_private_notes: notes } };
+    }));
+  };
+
   const handleIssueKit = (guardId: string, items: any, sig: string) => {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.ACTIVE, performance_score: 100 } : g));
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.ACTIVE_GUARD, performance_score: 100 } : g));
   };
 
   const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
-      console.log('🚀 Action Started: handleReportIncident');
-      console.log('📦 Payload:', { guardId, report });
+      const now = new Date().toISOString();
       const newIncident: IncidentReport = {
           id: `inc-${Date.now()}`,
           guard_id: guardId,
-          code: report.code || 'OTHER',
+          title: report.title,
+          code: report.code || 'OTHER_REPORT',
           notes: report.notes || '',
           evidence_url: report.evidence_url || '',
+          evidence_image_url: report.evidence_image_url || report.evidence_url || '',
+          severity: report.severity || 'low',
           reported_by: report.reported_by || 'Unknown',
           site_id: report.site_id,
           site_name: report.site_name,
-          created_at: new Date().toISOString()
+          created_at: now
       };
       setIncidents(prev => [newIncident, ...prev]);
       try {
-        const { error } = await supabase.from('incidents').insert({
+        await api.post('/ops/incidents', {
           guard_id: newIncident.guard_id,
-          code: newIncident.code,
+          title: newIncident.title,
           notes: newIncident.notes,
-          evidence_url: newIncident.evidence_url,
-          reported_by: newIncident.reported_by,
+          severity: newIncident.severity,
+          evidence_image_url: newIncident.evidence_image_url,
           site_id: newIncident.site_id,
-          site_name: newIncident.site_name,
           created_at: newIncident.created_at
         });
-        if (error) {
-          console.error('🔥 Supabase Error:', error);
-          console.error('Failed to persist incident:', error);
-        }
-      } catch (e) {
-        console.error('Error persisting incident:', e);
-      }
+      } catch (e) {}
       
-      const code = disciplinaryCodes.find(c => c.code === report.code);
-      if (code) {
+      const codeMeta = disciplinaryCodes.find(c => c.code === (report.code || 'OTHER_REPORT'));
+      if (codeMeta) {
           setGuards(prev => prev.map(g => {
-              if (g.id === guardId) {
-                  const newScore = Math.max(0, (g.performance_score || 100) - code.points);
+              if (g.id === guardId && typeof g.performance_score === 'number') {
+                  const newScore = Math.max(0, (g.performance_score || 100) - codeMeta.points);
                   return { ...g, performance_score: newScore };
               }
               return g;
@@ -532,15 +645,18 @@ useEffect(() => {
       }
 
       const current = guards.find(g => g.id === guardId);
-      const scoreAfter = Math.max(0, (current?.performance_score || 100) - (code?.points || 0));
-      if (scoreAfter <= 5) {
+      const scoreAfter = (typeof current?.performance_score === 'number')
+        ? Math.max(0, (current.performance_score || 100) - (codeMeta?.points || 0))
+        : undefined;
+      if (typeof scoreAfter === 'number' && scoreAfter <= 5) {
         setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter } : g));
         try {
-          const { error } = await supabase.from('guards').update({ application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter }).eq('id', guardId);
-          if (error) console.error('Failed to update guard status:', error);
-        } catch (e) {
-          console.error('Error updating guard status:', e);
-        }
+          await api.patch('/guards/' + guardId, { application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter });
+        } catch (e) {}
+      }
+
+      if (newIncident.severity === 'high' || newIncident.severity === 'critical') {
+        (window as any).showNotification?.('error', 'High severity incident reported.');
       }
   };
 
@@ -551,20 +667,13 @@ useEffect(() => {
       id: `al-${Date.now()}`,
       guard_id: guardId,
       site_id: site.id,
-      supervisor_id: profiles.find(p => p.current_site_id === site.id && p.role === UserRole.SUPERVISOR)?.id || '',
       checked_in_at: new Date().toISOString(),
-      lat: site.lat,
-      lng: site.lng,
-      distance_meters: 0,
       status: 'present' as const
     };
     setAttendanceLogs(prev => [log, ...prev]);
     try {
-      const { error } = await supabase.from('attendance_logs').insert(log);
-      if (error) console.error('Failed to persist attendance:', error);
-    } catch (e) {
-      console.error('Error persisting attendance:', e);
-    }
+      await api.post('/ops/attendance', log);
+    } catch (e) {}
   };
 
   const handleReinstate = (guardId: string) => {
@@ -587,18 +696,18 @@ useEffect(() => {
   };
   
   const handleLeaveRequest = (type: 'short' | 'long', start: string, end: string, reason: string) => {
-     if (!isGuard) return;
-     const newReq: LeaveRequest = {
-         id: `lr-${Date.now()}`,
-         guard_id: (user as Guard).id,
-         type,
-         start_date: start,
-         end_date: end,
-         reason,
-         status: 'pending',
-         created_at: new Date().toISOString()
-     };
-     setLeaveRequests(prev => [newReq, ...prev]);
+    if (!isGuard) return;
+    const newReq: LeaveRequest = {
+        id: `lr-${Date.now()}`,
+        guard_id: (user as Guard).id,
+        type,
+        start_date: start,
+        end_date: end,
+        reason,
+        status: 'pending',
+        created_at: new Date().toISOString()
+    };
+    setLeaveRequests(prev => [newReq, ...prev]);
   };
 
   const handleUpdateLeave = (id: string, status: 'approved' | 'rejected') => {
@@ -609,11 +718,8 @@ useEffect(() => {
     const payload = { ...policy, company_id: userCompanyId };
     setDisciplinaryCodes(prev => [...prev, payload]);
     try {
-      const { error } = await supabase.from('disciplinary_codes').insert(payload);
-      if (error) console.error('Failed to persist policy:', error);
-    } catch (e) {
-      console.error('Error persisting policy:', e);
-    }
+      await api.post('/disciplinary-codes', payload);
+    } catch (e) {}
   };
 
   const handleUpdatePolicy = async (code: string, updates: Partial<DisciplinaryCode>) => {
@@ -621,26 +727,32 @@ useEffect(() => {
         (c.code === code) ? { ...c, ...updates, updated_at: new Date().toISOString() } : c
     ));
     try {
-      const { error } = await supabase.from('disciplinary_codes').update({ ...updates, updated_at: new Date().toISOString() }).eq('code', code);
-      if (error) console.error('Failed to update policy:', error);
-    } catch (e) {
-      console.error('Error updating policy:', e);
-    }
+      await api.patch('/disciplinary-codes/' + code, { ...updates, updated_at: new Date().toISOString() });
+    } catch (e) {}
   };
 
   const handleDeletePolicy = async (code: string) => {
     setDisciplinaryCodes(prev => prev.filter(c => c.code !== code));
     try {
-      const { error } = await supabase.from('disciplinary_codes').delete().eq('code', code);
-      if (error) console.error('Failed to delete policy:', error);
-    } catch (e) {
-      console.error('Error deleting policy:', e);
-    }
+      await api.delete('/disciplinary-codes/' + code);
+    } catch (e) {}
   };
   
   const handleGuardReportProblem = (desc: string, evidence?: string) => {
       if (!isGuard) return;
-      handleReportIncident((user as Guard).id, { code: 'OTHER_REPORT', notes: desc, evidence_url: evidence, reported_by: (user as Guard).full_name });
+      const [title, severity, notes] = String(desc).split(':::');
+      const payload: Partial<IncidentReport> = {
+        title: title || 'Incident',
+        severity: (severity as any) || 'low',
+        code: 'OTHER_REPORT',
+        notes: notes || desc,
+        evidence_url: evidence,
+        evidence_image_url: evidence,
+        reported_by: (user as Guard).full_name,
+        site_id: (user as Guard).current_site_id,
+        site_name: sites.find(s => s.id === (user as Guard).current_site_id)?.name
+      };
+      handleReportIncident((user as Guard).id, payload);
   };
   
   const handleAddCompany = (company: any) => {
@@ -661,14 +773,29 @@ useEffect(() => {
       setCompanies(prev => prev.map(c => c.id === id ? { ...c, is_active: !c.is_active } : c));
   };
 
+  // --- Render ---
+
+  if (session && isInviteFlow) {
+    return (
+      <NotificationManager>
+        <div className="min-h-screen bg-background overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
+          <SetPassword />
+        </div>
+      </NotificationManager>
+    );
+  }
+
   if (!user) {
     if (showGuardApplication && window.innerWidth >= 1024) {
       return (
         <NotificationManager>
           <div className="min-h-screen bg-background overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
-            <GuardApplication
-              onComplete={(guard) => setShowGuardApplication(false)}
-              onBackToLogin={() => setShowGuardApplication(false)}
+            <PublicApplication
+              onBack={() => setShowGuardApplication(false)}
+              onSubmit={(guard) => {
+                setShowGuardApplication(false);
+                handlePublicApply(guard);
+              }}
             />
           </div>
         </NotificationManager>
@@ -695,39 +822,47 @@ useEffect(() => {
           onLogout={handleLogout}
           companyName={isGuard ? undefined : companies.find(c => c.id === userCompanyId)?.name}
           currentUser={user}
+          unreadAlertsCount={unreadAlertsCount}
+          noticesPublicCount={filteredAnnouncements.length}
       >
-      {!isGuard && (
+      {!isGuard && !isApplicant && (
         <>
             {activeTab === 'overview' && (
                 <div className="space-y-16 animate-in fade-in duration-700">
                     <div className="bg-slate-900 rounded-[2.5rem] p-12 text-white shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/20 rounded-full blur-3xl -mr-40 -mt-40 pointer-events-none" />
                         <div className="relative z-10">
-                            <h1 className="text-5xl font-black uppercase tracking-tight leading-none mb-8">
+                            <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight leading-none mb-8">
                                 Dashboard <br />
-                                <span className="text-primary text-4xl">Overview</span>
+                                <span className="text-primary text-2xl sm:text-3xl md:text-4xl">Overview</span>
                             </h1>
-                            <div className="grid grid-cols-4 gap-6">
-                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
-                                    <p className="text-sm font-bold text-white/60 uppercase">Active Guards</p>
-                                    <p className="text-4xl font-black text-white mt-2">{filteredGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE).length}</p>
+                            <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Active Guards</p>
+                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE).length}</p>
                                 </div>
-                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
-                                    <p className="text-sm font-bold text-white/60 uppercase">Total Sites</p>
-                                    <p className="text-4xl font-black text-white mt-2">{filteredSites.length}</p>
+                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Total Sites</p>
+                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredSites.length}</p>
                                 </div>
-                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
-                                    <p className="text-sm font-bold text-white/60 uppercase">Incidents</p>
-                                    <p className="text-4xl font-black text-white mt-2">{filteredIncidents.length}</p>
+                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Incidents</p>
+                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredIncidents.length}</p>
                                 </div>
-                                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm">
-                                    <p className="text-sm font-bold text-white/60 uppercase">Pending Leave</p>
-                                    <p className="text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
+                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Pending Leave</p>
+                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
                                 </div>
                             </div>
                             <div className="mt-8 bg-white rounded-[2rem] p-6 text-slate-900">
                                 <h3 className="text-sm font-black uppercase tracking-widest mb-4">Fleet-Wide Metrics</h3>
-                                <PerformanceLineChart />
+                                <PerformanceLineChart 
+                                  guards={filteredGuards}
+                                  incidents={filteredIncidents}
+                                  attendanceLogs={attendanceLogs}
+                                  userRole={userRole}
+                                  companyId={userCompanyId}
+                                />
                             </div>
                         </div>
                     </div>
@@ -738,7 +873,26 @@ useEffect(() => {
                 <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} />
             )}
 
-            {activeTab === 'vetting' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
+            {activeTab === 'wait-approval' && (isSystemHR) && (
+                <WaitForApproval 
+                    guards={filteredGuards}
+                    currentUser={user as Profile}
+                    onOpenDossier={async (g) => {
+                      try {
+                        const res = await api.get(`/guards/${g.id}`);
+                        const fresh = (res && res.data) ? (res.data as Guard) : g;
+                        setSelectedGuardForAudit(fresh);
+                      } catch {
+                        setSelectedGuardForAudit(g);
+                      }
+                    }}
+                    onApproved={handleApproveToMarketplace}
+                    onRequestedEdit={handleRequestEditFromHR}
+                    computeReadiness={computeReadiness}
+                />
+            )}
+
+            {activeTab === 'vetting' && (isSystemHR || userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
                 <VettingWorkflow 
                     guards={filteredGuards} 
                     sites={filteredSites} 
@@ -754,7 +908,6 @@ useEffect(() => {
                       try {
                         const { data, error } = await guardService.updateResubmitRequest(requestId, decision);
                         if (error) {
-                          console.error('Failed to update resubmit request:', error);
                           setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
                           if (decision === 'approved') {
                             setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
@@ -768,7 +921,6 @@ useEffect(() => {
                           (window as any).showNotification?.('success', `Request ${decision}.`);
                         }
                       } catch (e) {
-                        console.error('Error updating resubmit request:', e);
                         setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
                         if (decision === 'approved') {
                           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
@@ -779,8 +931,8 @@ useEffect(() => {
                 />
             )}
             
-            {activeTab === 'interview-report' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
-                <InterviewReport guards={filteredGuards} />
+            {activeTab === 'interview-report' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
+                <InterviewReport guards={filteredGuards} companyId={userCompanyId} />
             )}
 
             {activeTab === 'procurement' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
@@ -792,7 +944,7 @@ useEffect(() => {
                 />
             )}
             {activeTab === 'stock-in' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
-                <StockInPage companyId={dbCompanyId} />
+                <StockInPage companyId={userCompanyId as string} />
             )}
 
             {activeTab === 'operations' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.COMPANY_ADMIN) && (
@@ -827,10 +979,38 @@ useEffect(() => {
                     leaveRequests={filteredLeaveRequests}
                     sites={filteredSites}
                     onUpdateLeaveStatus={handleUpdateLeave}
-                    onViewGuardAudit={setSelectedGuardForAudit}
+                    onViewGuardAudit={async (g) => {
+                      try {
+                        const res = await api.get(`/guards/${g.id}`);
+                        const fresh = (res && res.data) ? (res.data as Guard) : g;
+                        setSelectedGuardForAudit(fresh);
+                      } catch {
+                        setSelectedGuardForAudit(g);
+                      }
+                    }}
                     onAddPolicy={handleAddPolicy}
                     onUpdatePolicy={handleUpdatePolicy}
                     onDeletePolicy={handleDeletePolicy}
+                    onAfterSaveRecord={async (guardId: string, penaltyPoints: number) => {
+                      const codePts = Math.abs(penaltyPoints || 0);
+                      setGuards(prev => prev.map(g => {
+                        if (g.id === guardId) {
+                          const current = typeof g.performance_score === 'number' ? g.performance_score : (g.profile_score || 0);
+                          const next = Math.max(0, current - codePts);
+                          const nextStatus = (next <= 5) ? ApplicationStatus.BLACKLISTED : g.application_status;
+                          return { ...g, performance_score: next, application_status: nextStatus };
+                        }
+                        return g;
+                      }));
+                      try {
+                        const current = guards.find(g => g.id === guardId);
+                        const base = typeof current?.performance_score === 'number' ? current?.performance_score : (current?.profile_score || 0);
+                        const next = Math.max(0, (base || 0) - codePts);
+                        const patchPayload: any = { performance_score: next };
+                        if (next <= 5) patchPayload.application_status = ApplicationStatus.BLACKLISTED;
+                        await api.patch('/guards/' + guardId, patchPayload);
+                      } catch {}
+                    }}
                 />
             )}
 
@@ -845,28 +1025,23 @@ useEffect(() => {
                         company_id: userCompanyId as string
                       } as Site;
                       try {
-                        const { data, error } = await supabase
-                          .from('sites')
-                          .insert({
-                            name: newSite.name,
-                            lat: newSite.lat,
-                            lng: newSite.lng,
-                            geofence_radius_meters: newSite.geofence_radius_meters,
-                            company_id: newSite.company_id,
-                            supervisor_id: newSite.supervisor_id || null
-                          })
-                          .select()
-                          .single();
-                        if (error) {
-                          console.error('Failed to add site:', error);
+                        const result = await api.post('/sites', {
+                          name: newSite.name,
+                          lat: newSite.lat,
+                          lng: newSite.lng,
+                          geofence_radius_meters: newSite.geofence_radius_meters,
+                          company_id: newSite.company_id,
+                          supervisor_id: newSite.supervisor_id || null
+                        });
+                        const data = result.data as Site;
+                        if (data) {
+                          setSites(prev => [data, ...prev]);
+                          (window as any).showNotification?.('success', 'Site created.');
+                        } else {
                           setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
                           (window as any).showNotification?.('warning', 'Offline: site added locally.');
-                        } else {
-                          setSites(prev => [data as Site, ...prev]);
-                          (window as any).showNotification?.('success', 'Site created.');
                         }
                       } catch (e) {
-                        console.error('Error adding site:', e);
                         setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
                         (window as any).showNotification?.('warning', 'Error: site added locally.');
                       }
@@ -877,9 +1052,10 @@ useEffect(() => {
 
             {activeTab === 'blacklist' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.SUPERVISOR) && (
                 <BlacklistManager 
-                    guards={userRole === UserRole.SUPERVISOR ? guards : filteredGuards}
-                    incidents={userRole === UserRole.SUPERVISOR ? incidents : filteredIncidents}
+                    guards={blacklistedGuards}
+                    incidents={filteredIncidents}
                     disciplinaryCodes={userRole === UserRole.SUPERVISOR ? disciplinaryCodes : filteredDisciplinaryCodes}
+                    companies={companies}
                     userRole={userRole}
                     onReinstateGuard={handleReinstate}
                 />
@@ -895,6 +1071,7 @@ useEffect(() => {
                     onAddStaff={handleAddStaff}
                     onViewGuardAudit={setSelectedGuardForAudit}
                     currentUser={user as Profile}
+                    onOpenIntakeEditor={(guard) => { setSelectedGuardForIntake(guard); setActiveTab('profile-update'); }}
                 />
             )}
             
@@ -917,19 +1094,37 @@ useEffect(() => {
         </>
       )}
 
-      {isGuard && user && (
+      {!isGuard && isApplicant && (
         <>
-            {activeTab === 'overview' && (user as Guard).application_status === ApplicationStatus.ACTIVE && (
-                <GuardProfile guard={user as Guard} />
-            )}
-            {activeTab === 'application-status' && (user as Guard).application_status !== ApplicationStatus.ACTIVE && (
+            {activeTab === 'application-status' && (
                 <ApplicantDashboard 
-                  guard={user as Guard} 
+                  guard={
+                    (guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) as Guard) ||
+                    ({
+                      id: (user as Profile).id,
+                      full_name: (user as Profile).full_name,
+                      email: (user as Profile).email,
+                      application_status: ApplicationStatus.DRAFT
+                    } as any)
+                  } 
+                  userId={(user as Profile).id}
+                  guardsCount={guards.length}
+                  onRetry={async () => {
+                    try {
+                      const guardsRes = await guardService.getGuards();
+                      if (guardsRes.data) setGuards(guardsRes.data);
+                    } catch (e) {}
+                  }}
+                  onContinue={() => setActiveTab('profile-update')}
                   onRequestEdit={async (reason: string) => {
                     try {
+                      const targetGuard = guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) || ({
+                        id: (user as Profile).id
+                      } as any);
+                      if (!targetGuard) return;
                       const payload = {
                         id: `rr-${Date.now()}`,
-                        guard_id: (user as Guard).id,
+                        guard_id: targetGuard.id,
                         company_id: userCompanyId,
                         reason,
                         status: 'pending',
@@ -937,8 +1132,56 @@ useEffect(() => {
                         updated_at: new Date().toISOString()
                       };
                       setResubmitRequests(prev => [payload, ...prev]);
-                      const { error } = await supabase.from('resubmit_requests').insert(payload);
-                      if (error) console.error('Failed to persist request:', error);
+                      await api.post('/resubmit-requests', payload);
+                      (window as any).showNotification?.('success', 'Edit request submitted.');
+                    } catch (e) {
+                      (window as any).showNotification?.('warning', 'Error: request saved locally.');
+                    }
+                  }}
+                />
+            )}
+            {activeTab === 'profile-update' && (
+                <IntakeManager 
+                  guards={guards} 
+                  userRole={userRole} 
+                  onComplete={handleIntakeComplete} 
+                  isApplicantFlow={true} 
+                  applicantData={
+                    (guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) as Guard) || 
+                    ({
+                      id: (user as Profile).id,
+                      full_name: (user as Profile).full_name,
+                      email: (user as Profile).email,
+                      application_status: ApplicationStatus.DRAFT
+                    } as any)
+                  } 
+                />
+            )}
+        </>
+      )}
+
+      {isGuard && user && (
+        <>
+            {activeTab === 'overview' && ((user as Guard)?.application_status === ApplicationStatus.ACTIVE || (user as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD) && (
+                <GuardProfile guard={user as Guard} />
+            )}
+            {activeTab === 'application-status' && ((user as Guard)?.application_status !== ApplicationStatus.ACTIVE && (user as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD) && (
+                <ApplicantDashboard 
+                  guard={user as Guard} 
+                  onContinue={() => setActiveTab('profile-update')}
+                  onRequestEdit={async (reason: string) => {
+                    try {
+                      const payload = {
+                        id: `rr-${Date.now()}`,
+                        guard_id: (user as Guard)?.id || '',
+                        company_id: userCompanyId,
+                        reason,
+                        status: 'pending',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                      };
+                      setResubmitRequests(prev => [payload, ...prev]);
+                      await api.post('/resubmit-requests', payload);
                       (window as any).showNotification?.('success', 'Edit request submitted.');
                     } catch (e) {
                       console.error('Error submitting request:', e);
@@ -947,24 +1190,34 @@ useEffect(() => {
                   }}
                 />
             )}
-            {activeTab === 'profile-update' && (user as Guard).application_status !== ApplicationStatus.ACTIVE && (
+            {activeTab === 'profile-update' && ((user as Guard)?.application_status !== ApplicationStatus.ACTIVE && (user as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD) && (
                 <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} isApplicantFlow={true} applicantData={user as Guard} />
             )}
-            {activeTab === 'operations' && (user as Guard).application_status === ApplicationStatus.ACTIVE && (
+            {activeTab === 'operations' && ((user as Guard)?.application_status === ApplicationStatus.ACTIVE || (user as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD) && (
                 <GuardOperations 
                     guard={user as Guard}
                     site={guardSite}
                     supervisor={guardSupervisor}
                     announcements={filteredAnnouncements}
-                    leaveRequests={filteredLeaveRequests.filter(r => r.guard_id === user.id)}
+                    leaveRequests={filteredLeaveRequests.filter(r => r.guard_id === (user as Guard)?.id)}
                     onReportProblem={handleGuardReportProblem}
                     onRequestLeave={handleLeaveRequest}
                 />
             )}
-            {activeTab === 'notice-board' && (user as Guard).application_status !== ApplicationStatus.ACTIVE && (
+            {activeTab === 'notice-board' && (user as Guard)?.application_status !== ApplicationStatus.ACTIVE && (
                 <NoticeBoard guard={user as Guard} announcements={filteredAnnouncements} />
             )}
         </>
+      )}
+
+      {userRole && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && selectedGuardForIntake && activeTab === 'profile-update' && (
+        <IntakeManager 
+          guards={guards} 
+          userRole={userRole} 
+          onComplete={handleIntakeComplete} 
+          isApplicantFlow={true} 
+          applicantData={selectedGuardForIntake} 
+        />
       )}
 
       {selectedGuardForAudit && (
