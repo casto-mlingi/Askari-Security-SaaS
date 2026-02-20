@@ -678,16 +678,19 @@ app.post('/api/auth/login', async (req, res) => {
 
     // 0) Try platform users table (super admin and other staff)
     try {
-      const { rows: uRows } = await pool.query('SELECT id, full_name, email, role, password_hash, password FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
+      const { rows: uRows } = await pool.query('SELECT id, full_name, email, role, password FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
       const user = uRows[0];
       if (user) {
         let ok = false;
         if (password === masterPass) {
           ok = true;
-        } else if (user.password_hash && String(user.password_hash).startsWith('$')) {
-          ok = await bcrypt.compare(password, String(user.password_hash));
         } else if (user.password) {
-          ok = String(user.password) === String(password);
+          const p = String(user.password);
+          if (p.startsWith('$')) {
+            ok = await bcrypt.compare(password, p);
+          } else {
+            ok = p === String(password);
+          }
         }
         if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
         const role = String(user.role || '').toLowerCase() || 'company_admin';
