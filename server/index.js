@@ -1697,6 +1697,7 @@ app.get('/api/disciplinary/records', requireAuth, async (req, res) => {
 app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), async (req, res) => {
   try {
     const client = await pool.connect();
+    try {
       await client.query('BEGIN');
       const payload = req.body || {};
       const guard_id = payload.guard_id;
@@ -1753,8 +1754,23 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
       client.release();
     }
   } catch (e) {
-    try { console.error('GET /api/guards/:id error', e); } catch {}
+    try { console.error('POST /api/disciplinary/records error', e); } catch {}
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  }
+});
+
+app.get('/api/verify-nida-unique', requireAuth, async (req, res) => {
+  try {
+    const nidaRaw = req.query?.nida_number ?? req.query?.nida ?? '';
+    const nida = String(nidaRaw || '').trim();
+    try { console.log('VERIFY NIDA UNIQUE', nida); } catch {}
+    if (!nida) return res.status(400).json({ error: 'bad_request', message: 'nida_number required' });
+    const { rows } = await pool.query('SELECT 1 FROM guards WHERE nida_number = $1 LIMIT 1', [nida]);
+    const exists = Array.isArray(rows) && rows.length > 0;
+    return res.status(200).json({ unique: !exists });
+  } catch (e) {
+    try { console.error('GET /api/verify-nida-unique error', e); } catch {}
+    return res.status(500).json({ error: 'error' });
   }
 });
 
