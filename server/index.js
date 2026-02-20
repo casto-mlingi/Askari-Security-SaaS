@@ -1191,7 +1191,28 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         await recomputeReadiness(guard.id);
       }
       await client.query('COMMIT');
-      res.status(200).json(guard || null);
+      // Return nested details similar to GET /api/guards/:id for immediate UI use
+      try {
+        const [gtsRes, edsRes, docsRes] = await Promise.allSettled([
+          pool.query('SELECT * FROM guarantors WHERE guard_id = $1', [guard.id]),
+          pool.query('SELECT * FROM education_records WHERE guard_id = $1', [guard.id]),
+          pool.query('SELECT * FROM documents WHERE guard_id = $1 ORDER BY created_at DESC', [guard.id]),
+        ]);
+        const gts = gtsRes.status === 'fulfilled' ? gtsRes.value.rows || [] : [];
+        const eds = edsRes.status === 'fulfilled' ? edsRes.value.rows || [] : [];
+        const docsRows = docsRes.status === 'fulfilled' ? docsRes.value.rows || [] : [];
+        const normGuarantors = (gts || []).map(gt => ({ ...gt, name: gt.name ?? gt.full_name, occupation: gt.occupation ?? null }));
+        const normEdu = (eds || []).map(er => ({ ...er, year: er.year ?? (er.graduation_year != null ? String(er.graduation_year) : null) }));
+        return res.status(200).json({
+          ...guard,
+          guarantors: normGuarantors,
+          education_history: normEdu,
+          education: normEdu,
+          documents: docsRows
+        });
+      } catch {
+        return res.status(200).json(guard || null);
+      }
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch {}
       throw e;
