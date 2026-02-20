@@ -64,6 +64,8 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'https://api.amini.co.tz').replace(/\/+$/, '');
+
 // Root API probe to help developers verify correct port/proxy
 app.get('/api', (_req, res) => {
   res.status(200).json({
@@ -130,6 +132,7 @@ const upload = multer({
   }
 });
 app.use('/uploads', express.static(uploadsDir));
+app.use('/api/uploads', express.static(uploadsDir));
 
 // --- Minimal schema guardrails (idempotent) ---
 async function ensureSchema() {
@@ -316,7 +319,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   console.log('Incoming upload request to /api/upload');
   try {
     if (!req.file) return res.status(400).json({ error: 'no_file' });
-    const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const url = `${PUBLIC_BASE_URL}/uploads/${req.file.filename}`;
     return res.status(200).json({ url, file_url: url, key: req.file.filename });
   } catch (e) {
     const code = e?.message?.includes('Unsupported') ? 415 : 500;
@@ -1381,10 +1384,19 @@ app.post('/interview-logs', requireAuth, async (req, res) => {
 app.get('/api/guards/:id', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    const id = req.params.id;
-    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
-    const { rows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
-    const guard = rows[0];
+    let id = req.params.id;
+    let guard = null;
+    if (isValidUuid(id)) {
+      const { rows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
+      guard = rows[0] || null;
+    }
+    if (!guard) {
+      if ((actor.role === 'applicant' || actor.role === 'guard') && actor?.email) {
+        const { rows: eRows } = await pool.query('SELECT * FROM guards WHERE lower(email) = lower($1) LIMIT 1', [actor.email]);
+        guard = eRows[0] || null;
+        if (guard) id = guard.id;
+      }
+    }
     if (!guard) return res.status(404).json({ error: 'not_found' });
     const { allowed, isSameCompany } = await canViewGuardFull(actor, guard);
     if (!allowed) return res.status(403).json({ error: 'forbidden' });
@@ -1475,8 +1487,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
 // Update guard (partial). Also emits alert email when blacklisted.
 app.patch('/api/guards/:id', requireAuth, async (req, res) => {
   try {
-    const id = req.params.id;
-    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
+    let id = req.params.id;
     const incoming = req.body || {};
     const { performance_score: _ps_ignored, score: _score_ignored, ...payload } = incoming;
     const actor = req.user || {};
@@ -1490,11 +1501,22 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
           myCompanyId = null;
         }
       }
-    const { rows: currentRows } = await pool.query(
-      'SELECT id, full_name, performance_score, status, updated_at, dossier_data, company_id FROM guards WHERE id = $1 LIMIT 1',
-      [id]
-    );
-    const current = currentRows[0];
+    let current = null;
+    if (isValidUuid(id)) {
+      const { rows: currentRows } = await pool.query(
+        'SELECT id, full_name, performance_score, status, updated_at, dossier_data, company_id FROM guards WHERE id = $1 LIMIT 1',
+        [id]
+      );
+      current = currentRows[0] || null;
+    }
+    if (!current && (actor.role === 'applicant' || actor.role === 'guard') && actor?.email) {
+      const { rows: eRows } = await pool.query(
+        'SELECT id, full_name, performance_score, status, updated_at, dossier_data, company_id FROM guards WHERE lower(email) = lower($1) LIMIT 1',
+        [actor.email]
+      );
+      current = eRows[0] || null;
+      if (current) id = current.id;
+    }
     if (!current) return res.status(404).json({ error: 'not_found' });
 
     // Field normalization only (legacy inputs should be fixed at clients)
@@ -1664,7 +1686,6 @@ app.get('/api/disciplinary/records', requireAuth, async (req, res) => {
 app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), async (req, res) => {
   try {
     const client = await pool.connect();
-    try {
       await client.query('BEGIN');
       const payload = req.body || {};
       const guard_id = payload.guard_id;
@@ -1673,7 +1694,7 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
       const incident_type = payload.incident_type || payload.incident_code || null;
       const action_taken = payload.action_taken || null;
       const evidenceUrl = (req?.file?.filename)
-        ? `/uploads/${req.file.filename}`
+        ? `${PUBLIC_BASE_URL}/uploads/${req.file.filename}`
         : (payload.evidence_url || null);
       let penalty_points = typeof payload.penalty_points === 'number' ? payload.penalty_points : undefined;
       if (!guard_id || !company_id || !description || !incident_type) {
