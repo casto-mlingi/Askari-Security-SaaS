@@ -77,20 +77,16 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
   // Filter lists
   const poolApplicants = useMemo(() => {
     const s = (g: any) => String(g?.status || '').toLowerCase();
-    if (isPrivileged) {
-      return guards.filter(g => (s(g) === 'marketplace' || s(g) === 'interviewing'));
-    }
-    return guards.filter(g => s(g) === 'marketplace');
+    return guards.filter(g => s(g) === 'marketplace' && (!g?.company_id || g?.company_id === ''));
   }, [guards, isPrivileged]);
   const submittedApplicants = useMemo(() => {
-    return guards.filter(g => String((g as any)?.status || '').toLowerCase() === 'submitted_application');
+    return guards.filter(g => String((g as any)?.status || '').toLowerCase() === 'pending_approval');
   }, [guards]);
   const interviewApplicants = useMemo(() => {
     const s = (g: any) => String(g?.status || '').toLowerCase() === 'interviewing';
-    if (isPrivileged) return guards.filter(g => s(g) && !locallyRejectedIds.includes(g.id));
     const compId = currentUser?.company_id;
     return guards.filter(g => s(g) && String(g.company_id || '') === String(compId || '') && !locallyRejectedIds.includes(g.id));
-  }, [guards, currentUser?.company_id, locallyRejectedIds, isPrivileged]);
+  }, [guards, currentUser?.company_id, locallyRejectedIds]);
   const supervisors = useMemo(() => profiles.filter(p => p.role === UserRole.SUPERVISOR), [profiles]);
   const selectedSiteObj = useMemo(() => sites.find(s => s.id === deploymentSite) || null, [sites, deploymentSite]);
   const siteSupervisorProfile = useMemo(() => profiles.find(p => p.id === selectedSiteObj?.supervisor_id), [profiles, selectedSiteObj?.supervisor_id]);

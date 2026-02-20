@@ -140,7 +140,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
     const single = (guard?.dossier_data as any)?.private_note || '';
     return last || single || '';
   }, [guard?.dossier_data]);
-  const statusOrderStr = ['draft', 'submitted_application', 'interviewing', 'marketplace'];
+  const statusOrderStr = ['draft', 'pending_approval', 'interviewing', 'marketplace'];
 
   // 2. Helper to determine the visual state of each step
   const getStepStatus = (stepTargetStatus: ApplicationStatus) => {
@@ -161,8 +161,8 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
       status: getStepStatus(ApplicationStatus.DRAFT)
     },
     {
-      id: 'submitted',
-      label: 'Submitted Application',
+      id: 'pending_approval',
+      label: 'Pending Approval',
       status: getStepStatus(ApplicationStatus.SUBMITTED_APPLICATION)
     },
     {
@@ -179,7 +179,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
 
   const statusColors: Record<string, string> = {
     draft: 'bg-gray-100 text-gray-700 border-gray-200',
-    submitted_application: 'bg-blue-100 text-blue-700 border-blue-200',
+    pending_approval: 'bg-blue-100 text-blue-700 border-blue-200',
     marketplace: 'bg-indigo-100 text-indigo-700 border-indigo-200',
     interviewing: 'bg-amber-100 text-amber-700 border-amber-200',
     active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -200,7 +200,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
           {verifying ? 'Verifying…' : 'Debug Verify API'}
         </button>
       </div>
-      {String((freshGuard || guard)?.status || '').toLowerCase() === 'submitted_application' && (
+      {String((freshGuard || guard)?.status || '').toLowerCase() === 'pending_approval' && (
         <div className="bg-gradient-to-br from-primary to-slate-900 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl border border-white/10">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">

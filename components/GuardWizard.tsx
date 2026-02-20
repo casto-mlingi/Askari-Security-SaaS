@@ -522,7 +522,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           const emergency_contact_name = ecRaw ? ecRaw.replace(phoneMatch?.[1] || '', '').replace(/[,\-]$/, '').trim() : undefined;
           const guardPayload = {
               ...coreGuardData,
-              status: isApplicantFlow ? 'submitted_application' : (userRole === UserRole.SUPER_ADMIN ? 'marketplace' : 'interviewing'),
+              status: isApplicantFlow ? 'pending_approval' : (userRole === UserRole.SUPER_ADMIN ? 'marketplace' : 'interviewing'),
               profile_score: profileScore,
               gender: coreGuardData.gender || undefined,
               physical_address: coreGuardData.physical_address || undefined,

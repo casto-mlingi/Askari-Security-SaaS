@@ -146,7 +146,7 @@ export const guardService = {
   /**
    * Transitions a guard through the vetting workflow.
    */
-  async updateStatus(id: string, status: 'draft' | 'submitted_application' | 'marketplace' | 'interviewing' | 'active' | 'blacklisted', metadata?: any): Promise<ApiResponse<Guard>> {
+  async updateStatus(id: string, status: 'draft' | 'pending_approval' | 'marketplace' | 'interviewing' | 'active' | 'blacklisted', metadata?: any): Promise<ApiResponse<Guard>> {
     const updatePayload: any = { status };
 
     if (metadata) {

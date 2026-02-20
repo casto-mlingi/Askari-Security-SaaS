@@ -236,7 +236,7 @@ const App: React.FC = () => {
       const list = (guards || []).filter(g => {
         const s = String((g as any)?.status || '').toLowerCase();
         const hasNoCompany = !g?.company_id || g?.company_id === '';
-        return hasNoCompany && s === 'submitted_application';
+        return hasNoCompany && s === 'pending_approval';
       });
       return list;
     }

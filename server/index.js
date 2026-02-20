@@ -831,8 +831,8 @@ const canViewGuardFull = async (actor, guard) => {
   const allowed =
     actor.role === 'super_admin' ||
     actor.role === 'system_hr' ||
-    (actor.role === 'company_admin' && isSameCompany) ||
-    (actor.role === 'hr_officer' && isSameCompany) ||
+    (actor.role === 'company_admin' && (isSameCompany || String(guard?.status || '').toLowerCase() === 'marketplace')) ||
+    (actor.role === 'hr_officer' && (isSameCompany || String(guard?.status || '').toLowerCase() === 'marketplace')) ||
     (actor.role === 'supervisor' && isSameCompany && String(guard.company_id) === anasulId);
   return { allowed, isSameCompany, anasulId };
 };
@@ -859,7 +859,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       } else if (myCompanyId) {
         const { rows } = await pool.query(
           'SELECT * FROM guards WHERE nida_number = $1 AND (company_id = $2 OR status IN ($3,$4)) ORDER BY created_at DESC',
-          [searchNida, myCompanyId, 'marketplace', 'submitted_application']
+          [searchNida, myCompanyId, 'marketplace', 'pending_approval']
         );
         guardsRows = rows || [];
       } else {
@@ -908,7 +908,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       const { rows } = await pool.query('SELECT * FROM guards ORDER BY created_at DESC');
       guardsRows = rows || [];
     } else if (myCompanyId) {
-      const { rows } = await pool.query('SELECT * FROM guards WHERE company_id = $1 OR status IN ($2,$3) ORDER BY created_at DESC', [myCompanyId, 'marketplace', 'submitted_application']);
+      const { rows } = await pool.query('SELECT * FROM guards WHERE company_id = $1 OR status IN ($2,$3) ORDER BY created_at DESC', [myCompanyId, 'marketplace', 'pending_approval']);
       guardsRows = rows || [];
     } else {
       guardsRows = [];
@@ -1448,6 +1448,17 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       ...scrubbedTopLevel,
       physical_address: scrubbedTopLevel.physical_address ?? scrubbedTopLevel.address ?? ((scrubbedTopLevel?.dossier_data || {})['physical_address'] ?? null)
     };
+    const fixUrl = (u) => {
+      if (!u) return u;
+      const s = String(u);
+      const https = s.startsWith('http://') ? ('https://' + s.slice(7)) : s;
+      return https.replace(/https?:\/\/(45\.88\.188\.129(?::3001)?|localhost:3001)/, PUBLIC_BASE_URL);
+    };
+    for (const k of Object.keys(normalizedTop)) {
+      if (k.endsWith('_url') && typeof normalizedTop[k] === 'string') {
+        normalizedTop[k] = fixUrl(normalizedTop[k]);
+      }
+    }
     const scrubbedGuarantors = canSeeDocs ? normGuarantors : normGuarantors.map(x => ({
       ...x,
       letter_url: null,
@@ -1455,7 +1466,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       id_copy_url: null,
       residence_letter_url: null
     }));
-    const scrubbedEdu = canSeeDocs ? normEdu : normEdu.map(x => ({ ...x, certificate_url: null }));
+    const scrubbedEdu = canSeeDocs ? normEdu.map(x => ({ ...x, certificate_url: fixUrl(x.certificate_url) })) : normEdu.map(x => ({ ...x, certificate_url: null }));
     // Incidents visibility: super_admin/system_hr see all; others limited to same company
     let incidents = [];
     try {
@@ -1476,7 +1487,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       guarantors: scrubbedGuarantors,
       education_history: scrubbedEdu,
       education: scrubbedEdu,
-      documents: canSeeDocs ? docsRows : [],
+      documents: canSeeDocs ? docsRows.map(d => ({ ...d, url: fixUrl(d.url || d.file_url || d.path || null), file_url: fixUrl(d.file_url) })) : [],
       incidents: Array.isArray(incidents) ? incidents : []
     });
   } catch {
