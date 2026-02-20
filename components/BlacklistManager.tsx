@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Guard, ApplicationStatus, IncidentReport, DisciplinaryCode, UserRole, Company } from '../types';
+import { Guard, IncidentReport, DisciplinaryCode, UserRole, Company } from '../types';
 import ForensicDisclosure from './ForensicDisclosure';
-import PerformanceCircle from './PerformanceCircle';
 import { guardService } from '../services/guardService';
 
 interface BlacklistManagerProps {
@@ -13,11 +12,78 @@ interface BlacklistManagerProps {
   onReinstateGuard: (guardId: string) => void;
 }
 
+const BlacklistCard: React.FC<{ guard: Guard; onOpen: () => void }> = ({ guard, onOpen }) => {
+  const score = Math.max(Number(guard?.performance_score ?? 0), 0);
+  const pct = Math.max(score, 2);
+  const initial = (guard?.full_name || 'G')?.[0] || 'G';
+  const statusText = String((guard as any)?.status || '').toUpperCase();
+  const reason = ((guard as any)?.dossier_data?.rejection_reason || 'Performance Below Threshold') as string;
+  const blacklistedDate = (guard as any)?.updated_at || (guard as any)?.created_at || new Date().toISOString();
+  return (
+    <div className="bg-white border-l-4 border-red-600 shadow-lg rounded-lg overflow-hidden mb-4 transition-all hover:shadow-xl cursor-pointer" onClick={onOpen}>
+      <div className="flex flex-col md:flex-row">
+        <div className="relative w-full md:w-32 bg-gray-200 flex items-center justify-center p-4">
+          <div className="w-20 h-20 bg-gray-300 rounded-full flex items-center justify-center border-2 border-red-200">
+            <span className="text-gray-500 font-bold text-xl">{initial}</span>
+          </div>
+          <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-2 py-1 uppercase rotate-12 translate-x-1 -translate-y-1 shadow">
+            Banned
+          </div>
+        </div>
+        <div className="p-4 flex-grow">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 uppercase tracking-tight leading-none">
+                {guard.full_name}
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">ID: {String(guard.id).substring(0, 8)}...</p>
+            </div>
+            <span className="px-2 py-1 bg-red-100 text-red-700 text-[10px] font-black rounded uppercase border border-red-200">
+              {statusText}
+            </span>
+          </div>
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] font-bold text-gray-600 mb-1">
+              <span>PERFORMANCE SCORE</span>
+              <span className="text-red-600">{score}%</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-1.5">
+              <div className="bg-red-600 h-1.5 rounded-full" style={{ width: `${pct}%` }}></div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-4 text-[11px] text-gray-600 border-t pt-3 border-gray-50">
+            <div>
+              <span className="block font-bold text-gray-400 uppercase">Reason</span>
+              <span className="text-red-700 font-medium">{reason}</span>
+            </div>
+            <div>
+              <span className="block font-bold text-gray-400 uppercase">Blacklisted Date</span>
+              <span>{new Date(blacklistedDate).toLocaleDateString()}</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 p-3 hidden md:flex md:flex-col justify-around border-t md:border-t-0 md:border-l border-gray-100">
+          <button className="text-gray-400 hover:text-red-600 transition-colors p-2" title="View Dossier" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 20l9-7-9-7-9 7 9 7z" /></svg>
+          </button>
+          <button className="text-gray-400 hover:text-blue-600 transition-colors p-2" title="Appeal History" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const BlacklistManager: React.FC<BlacklistManagerProps> = ({ guards, incidents, disciplinaryCodes, userRole, companies, onReinstateGuard }) => {
   const [reportGuard, setReportGuard] = useState<Guard | null>(null);
 
   const blacklistedGuards = useMemo(() => 
-    guards.filter(g => String((g as any)?.status).toLowerCase() === 'blacklisted'),
+    guards.filter(g => {
+      const s = String((g as any)?.status || '').toLowerCase();
+      const score = Number((g as any)?.performance_score ?? 100);
+      return s === 'blacklisted' || (!Number.isNaN(score) && score < 5);
+    }),
     [guards]
   );
 
@@ -30,129 +96,41 @@ const BlacklistManager: React.FC<BlacklistManagerProps> = ({ guards, incidents, 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-4">
         {blacklistedGuards.length > 0 ? blacklistedGuards.map((g) => {
-          const totalIncidents = typeof (g as any).incident_count === 'number' ? (g as any).incident_count : 0;
           return (
-            <div 
-              key={g.id} 
-              className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all group flex flex-col cursor-pointer"
-              onClick={async () => {
+            <BlacklistCard
+              key={g.id}
+              guard={g}
+              onOpen={async () => {
                 try {
                   const res = await guardService.getGuardById(g.id);
-                  if (res?.data) {
-                    setReportGuard(res.data);
-                  } else {
-                    setReportGuard(g);
-                  }
+                  if (res?.data) setReportGuard(res.data);
+                  else setReportGuard(g);
                 } catch {
                   setReportGuard(g);
                 }
               }}
-            >
-              <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xl shadow-lg group-hover:bg-red-600 transition-colors">
-                    !
-                  </div>
-                  <div>
-                    <h3 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{g.full_name}</h3>
-                    <p className="font-mono text-[10px] text-red-500 font-black mt-1 uppercase tracking-widest">NIDA: {g.nida_number.slice(0, 10)}...</p>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                      {(companies.find(c => c.id === g.company_id)?.name || 'Marketplace')}{companies.find(c => c.id === g.company_id)?.slug ? ` • ${companies.find(c => c.id === g.company_id)!.slug}` : ''}
-                    </p>
-                  </div>
-                </div>
-                <div className="self-start sm:self-auto">
-                  <div className="block sm:hidden">
-                    <PerformanceCircle score={g.performance_score || 0} size={48} />
-                  </div>
-                  <div className="hidden sm:block">
-                    <PerformanceCircle score={g.performance_score || 0} size={64} />
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 flex-grow">
-                 <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Incidents</span>
-                    <span className="text-[10px] font-bold text-slate-600">{totalIncidents} Total</span>
-                 </div>
-              </div>
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
-                 {userRole === UserRole.HR_OFFICER && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onReinstateGuard(g.id); }}
-                        className="no-print w-full py-4 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-700 transition-colors active:scale-95 shadow-lg"
-                    >
-                        Reinstate
-                    </button>
-                 )}
-              </div>
-            </div>
+            />
           );
-        }) : (guards && guards.length > 0 ? guards.map((g) => {
-          const totalIncidents = typeof (g as any).incident_count === 'number' ? (g as any).incident_count : 0;
-          return (
-            <div 
-              key={g.id} 
-              className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all group flex flex-col cursor-pointer"
-              onClick={async () => {
-                try {
-                  const res = await guardService.getGuardById(g.id);
-                  if (res?.data) {
-                    setReportGuard(res.data);
-                  } else {
-                    setReportGuard(g as Guard);
-                  }
-                } catch {
-                  setReportGuard(g as Guard);
-                }
-              }}
-            >
-              <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xl shadow-lg group-hover:bg-red-600 transition-colors">
-                    !
-                  </div>
-                  <div>
-                    <h3 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{g.full_name}</h3>
-                    <p className="font-mono text-[10px] text-red-500 font-black mt-1 uppercase tracking-widest">NIDA: {(g.nida_number || '').slice(0, 10)}...</p>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                      {(companies.find(c => c.id === g.company_id)?.name || 'Marketplace')}{companies.find(c => c.id === g.company_id)?.slug ? ` • ${companies.find(c => c.id === g.company_id)!.slug}` : ''}
-                    </p>
-                  </div>
-                </div>
-                <div className="self-start sm:self-auto">
-                  <div className="block sm:hidden">
-                    <PerformanceCircle score={Number((g as any)?.performance_score) || 0} size={48} />
-                  </div>
-                  <div className="hidden sm:block">
-                    <PerformanceCircle score={Number((g as any)?.performance_score) || 0} size={64} />
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 flex-grow">
-                 <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Incidents</span>
-                    <span className="text-[10px] font-bold text-slate-600">{totalIncidents} Total</span>
-                 </div>
-              </div>
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
-                 {userRole === UserRole.HR_OFFICER && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onReinstateGuard((g as Guard).id); }}
-                        className="no-print w-full py-4 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-700 transition-colors active:scale-95 shadow-lg"
-                    >
-                        Reinstate
-                    </button>
-                 )}
-              </div>
-            </div>
-          );
-        }) : (
-            <div className="col-span-full py-32 text-center border-2 border-dashed border-slate-200 rounded-[3rem] bg-slate-50/50 flex flex-col items-center justify-center">
-               <p className="text-slate-400 font-black uppercase tracking-widest text-xs italic">Blacklist is empty.</p>
-            </div>
+        }) : (guards && guards.length > 0 ? guards.map((g) => (
+          <BlacklistCard
+            key={g.id}
+            guard={g as Guard}
+            onOpen={async () => {
+              try {
+                const res = await guardService.getGuardById(g.id);
+                if (res?.data) setReportGuard(res.data);
+                else setReportGuard(g as Guard);
+              } catch {
+                setReportGuard(g as Guard);
+              }
+            }}
+          />
+        )) : (
+          <div className="col-span-full py-32 text-center border-2 border-dashed border-slate-200 rounded-[3rem] bg-slate-50/50 flex flex-col items-center justify-center">
+            <p className="text-slate-400 font-black uppercase tracking-widest text-xs italic">Blacklist is empty.</p>
+          </div>
         ))}
       </div>
 

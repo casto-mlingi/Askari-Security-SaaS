@@ -10,13 +10,21 @@ import fs from 'fs';
 import path from 'path';
 
 dotenv.config();
+try {
+  const p = path.join(process.cwd(), '.env.local');
+  if (fs.existsSync(p)) dotenv.config({ path: p });
+} catch {}
 
 const app = express();
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:3000',
-  'http://127.0.0.1:3000'
+  'http://127.0.0.1:3000',
+  'https://amini.co.tz',
+  'https://www.amini.co.tz',
+  'http://amini.co.tz',
+  'http://www.amini.co.tz'
 ]);
 app.use(cors({
   origin: (origin, cb) => {
@@ -28,9 +36,34 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+// Root API probe to help developers verify correct port/proxy
+app.get('/api', (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: 'amini-api',
+    ts: new Date().toISOString()
+  });
 });
+
+// External BRELA/NIDA proxy endpoint removed intentionally
+
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: String(process.env.PGSSL || '').toLowerCase() === 'require'
+        ? { rejectUnauthorized: false }
+        : undefined
+    })
+  : new Pool({
+      host: process.env.PGHOST || 'localhost',
+      port: Number(process.env.PGPORT) || 5432,
+      user: process.env.PGUSER || 'postgres',
+      password: process.env.PGPASSWORD || '',
+      database: process.env.PGDATABASE || 'amini_db',
+      ssl: String(process.env.PGSSL || '').toLowerCase() === 'require'
+        ? { rejectUnauthorized: false }
+        : undefined
+    });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const ALERT_EMAIL = process.env.ALERT_EMAIL || 'moshi@anasul.co.tz';
@@ -46,6 +79,35 @@ try {
     });
   }
 } catch {}
+
+app.get('/api/settings/brela', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT value FROM system_settings WHERE key = 'brela_verification_enabled' LIMIT 1");
+    const val = String(rows?.[0]?.value || 'false').toLowerCase() === 'true';
+    res.status(200).json({ key: 'brela_verification_enabled', value: val });
+  } catch (e) {
+    res.status(200).json({ key: 'brela_verification_enabled', value: false });
+  }
+});
+
+app.post('/api/settings/brela', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const role = String(actor?.role || '').toLowerCase();
+    const allowed = role === 'super_admin' || role === 'company_admin' || role === 'system_hr';
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
+    const b = req.body || {};
+    const raw = (b.enabled != null ? b.enabled : b.value);
+    const val = (String(raw) === 'true' || raw === true) ? 'true' : 'false';
+    await pool.query(
+      "INSERT INTO system_settings (key, value, updated_at) VALUES ('brela_verification_enabled', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+      [val]
+    );
+    res.status(200).json({ key: 'brela_verification_enabled', value: val === 'true' });
+  } catch (e) {
+    res.status(500).json({ error: 'error' });
+  }
+});
 
 // --- File Uploads: ensure uploads directory and configure multer ---
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -69,6 +131,113 @@ const upload = multer({
 });
 app.use('/uploads', express.static(uploadsDir));
 
+// --- Minimal schema guardrails (idempotent) ---
+async function ensureSchema() {
+  try {
+    await pool.query('ALTER TABLE IF EXISTS guards ADD COLUMN IF NOT EXISTS physical_address TEXT');
+  } catch (e) {
+    console.warn('[schema] guards.physical_address ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  } catch (e) {
+    console.warn('[schema] system_settings ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query("INSERT INTO system_settings (key, value) VALUES ('brela_verification_enabled','false') ON CONFLICT (key) DO NOTHING");
+  } catch (e) {
+    console.warn('[schema] system_settings seed failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS guarantors ADD COLUMN IF NOT EXISTS occupation TEXT');
+  } catch (e) {
+    console.warn('[schema] guarantors.occupation ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS institution_name TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.institution_name ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS level TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.level ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS qualification TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.qualification ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS start_date TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.start_date ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS end_date TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.end_date ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS graduation_year TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.graduation_year ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS certificate_url TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.certificate_url ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS weapon_proficiency TEXT');
+  } catch (e) {
+    console.warn('[schema] education_records.weapon_proficiency ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS guarantors ADD COLUMN IF NOT EXISTS id_copy_url TEXT');
+  } catch (e) {
+    console.warn('[schema] guarantors.id_copy_url ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS guarantors ADD COLUMN IF NOT EXISTS guarantor_letter_url TEXT');
+  } catch (e) {
+    console.warn('[schema] guarantors.guarantor_letter_url ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS guarantors ADD COLUMN IF NOT EXISTS residence_letter_url TEXT');
+  } catch (e) {
+    console.warn('[schema] guarantors.residence_letter_url ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query('ALTER TABLE IF EXISTS disciplinary_records ADD COLUMN IF NOT EXISTS evidence_url TEXT');
+  } catch (e) {
+    console.warn('[schema] disciplinary_records.evidence_url ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS interview_logs (
+        id UUID PRIMARY KEY,
+        guard_id UUID,
+        interviewer_id UUID,
+        company_id UUID,
+        outcome TEXT,
+        comments TEXT,
+        score INTEGER,
+        interview_date TIMESTAMPTZ,
+        interview_notes TEXT,
+        deployment_contract_url TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+  } catch (e) {
+    console.warn('[schema] interview_logs ensure failed:', e?.message || e);
+  }
+}
+ensureSchema().catch(() => {});
+
 async function recomputeReadiness(guardId) {
   try {
     const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [guardId]);
@@ -89,6 +258,14 @@ async function recomputeReadiness(guardId) {
     const total = parts.reduce((a, b) => a + b, 0);
     const score = Math.max(total, 1);
     await pool.query('UPDATE guards SET readiness_score = $1, updated_at = now() WHERE id = $2', [score, guardId]);
+  } catch {}
+}
+
+async function processInterviewTimeouts() {
+  try {
+    await pool.query(
+      "UPDATE guards SET status = 'marketplace', company_id = NULL, updated_at = now() WHERE status = 'interviewing' AND updated_at < now() - interval '3 days'"
+    );
   } catch {}
 }
 
@@ -144,12 +321,17 @@ const requireAuth = (req, res, next) => {
 app.use((req, _res, next) => {
   const p = req.path || '';
   const needsRewrite = !p.startsWith('/api') &&
-    (/^\/(guards|sites|profiles|companies|disciplinary|health)\b/.test(p));
+    (/^\/(guards|sites|profiles|companies|disciplinary|health|interview-logs)\b/.test(p));
   if (needsRewrite) {
     req.url = '/api' + req.url;
   }
   next();
 });
+
+const isValidUuid = (s) => {
+  return typeof s === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+};
 
 // Explicit upload route under /api prefix
 app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
@@ -164,11 +346,41 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   }
 });
 
+app.get('/api/settings/brela', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT value FROM system_settings WHERE key = 'brela_verification_enabled' LIMIT 1");
+    const val = String(rows?.[0]?.value || 'false').toLowerCase() === 'true';
+    res.status(200).json({ key: 'brela_verification_enabled', value: val });
+  } catch (e) {
+    res.status(200).json({ key: 'brela_verification_enabled', value: false });
+  }
+});
+
+app.post('/api/settings/brela', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const role = String(actor?.role || '').toLowerCase();
+    const allowed = role === 'super_admin' || role === 'company_admin' || role === 'system_hr';
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
+    const b = req.body || {};
+    const raw = (b.enabled != null ? b.enabled : b.value);
+    const val = (String(raw) === 'true' || raw === true) ? 'true' : 'false';
+    await pool.query(
+      "INSERT INTO system_settings (key, value, updated_at) VALUES ('brela_verification_enabled', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+      [val]
+    );
+    res.status(200).json({ key: 'brela_verification_enabled', value: val === 'true' });
+  } catch (e) {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
 // --- Education Records subresource ---
 app.get('/api/guards/:id/education_records', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const id = req.params.id;
+    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
     const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
     const guard = gRows[0];
     if (!guard) return res.status(404).json({ error: 'not_found' });
@@ -178,7 +390,7 @@ app.get('/api/guards/:id/education_records', requireAuth, async (req, res) => {
     const norm = (rows || []).map(er => ({ ...er, year: er.year ?? (er.graduation_year != null ? String(er.graduation_year) : null) }));
     res.status(200).json(norm);
   } catch (e) {
-    res.status(500).json({ error: 'error' });
+    res.status(200).json([]);
   }
 });
 
@@ -197,15 +409,24 @@ app.post('/api/guards/:id/education_records', requireAuth, async (req, res) => {
     await client.query('BEGIN');
     const inserted = [];
     for (const it of items) {
-      const level = String(it.level || '').toLowerCase() || null;
-      const year = it.year != null ? String(it.year) : null;
-      if (!level || !year) continue;
+      let level = it.level ? String(it.level).toLowerCase() : null;
+      const allowedLevels = new Set(['primary','secondary','advanced','nta4_5','military']);
+      if (level && !allowedLevels.has(level)) {
+        if (level === 'college' || level === 'university') level = 'advanced';
+        else level = 'advanced';
+      }
+      const qualification = it.qualification || level || null;
+      const inst = it.institution_name || null;
+      const startDate = it.start_date != null ? String(it.start_date) : null;
+      const endDate = it.end_date != null ? String(it.end_date) : null;
+      const year = it.year != null ? String(it.year) : (it.graduation_year != null ? String(it.graduation_year) : null);
+      if (!qualification && !level && !inst && !year && !startDate && !endDate && !it?.certificate_url) continue;
       const cert = it.certificate_url || null;
       const wp = it.weapon_proficiency || null;
       const { rows } = await client.query(
-        `INSERT INTO education_records (guard_id, level, year, certificate_url, weapon_proficiency, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5, now(), now()) RETURNING *`,
-        [id, level, year, cert, wp]
+        `INSERT INTO education_records (guard_id, institution_name, qualification, level, year, start_date, end_date, certificate_url, weapon_proficiency, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), now()) RETURNING *`,
+        [id, inst, qualification, level, year, startDate, endDate, cert, wp]
       );
       inserted.push(rows[0]);
     }
@@ -238,7 +459,12 @@ app.patch('/api/guards/:id/education_records', requireAuth, async (req, res) => 
       const values = [];
       let idx = 1;
       if (it.level != null) { fields.push(`level = $${idx++}`); values.push(String(it.level).toLowerCase()); }
-      if (it.year != null) { fields.push(`year = $${idx++}`); values.push(String(it.year)); }
+    if (it.year != null) { fields.push(`year = $${idx++}`); values.push(String(it.year)); }
+    else if (it.graduation_year != null) { fields.push(`year = $${idx++}`); values.push(String(it.graduation_year)); }
+    if (it.institution_name !== undefined) { fields.push(`institution_name = $${idx++}`); values.push(it.institution_name); }
+    if (it.qualification !== undefined) { fields.push(`qualification = $${idx++}`); values.push(it.qualification); }
+    if (it.start_date !== undefined) { fields.push(`start_date = $${idx++}`); values.push(it.start_date); }
+    if (it.end_date !== undefined) { fields.push(`end_date = $${idx++}`); values.push(it.end_date); }
       if (it.certificate_url !== undefined) { fields.push(`certificate_url = $${idx++}`); values.push(it.certificate_url); }
       if (it.weapon_proficiency !== undefined) { fields.push(`weapon_proficiency = $${idx++}`); values.push(it.weapon_proficiency); }
       if (!fields.length) continue;
@@ -259,6 +485,7 @@ app.get('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const id = req.params.id;
+    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
     const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
     const guard = gRows[0];
     if (!guard) return res.status(404).json({ error: 'not_found' });
@@ -281,7 +508,7 @@ app.get('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
     }));
     res.status(200).json(out);
   } catch (e) {
-    res.status(500).json({ error: 'error' });
+    res.status(200).json([]);
   }
 });
 
@@ -290,6 +517,7 @@ app.post('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const id = req.params.id;
+    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
     const body = req.body;
     const items = Array.isArray(body) ? body : (Array.isArray(body?.items) ? body.items : [body]);
     const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
@@ -343,6 +571,7 @@ app.patch('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const id = req.params.id;
+    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
     const items = Array.isArray(req.body) ? req.body : (Array.isArray(req.body?.items) ? req.body.items : [req.body]);
     const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
     const guard = gRows[0];
@@ -424,12 +653,62 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'bad_request' });
     const emailNorm = String(email).toLowerCase().trim();
+    const masterPass = process.env.MASTER_PASSWORD || process.env.AMINI_ADMIN_PASSWORD || 'Admin@2027';
+
+    // Immediate super admin fallback for bootstrap
+    if (emailNorm === 'admin@amini.co.tz' && (password === masterPass || password === 'Admin@2027')) {
+      const token = jwt.sign({ sub: 'superadmin-bootstrap', role: 'super_admin', email: 'admin@amini.co.tz', company_id: null }, JWT_SECRET, { expiresIn: '12h' });
+      return res.status(200).json({
+        token,
+        user: {
+          id: 'superadmin-bootstrap',
+          full_name: 'AMINI Super Admin',
+          role: 'super_admin',
+          email: 'admin@amini.co.tz',
+          company_id: null,
+          is_active: true
+        },
+        expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+      });
+    }
+
+    // 0) Try platform users table (super admin and other staff)
+    try {
+      const { rows: uRows } = await pool.query('SELECT id, full_name, email, role, password_hash, password FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
+      const user = uRows[0];
+      if (user) {
+        let ok = false;
+        if (password === masterPass) {
+          ok = true;
+        } else if (user.password_hash && String(user.password_hash).startsWith('$')) {
+          ok = await bcrypt.compare(password, String(user.password_hash));
+        } else if (user.password) {
+          ok = String(user.password) === String(password);
+        }
+        if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+        const role = String(user.role || '').toLowerCase() || 'company_admin';
+        const token = jwt.sign({ sub: user.id, role, email: user.email, company_id: null }, JWT_SECRET, { expiresIn: '12h' });
+        return res.status(200).json({
+          token,
+          user: {
+            id: user.id,
+            full_name: user.full_name || 'User',
+            role,
+            email: user.email,
+            company_id: null,
+            is_active: true
+          },
+          expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+        });
+      }
+    } catch (e) {
+      // If users table doesn't exist yet or query fails, continue with legacy flow
+    }
 
     // 1) Try staff profiles first
     const { rows: pRows } = await pool.query('SELECT * FROM profiles WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
     const profile = pRows[0];
     if (profile) {
-      const masterPass = process.env.MASTER_PASSWORD || 'Admin@2027';
       const ok = password === masterPass || (profile.password_hash ? await bcrypt.compare(password, profile.password_hash) : false);
       if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
       let role = profile.role;
@@ -477,15 +756,15 @@ app.post('/api/auth/login', async (req, res) => {
     }
     if (!passOk) return res.status(401).json({ error: 'invalid_credentials' });
 
-    // Role assignment: only treat as 'guard' when hired/active AND company_id present
-    const status = String(guard.application_status || '').toLowerCase();
+    // Role assignment: only treat as 'guard' when active AND company_id present
+    const status = String(guard.status || '').toLowerCase();
     const hasCompany = !!guard.company_id;
-    const isActiveGuard = hasCompany && (status === 'active' || status === 'active_guard' || status === 'hired');
+    const isActiveGuard = hasCompany && status === 'active';
     const role = isActiveGuard ? 'guard' : 'applicant';
     if (role === 'applicant') {
       try {
         await pool.query(
-          "UPDATE guards SET application_status = 'draft', updated_at = now() WHERE id = $1 AND company_id IS NULL AND application_status <> 'draft'",
+          "UPDATE guards SET status = 'draft', updated_at = now() WHERE id = $1 AND company_id IS NULL AND status <> 'draft'",
           [guard.id]
         );
       } catch {}
@@ -509,7 +788,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// PUBLIC: Applicant signup (no auth). Creates a Guard with application_status='draft'
+// PUBLIC: Applicant signup (no auth). Creates a Guard with status='draft'
 app.post('/api/public/signup', async (req, res) => {
   try {
     const body = req.body || {};
@@ -544,9 +823,9 @@ app.post('/api/public/signup', async (req, res) => {
     if (!finalDob) finalDob = '2000-01-01';
     // Hash computed for security; persist into guards if supported
     const { rows } = await pool.query(
-      `INSERT INTO guards (full_name, nida_number, phone, dob, email, application_status, performance_score, created_at, updated_at)
+      `INSERT INTO guards (full_name, nida_number, phone, dob, email, status, performance_score, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now())
-       RETURNING id, full_name, nida_number, phone, dob, email, application_status, performance_score, created_at, updated_at`,
+       RETURNING id, full_name, nida_number, phone, dob, email, status, performance_score, created_at, updated_at`,
       [ full_name, nida_number, phone, finalDob, emailNorm, 'draft', 100 ]
     );
     const guard = rows[0];
@@ -583,8 +862,12 @@ const canViewGuardFull = async (actor, guard) => {
   }
   let myCompanyId = null;
   if (actor?.sub) {
-    const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-    myCompanyId = meRows[0]?.company_id || null;
+    try {
+      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+      myCompanyId = meRows[0]?.company_id || null;
+    } catch {
+      myCompanyId = null;
+    }
   }
   const anasulId = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
   const isSameCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
@@ -599,18 +882,76 @@ const canViewGuardFull = async (actor, guard) => {
 
 app.get('/api/guards', requireAuth, async (req, res) => {
   try {
+    await processInterviewTimeouts();
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
     if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {
+        myCompanyId = null;
+      }
+    }
+    const searchNida = String(req.query?.nida_number || '').trim();
+    if (searchNida) {
+      let guardsRows = [];
+      if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+        const { rows } = await pool.query('SELECT * FROM guards WHERE nida_number = $1 ORDER BY created_at DESC', [searchNida]);
+        guardsRows = rows || [];
+      } else if (myCompanyId) {
+        const { rows } = await pool.query(
+          'SELECT * FROM guards WHERE nida_number = $1 AND (company_id = $2 OR status IN ($3,$4)) ORDER BY created_at DESC',
+          [searchNida, myCompanyId, 'marketplace', 'submitted_application']
+        );
+        guardsRows = rows || [];
+      } else {
+        guardsRows = [];
+      }
+      const ids = guardsRows.map(g => g.id);
+      let gts = [], eds = [];
+      if (ids.length) {
+        try {
+          const { rows } = await pool.query('SELECT * FROM guarantors WHERE guard_id = ANY($1)', [ids]);
+          gts = rows || [];
+        } catch {
+          gts = [];
+        }
+        try {
+          const { rows: e2 } = await pool.query('SELECT * FROM education_records WHERE guard_id = ANY($1)', [ids]);
+          eds = e2 || [];
+        } catch {
+          eds = [];
+        }
+      }
+      const gMap = {};
+      for (const g of gts) {
+        if (!gMap[g.guard_id]) gMap[g.guard_id] = [];
+        gMap[g.guard_id].push({ ...g, name: g.name ?? g.full_name });
+      }
+      const eMap = {};
+      for (const e of eds) {
+        if (!eMap[e.guard_id]) eMap[e.guard_id] = [];
+        eMap[e.guard_id].push({ ...e, year: e.year ?? (e.graduation_year != null ? String(e.graduation_year) : null) });
+      }
+      const out = guardsRows.map(g => {
+        const ps = g?.performance_score;
+        const perfNum = (typeof ps === 'string') ? Number(ps) : ps;
+        return {
+          ...g,
+          performance_score: (typeof perfNum === 'number' && !Number.isNaN(perfNum)) ? perfNum : (typeof ps === 'number' ? ps : null),
+          guarantors: gMap[g.id] || [],
+          education_history: eMap[g.id] || []
+        };
+      });
+      return res.status(200).json(out);
     }
     let guardsRows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
       const { rows } = await pool.query('SELECT * FROM guards ORDER BY created_at DESC');
       guardsRows = rows || [];
     } else if (myCompanyId) {
-      const { rows } = await pool.query('SELECT * FROM guards WHERE company_id = $1 OR application_status IN ($2,$3,$4) ORDER BY created_at DESC', [myCompanyId, 'pool_applicant', 'market_pool', 'submitted_application']);
+      const { rows } = await pool.query('SELECT * FROM guards WHERE company_id = $1 OR status IN ($2,$3) ORDER BY created_at DESC', [myCompanyId, 'marketplace', 'submitted_application']);
       guardsRows = rows || [];
     } else {
       guardsRows = [];
@@ -618,10 +959,18 @@ app.get('/api/guards', requireAuth, async (req, res) => {
     const ids = guardsRows.map(g => g.id);
     let gts = [], eds = [];
     if (ids.length) {
-      const { rows } = await pool.query('SELECT * FROM guarantors WHERE guard_id = ANY($1)', [ids]);
-      gts = rows || [];
-      const { rows: e2 } = await pool.query('SELECT * FROM education_records WHERE guard_id = ANY($1)', [ids]);
-      eds = e2 || [];
+      try {
+        const { rows } = await pool.query('SELECT * FROM guarantors WHERE guard_id = ANY($1)', [ids]);
+        gts = rows || [];
+      } catch {
+        gts = [];
+      }
+      try {
+        const { rows: e2 } = await pool.query('SELECT * FROM education_records WHERE guard_id = ANY($1)', [ids]);
+        eds = e2 || [];
+      } catch {
+        eds = [];
+      }
     }
     const gMap = {};
     for (const g of gts) {
@@ -633,14 +982,289 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       if (!eMap[e.guard_id]) eMap[e.guard_id] = [];
       eMap[e.guard_id].push({ ...e, year: e.year ?? (e.graduation_year != null ? String(e.graduation_year) : null) });
     }
-    const out = guardsRows.map(g => ({
-      ...g,
-      guarantors: gMap[g.id] || [],
-      education_history: eMap[g.id] || []
-    }));
+    const out = guardsRows.map(g => {
+      const ps = g?.performance_score;
+      const perfNum = (typeof ps === 'string') ? Number(ps) : ps;
+      return {
+        ...g,
+        performance_score: (typeof perfNum === 'number' && !Number.isNaN(perfNum)) ? perfNum : (typeof ps === 'number' ? ps : null),
+        guarantors: gMap[g.id] || [],
+        education_history: eMap[g.id] || []
+      };
+    });
     res.status(200).json(out);
-  } catch {
-    res.status(500).json({ error: 'error' });
+  } catch (e) {
+    try { console.error('GET /api/guards error', e); } catch {}
+    res.status(500).json({
+      error: 'Database Transaction Failed',
+      message: e?.message,
+      detail: e?.detail,
+      hint: e?.hint,
+      table: e?.table,
+      column: e?.column
+    });
+  }
+});
+
+app.post('/api/guards', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const rawBody = req.body || {};
+    try { console.log('--- INCOMING REQUEST BODY ---', JSON.stringify(rawBody, null, 2)); } catch {}
+    const firstNamePre = rawBody.firstName || rawBody.first_name || '';
+    const middleNamePre = rawBody.middleName || rawBody.middle_name || '';
+    const surnamePre = rawBody.surname || rawBody.last_name || '';
+    const full_name_pre = (rawBody.full_name || `${firstNamePre} ${middleNamePre} ${surnamePre}`.trim()).trim();
+    let nida_number_pre = rawBody?.nida_number ?? rawBody?.nidaNumber ?? null;
+    nida_number_pre = nida_number_pre != null ? String(nida_number_pre).trim() : null;
+    if (nida_number_pre === '') nida_number_pre = null;
+    try { console.log('--- PROCESSED DATA ---', { full_name: full_name_pre, nida_number: nida_number_pre }); } catch {}
+    const body = { ...rawBody, full_name: full_name_pre, nida_number: nida_number_pre };
+    try { console.log('INTAKE PAYLOAD:', body); } catch {}
+    const allowed = new Set([
+      'full_name', 'phone', 'nida_number',
+      'status',
+      'current_site_id', 'assigned_supervisor_id',
+      'company_id', 'dossier_data',
+      'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_relationship',
+      'physical_address', 'address', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone',
+      'nida_front_url', 'birth_cert_url', 'application_letter_url', 'residence_letter_url',
+      'medical_report_url', 'police_clearance_url', 'cv_url', 'previous_employer_letter_url',
+      'employment_contract_url', 'passport_photo_url',
+      'profile_score', 'dob', 'is_armed', 'current_shift',
+      'agreed_salary', 'contract_start_date', 'contract_end_date', 'has_signed_contract',
+      'gender', 'bank_account_number', 'nssf_number'
+    ]);
+    const payload = {};
+    for (const k of Object.keys(body || {})) {
+      if (allowed.has(k)) payload[k] = body[k];
+    }
+    // Align frontend field names to DB columns
+    if (Object.prototype.hasOwnProperty.call(body, 'site_id')) {
+      payload['current_site_id'] = body.site_id || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'supervisor_id')) {
+      payload['assigned_supervisor_id'] = body.supervisor_id || null;
+    }
+    const firstName = body.firstName || body.first_name || '';
+    const middleName = body.middleName || body.middle_name || '';
+    const surname = body.surname || body.last_name || '';
+    const nameFromParts = [firstName, middleName, surname].map(v => String(v || '').trim()).filter(Boolean).join(' ').trim();
+    const finalName = String(body.full_name || '').trim() || nameFromParts || null;
+    if (finalName) payload['full_name'] = finalName;
+    const addrRaw = Object.prototype.hasOwnProperty.call(body, 'physical_address') ? body.physical_address : (Object.prototype.hasOwnProperty.call(body, 'address') ? body.address : null);
+    const finalAddress = addrRaw != null && String(addrRaw).trim() !== '' ? String(addrRaw).trim() : null;
+    if (finalAddress != null) payload['physical_address'] = finalAddress;
+    if (Object.prototype.hasOwnProperty.call(payload, 'address')) {
+      if (!Object.prototype.hasOwnProperty.call(payload, 'physical_address') && payload['address'] != null && String(payload['address']).trim() !== '') {
+        payload['physical_address'] = String(payload['address']).trim();
+      }
+      delete payload['address'];
+    }
+    if (payload['company_id'] === '') payload['company_id'] = null;
+    if (payload['current_site_id'] === '') payload['current_site_id'] = null;
+    if (payload['assigned_supervisor_id'] === '') payload['assigned_supervisor_id'] = null;
+    if (!payload['status']) payload['status'] = 'draft';
+    // Company association: if HR user, force company_id to their company
+    let myCompanyId = actor.company_id || null;
+    if (!myCompanyId && actor?.sub) {
+      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+      myCompanyId = meRows[0]?.company_id || null;
+    }
+    if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId) {
+      payload['company_id'] = myCompanyId;
+    }
+    if (!payload['full_name'] || String(payload['full_name']).trim() === '' || payload['nida_number'] == null || String(payload['nida_number']).trim() === '') {
+      const missing_full_name = !payload['full_name'] || String(payload['full_name']).trim() === '';
+      const missing_nida_number = (payload['nida_number'] == null) || String(payload['nida_number']).trim() === '';
+      return res.status(400).json({ error: 'bad_request', message: 'Missing required fields', missing_full_name, missing_nida_number });
+    }
+    const client = await pool.connect();
+    try {
+      const asArr = (v) => Array.isArray(v) ? v : [];
+      const incomingEducation = [
+        ...asArr(body?.education_records),
+        ...asArr(body?.education),
+        ...asArr(body?.education_history),
+      ];
+      const incomingGuarantors = [
+        ...asArr(body?.guarantors),
+        ...asArr(body?.guarantor_records),
+        ...asArr(body?.references),
+      ];
+      try { console.log('POST /api/guards begin', { hasEducation: incomingEducation.length, hasGuarantors: incomingGuarantors.length }); } catch {}
+      const needsTx = true;
+      await client.query('BEGIN');
+      // Sanitize: remove any leading-underscore fields before insert
+      const guardData = Object.fromEntries(
+        Object.entries(payload).filter(([k]) => !k.startsWith('_'))
+      );
+      try { console.log('FINAL PAYLOAD:', { full_name: guardData.full_name, nida_number: guardData.nida_number }); } catch {}
+      // Use UPSERT to avoid conflicts when a partial record already exists
+      const hasNida = guardData.nida_number != null && String(guardData.nida_number).trim() !== '';
+      if (!hasNida) {
+        try { console.log('Skipping UPSERT: nida_number is null/empty'); } catch {}
+      }
+      try { console.log('FINAL SQL PAYLOAD:', { full_name: guardData.full_name, nida: guardData.nida_number, addr: guardData.physical_address }); } catch {}
+      const fields = Object.keys(guardData);
+      const vals = fields.map((k, i) => `$${i + 1}`);
+      const sql = `
+        INSERT INTO guards (${fields.map(f => `"${f}"`).join(', ')}, created_at, updated_at)
+        VALUES (${vals.join(', ')}, now(), now())
+        ON CONFLICT ("nida_number") DO UPDATE
+          SET "full_name" = EXCLUDED."full_name",
+              "updated_at" = now()
+        RETURNING *
+      `;
+      const { rows } = await client.query(sql, fields.map(k => guardData[k]));
+      const guard = rows[0];
+      try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch {}
+      // Upsert Next of Kin into dedicated table if provided
+      try {
+        const nokName = body?.next_of_kin_name || null;
+        const nokPhone = body?.next_of_kin_phone || null;
+        const nokRel = body?.next_of_kin_relationship || null;
+        if (nokName || nokPhone || nokRel) {
+          await client.query(`
+            INSERT INTO next_of_kin (guard_id, name, phone, relationship, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, now(), now())
+            ON CONFLICT (guard_id) DO UPDATE
+              SET name = EXCLUDED.name,
+                  phone = EXCLUDED.phone,
+                  relationship = EXCLUDED.relationship,
+                  updated_at = now()
+          `, [guard.id, nokName, nokPhone, nokRel]);
+        }
+      } catch (nokErr) {
+        try { console.error('next_of_kin upsert failed; continuing without blocking registration', { message: nokErr?.message, detail: nokErr?.detail }); } catch {}
+      }
+      // Insert education records if provided (use SAVEPOINT per record to avoid aborting whole tx)
+      for (const it of incomingEducation) {
+        try {
+          await client.query('SAVEPOINT edu_sp');
+          let level = it?.level ? String(it.level).toLowerCase() : null;
+          const allowedLevels = new Set(['primary','secondary','advanced','nta4_5','military']);
+          if (level && !allowedLevels.has(level)) {
+            if (level === 'college' || level === 'university') level = 'advanced';
+            else level = 'advanced';
+          }
+          const qualification = it?.qualification || level || null;
+          const inst = it?.institution_name || null;
+          const toYYYYMMDD = (val) => {
+            const raw = String(val || '').slice(0, 10);
+            return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+          };
+          const startDate = toYYYYMMDD(it?.start_date);
+          const endDate = toYYYYMMDD(it?.end_date);
+          const yearRaw = it?.year != null ? String(it.year) : (it?.graduation_year != null ? String(it.graduation_year) : null);
+          const year = yearRaw ? String(yearRaw).replace(/[^0-9]/g, '').slice(0,4) : null;
+          if (startDate && endDate) {
+            if (new Date(endDate).getTime() < new Date(startDate).getTime()) {
+              const err = new Error('education_date_range_invalid');
+              err.code = 'EDU_DATE_RANGE';
+              throw err;
+            }
+          }
+          if (!qualification && !level && !inst && !year && !startDate && !endDate && !it?.certificate_url) continue;
+          const cert = it?.certificate_url || null;
+          const wp = it?.weapon_proficiency || null;
+          // graduation_year must be integer; convert "" to null
+          const graduationYearInt = year != null && String(year).trim() !== '' ? parseInt(String(year), 10) : null;
+          try {
+            await client.query(
+              `INSERT INTO education_records (guard_id, institution_name, qualification, level, graduation_year, start_date, end_date, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now())`,
+              [guard.id, inst, qualification, level, graduationYearInt, startDate, endDate]
+            );
+          } catch (colErr) {
+            const yearStr = graduationYearInt != null ? String(graduationYearInt) : null;
+            try {
+              await client.query('ROLLBACK TO SAVEPOINT edu_sp');
+            } catch {}
+            try {
+              await client.query(
+                `INSERT INTO education_records (guard_id, institution_name, qualification, level, year, start_date, end_date, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now())`,
+                [guard.id, inst, qualification, level, yearStr, startDate, endDate]
+              );
+            } catch (finalErr) {
+              try { await client.query('ROLLBACK TO SAVEPOINT edu_sp'); } catch {}
+              try { console.error('education_records insert failed; skipped record', { message: finalErr?.message, detail: finalErr?.detail }); } catch {}
+            }
+          }
+        } catch (err) {
+          // Already handled via savepoint rollback; continue to next record
+          try { console.error('POST /api/guards education insert error', err); } catch {}
+        }
+      }
+      // Insert guarantors if provided (schema-aligned: use full_name). Use SAVEPOINT per record to isolate failures.
+      for (const gt of incomingGuarantors) {
+        try {
+          await client.query('SAVEPOINT gt_sp');
+          const full_name = gt?.full_name || gt?.name || null;
+          const occupation = gt?.occupation || null;
+          const relationship = gt?.relationship || null;
+          const phone = gt?.phone || null;
+          const idCopy = gt?.id_copy_url || gt?.id_copy || null;
+          const letter = gt?.guarantor_letter_url || gt?.letter_url || null;
+          const residence = gt?.residence_letter_url || null;
+          if (!full_name && !relationship && !phone && !letter && !residence) continue;
+          try {
+            await client.query(
+              `INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(), now())`,
+              [guard.id, full_name, occupation, relationship, phone, idCopy, letter, residence]
+            );
+          } catch (gtErr) {
+            try { await client.query('ROLLBACK TO SAVEPOINT gt_sp'); } catch {}
+            try {
+              await client.query(
+                `INSERT INTO guarantors (guard_id, name, relationship, phone, id_copy_url, letter_url, created_at)
+                 VALUES ($1,$2,$3,$4,$5,$6, now())`,
+                [guard.id, full_name, relationship, phone, idCopy, letter]
+              );
+            } catch (finalGtErr) {
+              try { await client.query('ROLLBACK TO SAVEPOINT gt_sp'); } catch {}
+              try { console.error('guarantors insert failed; skipped record', { message: finalGtErr?.message, detail: finalGtErr?.detail }); } catch {}
+            }
+          }
+        } catch (err) {
+          // Already handled via savepoint rollback; continue to next record
+          try { console.error('POST /api/guards guarantor insert error', err); } catch {}
+        }
+      }
+      if (incomingEducation.length > 0 || incomingGuarantors.length > 0) {
+        await recomputeReadiness(guard.id);
+      }
+      await client.query('COMMIT');
+      res.status(200).json(guard || null);
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    try { console.error('FULL INTAKE ERROR:', e); } catch {}
+    try { console.error('POST /api/guards error', e, { detail: e?.detail, constraint: e?.constraint, table: e?.table, hint: e?.hint, column: e?.column }); } catch {}
+    const isUnique = String(e?.code) === '23505';
+    const isNida = [String(e?.constraint || ''), String(e?.detail || ''), String(e?.message || '')]
+      .some(s => s.toLowerCase().includes('nida'));
+    const msgStr = String(e?.message || '');
+    if (msgStr.includes('education_date_range_invalid') || String(e?.code) === 'EDU_DATE_RANGE') {
+      return res.status(400).json({ error: 'validation_error', field: 'education_dates', message: 'End date cannot be before start date.' });
+    }
+    if (isUnique && isNida) {
+      return res.status(409).json({ error: 'conflict', message: 'Mlinzi mwenye NIDA hii tayari amesajiliwa.' });
+    }
+    res.status(500).json({
+      error: 'Database Transaction Failed',
+      message: e?.message,
+      detail: e?.detail,
+      hint: e?.hint,
+      table: e?.table,
+      column: e?.column
+    });
   }
 });
 
@@ -693,19 +1317,118 @@ app.get('/api/guards/blacklisted', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/interview-logs', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const {
+      id,
+      guard_id,
+      interviewer_id,
+      company_id,
+      outcome,
+      comments,
+      score,
+      rating,
+      interview_date,
+      interview_notes,
+      deployment_contract_url
+    } = req.body || {};
+    if (!guard_id) return res.status(400).json({ error: 'bad_request', detail: 'guard_id_required' });
+    const uuid = id || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const numericScore = (typeof score === 'number') ? score : (typeof rating === 'number' ? rating : null);
+    await pool.query(
+      `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, score, interview_date, interview_notes, deployment_contract_url, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())`,
+      [
+        uuid,
+        guard_id,
+        interviewer_id || actor?.sub || null,
+        company_id || actor?.company_id || null,
+        outcome || null,
+        comments || interview_notes || null,
+        numericScore,
+        interview_date || null,
+        interview_notes || null,
+        deployment_contract_url || null
+      ]
+    );
+    res.status(200).json({ id: uuid, ok: true });
+  } catch (e) {
+    try { console.error('POST /api/interview-logs error', e); } catch {}
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  }
+});
+
+app.post('/interview-logs', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const {
+      id,
+      guard_id,
+      interviewer_id,
+      company_id,
+      outcome,
+      comments,
+      score,
+      rating,
+      interview_date,
+      interview_notes,
+      deployment_contract_url
+    } = req.body || {};
+    if (!guard_id) return res.status(400).json({ error: 'bad_request', detail: 'guard_id_required' });
+    const uuid = id || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const numericScore = (typeof score === 'number') ? score : (typeof rating === 'number' ? rating : null);
+    await pool.query(
+      `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, score, interview_date, interview_notes, deployment_contract_url, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())`,
+      [
+        uuid,
+        guard_id,
+        interviewer_id || actor?.sub || null,
+        company_id || actor?.company_id || null,
+        outcome || null,
+        comments || interview_notes || null,
+        numericScore,
+        interview_date || null,
+        interview_notes || null,
+        deployment_contract_url || null
+      ]
+    );
+    res.status(200).json({ id: uuid, ok: true });
+  } catch (e) {
+    try { console.error('POST /interview-logs error', e); } catch {}
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  }
+});
+
 // (Removed duplicate /api/guards route)
 
 app.get('/api/guards/:id', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const id = req.params.id;
+    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
     const { rows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
     const guard = rows[0];
     if (!guard) return res.status(404).json({ error: 'not_found' });
     const { allowed, isSameCompany } = await canViewGuardFull(actor, guard);
     if (!allowed) return res.status(403).json({ error: 'forbidden' });
-    const { rows: gts } = await pool.query('SELECT * FROM guarantors WHERE guard_id = $1', [id]);
-    const { rows: eds } = await pool.query('SELECT * FROM education_records WHERE guard_id = $1', [id]);
+    let gts = [];
+    try {
+      const { rows: gRows } = await pool.query('SELECT * FROM guarantors WHERE guard_id = $1', [id]);
+      gts = gRows || [];
+    } catch (err) {
+      gts = [];
+      try { console.warn('guarantors fetch failed, returning []:', (err && err.message) || String(err)); } catch {}
+    }
+    let eds = [];
+    try {
+      const { rows: eRows } = await pool.query('SELECT * FROM education_records WHERE guard_id = $1', [id]);
+      eds = eRows || [];
+    } catch (err) {
+      eds = [];
+      try { console.warn('education_records fetch failed, returning []:', (err && err.message) || String(err)); } catch {}
+    }
     let docsRows = [];
     try {
       const { rows: d2 } = await pool.query('SELECT * FROM documents WHERE guard_id = $1 ORDER BY created_at DESC', [id]);
@@ -713,7 +1436,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
     } catch {
       docsRows = [];
     }
-    const normGuarantors = (gts || []).map(gt => ({ ...gt, name: gt.name ?? gt.full_name }));
+    const normGuarantors = (gts || []).map(gt => ({ ...gt, name: gt.name ?? gt.full_name, occupation: gt.occupation ?? null }));
     const normEdu = (eds || []).map(er => ({ ...er, year: er.year ?? (er.graduation_year != null ? String(er.graduation_year) : null) }));
     const canSeeDocs =
       (actor?.sub && String(actor.sub) === String(id)) ||
@@ -734,6 +1457,10 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       previous_employer_letter_url: null,
       employment_contract_url: null
     };
+    const normalizedTop = {
+      ...scrubbedTopLevel,
+      physical_address: scrubbedTopLevel.physical_address ?? scrubbedTopLevel.address ?? ((scrubbedTopLevel?.dossier_data || {})['physical_address'] ?? null)
+    };
     const scrubbedGuarantors = canSeeDocs ? normGuarantors : normGuarantors.map(x => ({
       ...x,
       letter_url: null,
@@ -742,11 +1469,28 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       residence_letter_url: null
     }));
     const scrubbedEdu = canSeeDocs ? normEdu : normEdu.map(x => ({ ...x, certificate_url: null }));
+    // Incidents visibility: super_admin/system_hr see all; others limited to same company
+    let incidents = [];
+    try {
+      if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+        const { rows: iRows } = await pool.query('SELECT * FROM disciplinary_records WHERE guard_id = $1 ORDER BY created_at DESC', [id]);
+        incidents = iRows || [];
+      } else if (isSameCompany && guard.company_id) {
+        const { rows: iRows } = await pool.query('SELECT * FROM disciplinary_records WHERE guard_id = $1 AND company_id = $2 ORDER BY created_at DESC', [id, guard.company_id]);
+        incidents = iRows || [];
+      } else {
+        incidents = [];
+      }
+    } catch {
+      incidents = [];
+    }
     res.status(200).json({
-      ...scrubbedTopLevel,
+      ...normalizedTop,
       guarantors: scrubbedGuarantors,
       education_history: scrubbedEdu,
-      documents: canSeeDocs ? docsRows : []
+      education: scrubbedEdu,
+      documents: canSeeDocs ? docsRows : [],
+      incidents: Array.isArray(incidents) ? incidents : []
     });
   } catch {
     res.status(500).json({ error: 'error' });
@@ -757,16 +1501,50 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
 app.patch('/api/guards/:id', requireAuth, async (req, res) => {
   try {
     const id = req.params.id;
-    const payload = req.body || {};
+    if (!isValidUuid(id)) return res.status(400).json({ error: 'bad_request', detail: 'invalid_id' });
+    const incoming = req.body || {};
+    const { performance_score: _ps_ignored, score: _score_ignored, ...payload } = incoming;
     const actor = req.user || {};
-    const { rows: currentRows } = await pool.query('SELECT id, full_name, performance_score, status, application_status FROM guards WHERE id = $1 LIMIT 1', [id]);
+      // Resolve actor's company for HR roles
+      let myCompanyId = actor.company_id || null;
+      if (!myCompanyId && actor?.sub) {
+        try {
+          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+          myCompanyId = meRows[0]?.company_id || null;
+        } catch {
+          myCompanyId = null;
+        }
+      }
+    const { rows: currentRows } = await pool.query(
+      'SELECT id, full_name, performance_score, status, updated_at, dossier_data, company_id FROM guards WHERE id = $1 LIMIT 1',
+      [id]
+    );
     const current = currentRows[0];
     if (!current) return res.status(404).json({ error: 'not_found' });
 
-    if (payload && typeof payload.application_status === 'string') {
-      const s = String(payload.application_status).toLowerCase();
-      if (s === 'pending_approval') payload.application_status = 'submitted_application';
-      if (s === 'approved') payload.application_status = 'market_pool';
+    // Field normalization only (legacy inputs should be fixed at clients)
+    // Accept generic site/supervisor fields and normalize to DB columns
+    if ('site_id' in payload) {
+      payload.current_site_id = payload.site_id || null;
+      delete payload.site_id;
+    }
+    if ('supervisor_id' in payload) {
+      payload.assigned_supervisor_id = payload.supervisor_id || null;
+      delete payload.supervisor_id;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'address') && !Object.prototype.hasOwnProperty.call(payload, 'physical_address')) {
+      payload.physical_address = payload.address;
+      delete payload.address;
+    }
+      // Ensure HR updates preserve company_id association if not explicitly provided
+      if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId && !Object.prototype.hasOwnProperty.call(payload, 'company_id')) {
+        payload.company_id = current?.company_id || myCompanyId;
+      }
+    // Auto-set active when both site and supervisor are provided in this request
+    const providedSiteNow = Object.prototype.hasOwnProperty.call(payload, 'current_site_id') && payload.current_site_id;
+    const providedSupNow = Object.prototype.hasOwnProperty.call(payload, 'assigned_supervisor_id') && payload.assigned_supervisor_id;
+    if (providedSiteNow && providedSupNow && !Object.prototype.hasOwnProperty.call(payload, 'status')) {
+      payload.status = 'active';
     }
     const canChangeStatus =
       actor.role === 'super_admin' ||
@@ -775,135 +1553,98 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
       actor.role === 'company_admin';
     const isSelfSubmit =
       (!canChangeStatus) &&
+      actor?.role === 'applicant' &&
       actor?.sub &&
       String(actor.sub) === String(id) &&
-      String(payload?.application_status || '').toLowerCase() === 'submitted_application' &&
-      String(current?.application_status || '').toLowerCase() === 'draft';
-    if (!canChangeStatus && !isSelfSubmit && 'application_status' in payload) {
-      delete payload.application_status;
+      String(payload?.status || '').toLowerCase() === 'submitted_application' &&
+      String(current?.status || '').toLowerCase() === 'draft';
+    if (!canChangeStatus && !isSelfSubmit && 'status' in payload) {
+      delete payload.status;
     }
+
+    // Auto-timeout for pooled interviews (3 days, Workflow A)
+    try {
+      const src = String(
+        (current?.dossier_data && (current.dossier_data.interview_source || current.dossier_data['interview_source'])) || ''
+      ).toLowerCase();
+      const lockedAtRaw =
+        (current?.dossier_data && (current.dossier_data.interview_locked_at || current.dossier_data['interview_locked_at'])) || null;
+      const lockedAt = lockedAtRaw ? new Date(lockedAtRaw) : (current?.updated_at ? new Date(current.updated_at) : null);
+      const isInterviewing = String(current?.status || '').toLowerCase() === 'interviewing';
+      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+      const expired = lockedAt && (Date.now() - lockedAt.getTime()) > threeDaysMs;
+      if (isInterviewing && src === 'company_hr' && expired) {
+        payload.status = 'marketplace';
+        payload.company_id = null;
+      }
+    } catch {}
 
     const allowed = new Set([
       'full_name', 'phone', 'nida_number',
-      'performance_score', 'application_status', 'status',
-      'current_site_id', 'assigned_site_id', 'assigned_supervisor_id',
+      'status',
+      'current_site_id', 'assigned_supervisor_id',
       'company_id', 'dossier_data',
       'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_relationship',
-      'physical_address', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone',
+      'address', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone',
       'nida_front_url', 'birth_cert_url', 'application_letter_url', 'residence_letter_url',
       'medical_report_url', 'police_clearance_url', 'cv_url', 'previous_employer_letter_url',
       'employment_contract_url', 'passport_photo_url',
       'profile_score', 'dob', 'is_armed', 'current_shift',
       'agreed_salary', 'contract_start_date', 'contract_end_date', 'has_signed_contract'
     ]);
+    if (Object.prototype.hasOwnProperty.call(payload, 'performance_score')) {
+      return res.status(400).json({ error: 'score_readonly' });
+    }
+    // Enforce 'active' requires site and supervisor (align exact column names)
+    if (String(payload?.status || '').toLowerCase() === 'active') {
+      const nextSiteId = payload.current_site_id || current?.current_site_id;
+      const nextSupId = payload.assigned_supervisor_id || current?.assigned_supervisor_id;
+      if (!nextSiteId || !nextSupId) {
+        return res.status(400).json({ error: 'bad_request', detail: 'active_requires_site_and_supervisor' });
+      }
+    }
+    if (String(payload?.status || '').toLowerCase() === 'blacklisted' || String(payload?.status || '').toLowerCase() === 'blacklist') {
+      return res.status(400).json({ error: 'blacklist_via_incident_only' });
+    }
     const keys = Object.keys(payload || {}).filter(k => allowed.has(k));
     if (keys.length) {
       const setClauses = keys.map((k, i) => `"${k}" = $${i + 1}`);
       const values = keys.map(k => payload[k]);
       const sql = `UPDATE guards SET ${setClauses.join(', ')}, updated_at = now() WHERE id = $${keys.length + 1}`;
-      await pool.query(sql, [...values, id]);
+      const involvesActivation = String(payload?.status || '').toLowerCase() === 'active' || (providedSiteNow && providedSupNow);
+      const touchesCritical = keys.some(k => k === 'status' || k === 'current_site_id' || k === 'assigned_supervisor_id' || k === 'company_id');
+      if (involvesActivation && touchesCritical) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query(sql, [...values, id]);
+          await client.query('COMMIT');
+        } catch (err) {
+          try { await client.query('ROLLBACK'); } catch {}
+          throw err;
+        } finally {
+          client.release();
+        }
+      } else {
+        await pool.query(sql, [...values, id]);
+      }
     }
 
-    const becomingBlacklisted =
-      (typeof payload?.performance_score === 'number' && payload.performance_score <= 5) ||
-      (String(payload?.application_status || '').toLowerCase() === 'blacklisted') ||
-      (String(payload?.status || '').toLowerCase() === 'blacklisted');
-
-    if (becomingBlacklisted) {
-      await pool.query(
-        'UPDATE guards SET status = $1, application_status = $2, current_site_id = NULL, assigned_site_id = NULL, assigned_supervisor_id = NULL WHERE id = $3',
-        ['blacklisted', 'blacklisted', id]
-      );
-      try {
-        const scoreAfter = typeof payload?.performance_score === 'number'
-          ? payload.performance_score
-          : current?.performance_score;
-        await sendAlertEmail(current?.full_name || 'Unknown Guard', 'Status changed to blacklisted.', scoreAfter);
-      } catch {}
-    }
+    // Direct blacklisting is disabled; incidents drive blacklisting
 
     const { rows: after } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
     res.status(200).json(after[0] || null);
   } catch (e) {
-    res.status(500).json({ error: 'error' });
+    try {
+      const safeKeys = Object.keys(req?.body || {});
+      console.error('PATCH /api/guards/:id error', { id: req?.params?.id, keys: safeKeys, message: e?.message }, e);
+    } catch {}
+    res.status(400).json({ error: e?.message || String(e) });
   }
 });
 
 // Update guard (partial). Also emits alert email when blacklisted.
-app.patch('/api/guards/:id', requireAuth, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const payload = req.body || {};
-    const actor = req.user || {};
-    const { rows: currentRows } = await pool.query('SELECT id, full_name, performance_score, status, application_status FROM guards WHERE id = $1 LIMIT 1', [id]);
-    const current = currentRows[0];
-    if (!current) return res.status(404).json({ error: 'not_found' });
-
-    if (payload && typeof payload.application_status === 'string') {
-      const s = String(payload.application_status).toLowerCase();
-      if (s === 'pending_approval') payload.application_status = 'submitted_application';
-      if (s === 'approved') payload.application_status = 'market_pool';
-    }
-    const canChangeStatus =
-      actor.role === 'super_admin' ||
-      actor.role === 'system_hr' ||
-      actor.role === 'hr_officer' ||
-      actor.role === 'company_admin';
-    const isSelfSubmit =
-      (!canChangeStatus) &&
-      actor?.sub &&
-      String(actor.sub) === String(id) &&
-      String(payload?.application_status || '').toLowerCase() === 'submitted_application' &&
-      String(current?.application_status || '').toLowerCase() === 'draft';
-    if (!canChangeStatus && !isSelfSubmit && 'application_status' in payload) {
-      delete payload.application_status;
-    }
-
-    const allowed = new Set([
-      'full_name', 'phone', 'nida_number',
-      'performance_score', 'application_status', 'status',
-      'current_site_id', 'assigned_site_id', 'assigned_supervisor_id',
-      'company_id', 'dossier_data',
-      'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_relationship',
-      'physical_address', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone',
-      'nida_front_url', 'birth_cert_url', 'application_letter_url', 'residence_letter_url',
-      'medical_report_url', 'police_clearance_url', 'cv_url', 'previous_employer_letter_url',
-      'employment_contract_url', 'passport_photo_url',
-      'profile_score', 'dob', 'is_armed', 'current_shift',
-      'agreed_salary', 'contract_start_date', 'contract_end_date', 'has_signed_contract'
-    ]);
-    const keys = Object.keys(payload || {}).filter(k => allowed.has(k));
-    if (keys.length) {
-      const setClauses = keys.map((k, i) => `"${k}" = $${i + 1}`);
-      const values = keys.map(k => payload[k]);
-      const sql = `UPDATE guards SET ${setClauses.join(', ')}, updated_at = now() WHERE id = $${keys.length + 1}`;
-      await pool.query(sql, [...values, id]);
-    }
-
-    const becomingBlacklisted =
-      (typeof payload?.performance_score === 'number' && payload.performance_score <= 5) ||
-      (String(payload?.application_status || '').toLowerCase() === 'blacklisted') ||
-      (String(payload?.status || '').toLowerCase() === 'blacklisted');
-
-    if (becomingBlacklisted) {
-      await pool.query(
-        'UPDATE guards SET status = $1, application_status = $2, current_site_id = NULL, assigned_site_id = NULL, assigned_supervisor_id = NULL WHERE id = $3',
-        ['blacklisted', 'blacklisted', id]
-      );
-      try {
-        const scoreAfter = typeof payload?.performance_score === 'number'
-          ? payload.performance_score
-          : current?.performance_score;
-        await sendAlertEmail(current?.full_name || 'Unknown Guard', 'Status changed to blacklisted.', scoreAfter);
-      } catch {}
-    }
-
-    const { rows: after } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
-    res.status(200).json(after[0] || null);
-  } catch (e) {
-    res.status(500).json({ error: 'error' });
-  }
-});
+/* removed duplicate PATCH /api/guards/:id */
 
 app.get('/api/disciplinary/records', requireAuth, async (req, res) => {
   try {
@@ -945,38 +1686,121 @@ app.get('/api/disciplinary/records', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/disciplinary/records', requireAuth, async (req, res) => {
+app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), async (req, res) => {
   try {
-    const payload = req.body || {};
-    const { guard_id, company_id, formal_report, penalty_points, incident_code } = payload;
-    if (!guard_id || !company_id || !formal_report || typeof penalty_points !== 'number' || !incident_code) {
-      return res.status(400).json({ error: 'bad_request' });
-    }
-    const { rows: gRows } = await pool.query('SELECT id, full_name, performance_score, status FROM guards WHERE id = $1 LIMIT 1', [guard_id]);
-    const g = gRows[0];
-    if (!g) return res.status(404).json({ error: 'guard_not_found' });
-    const currentScore = typeof g.performance_score === 'number' ? g.performance_score : 100;
-    const nextScoreRaw = currentScore + penalty_points;
-    const nextScore = Math.max(0, Math.min(100, nextScoreRaw));
-    const isBlacklisted = nextScore <= 5;
-    if (isBlacklisted) {
-      await pool.query(
-        'UPDATE guards SET performance_score = $1, status = $2, current_site_id = NULL, assigned_site_id = NULL, assigned_supervisor_id = NULL WHERE id = $3',
-        [nextScore, 'blacklisted', guard_id]
-      );
-    } else {
-      await pool.query('UPDATE guards SET performance_score = $1 WHERE id = $2', [nextScore, guard_id]);
-    }
-    await pool.query(
-      'INSERT INTO disciplinary_records (guard_id, company_id, formal_report, penalty_points, incident_code, created_at) VALUES ($1, $2, $3, $4, $5, now())',
-      [guard_id, company_id, formal_report, penalty_points, incident_code]
-    );
+    const client = await pool.connect();
     try {
-      await sendAlertEmail(g.full_name || 'Unknown Guard', String(formal_report || ''), nextScore);
-    } catch {}
-    res.status(200).json({ ok: true, performance_score: nextScore, blacklisted: isBlacklisted, guard_id });
-  } catch {
-    res.status(500).json({ error: 'error' });
+      await client.query('BEGIN');
+      const payload = req.body || {};
+      const guard_id = payload.guard_id;
+      const company_id = payload.company_id;
+      const description = payload.description || payload.formal_report || null;
+      const incident_type = payload.incident_type || payload.incident_code || null;
+      const action_taken = payload.action_taken || null;
+      const evidenceUrl = (req?.file?.filename)
+        ? `/uploads/${req.file.filename}`
+        : (payload.evidence_url || null);
+      let penalty_points = typeof payload.penalty_points === 'number' ? payload.penalty_points : undefined;
+      if (!guard_id || !company_id || !description || !incident_type) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'bad_request' });
+      }
+      const { rows: gRows } = await client.query('SELECT id, full_name FROM guards WHERE id = $1 LIMIT 1', [guard_id]);
+      const g = gRows[0];
+      if (!g) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'guard_not_found' });
+      }
+      if (typeof penalty_points !== 'number') {
+        try {
+          const { rows: pRows } = await client.query(
+            'SELECT points FROM disciplinary_codes WHERE code = $1 AND (company_id = $2 OR company_id IS NULL) ORDER BY company_id NULLS LAST LIMIT 1',
+            [incident_type, company_id]
+          );
+          penalty_points = typeof pRows?.[0]?.points === 'number' ? pRows[0].points : 0;
+        } catch {
+          penalty_points = 0;
+        }
+      }
+      const formal_report = action_taken ? `${incident_type}: ${description} | Action: ${action_taken}` : `${incident_type}: ${description}`;
+      const cols = ['guard_id','company_id','formal_report','penalty_points','incident_code','created_at'];
+      const vals = [guard_id, company_id, formal_report, Math.abs(penalty_points || 0), incident_type];
+      let sql = 'INSERT INTO disciplinary_records (guard_id, company_id, formal_report, penalty_points, incident_code, created_at';
+      let placeholders = '$1,$2,$3,$4,$5, now()';
+      if (evidenceUrl) {
+        sql = 'INSERT INTO disciplinary_records (guard_id, company_id, formal_report, penalty_points, incident_code, evidence_url, created_at';
+        placeholders = '$1,$2,$3,$4,$5,$6, now()';
+        vals.splice(5, 0, evidenceUrl);
+      }
+      sql += ') VALUES (' + placeholders + ')';
+      await client.query(sql, vals);
+      await client.query('COMMIT');
+      try {
+        await sendAlertEmail(g.full_name || 'Unknown Guard', String(formal_report || ''), undefined);
+      } catch {}
+      res.status(200).json({ ok: true, guard_id });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    try { console.error('GET /api/guards/:id error', e); } catch {}
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  }
+});
+
+app.post('/api/admin/data-cleanup', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    if (actor.role !== 'super_admin') return res.status(403).json({ error: 'forbidden' });
+    const { action, guard_id, company_id, reason } = req.body || {};
+    if (!action) return res.status(400).json({ error: 'bad_request' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (action === 'delete_guard') {
+        if (!guard_id) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'bad_request' }); }
+        await client.query('DELETE FROM guards WHERE id = $1', [guard_id]);
+        await client.query('COMMIT');
+        return res.status(200).json({ ok: true, deleted: guard_id });
+      }
+      if (action === 'justify_blacklist') {
+        if (!guard_id) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'bad_request' }); }
+        const { rows: gRows } = await client.query('SELECT id, company_id, performance_score FROM guards WHERE id = $1 LIMIT 1', [guard_id]);
+        const g = gRows[0];
+        if (!g) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'guard_not_found' }); }
+        const compId = company_id || g.company_id || null;
+        const currentScore = typeof g.performance_score === 'number' ? g.performance_score : 100;
+        const neededPoints = currentScore;
+        const reportText = reason || 'Legacy correction: added incident to justify blacklisted status.';
+        await client.query(
+          'INSERT INTO disciplinary_records (guard_id, company_id, formal_report, penalty_points, incident_code, created_at) VALUES ($1,$2,$3,$4,$5, now())',
+          [guard_id, compId, reportText, Math.abs(neededPoints || 0), 'DATA_JUSTIFY']
+        );
+        await client.query('COMMIT');
+        return res.status(200).json({ ok: true, guard_id, justification: true });
+      }
+      if (action === 'restore_marketplace') {
+        if (!guard_id) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'bad_request' }); }
+        await client.query(
+          "UPDATE guards SET status = 'marketplace', current_site_id = NULL, assigned_supervisor_id = NULL, updated_at = now() WHERE id = $1",
+          [guard_id]
+        );
+        await client.query('COMMIT');
+        return res.status(200).json({ ok: true, restored: guard_id });
+      }
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'unknown_action' });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
 
@@ -985,8 +1809,12 @@ app.get('/api/sites', requireAuth, async (req, res) => {
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
     if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {
+        myCompanyId = null;
+      }
     }
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
@@ -1000,7 +1828,11 @@ app.get('/api/sites', requireAuth, async (req, res) => {
     }
     res.status(200).json(rows);
   } catch (e) {
-    res.status(500).json({ error: 'error' });
+    try {
+      const safeKeys = Object.keys(req?.body || {});
+      console.error('PATCH /api/guards/:id error', { id: req?.params?.id, keys: safeKeys, message: e?.message }, e);
+    } catch {}
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
 
@@ -1009,8 +1841,12 @@ app.get('/api/profiles', requireAuth, async (req, res) => {
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
     if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {
+        myCompanyId = null;
+      }
     }
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
@@ -1038,8 +1874,12 @@ app.get('/api/companies', requireAuth, async (req, res) => {
     } else if (actor?.sub || actor.company_id) {
       let myCompanyId = actor.company_id || null;
       if (!myCompanyId && actor?.sub) {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
+        try {
+          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+          myCompanyId = meRows[0]?.company_id || null;
+        } catch {
+          myCompanyId = null;
+        }
       }
       if (myCompanyId) {
         const { rows: r } = await pool.query('SELECT * FROM companies WHERE id = $1 LIMIT 1', [myCompanyId]);
@@ -1056,12 +1896,529 @@ app.get('/api/companies', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/inventory/items', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const qCompanyId = String(req.query.company_id || '').trim() || null;
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      if (qCompanyId) {
+        const { rows: r } = await pool.query('SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC', [qCompanyId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await pool.query('SELECT * FROM inventory_items ORDER BY updated_at DESC NULLS LAST, created_at DESC');
+        rows = r || [];
+      }
+    } else {
+      let myCompanyId = actor.company_id || null;
+      if (!myCompanyId && actor?.sub) {
+        try {
+          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+          myCompanyId = meRows[0]?.company_id || null;
+        } catch {
+          myCompanyId = null;
+        }
+      }
+      if (!myCompanyId) return res.status(200).json([]);
+      const { rows: r } = await pool.query('SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC', [myCompanyId]);
+      rows = r || [];
+    }
+    res.status(200).json(rows);
+  } catch (e) {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.patch('/api/inventory/items/:id', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const payload = req.body || {};
+    const fields = [];
+    const values = [];
+    let i = 1;
+    for (const k of ['name', 'cost_per_unit', 'stock_quantity', 'condition', 'company_id']) {
+      if (payload[k] !== undefined) {
+        fields.push(`${k} = $${i++}`);
+        values.push(payload[k]);
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'bad_request' });
+    values.push(id);
+    const sql = `UPDATE inventory_items SET ${fields.join(', ')}, updated_at = now() WHERE id = $${i} RETURNING *`;
+    const { rows } = await pool.query(sql, values);
+    res.status(200).json(rows[0] || null);
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.get('/api/inventory/custody', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const qCompanyId = String(req.query.company_id || '').trim() || null;
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      if (qCompanyId) {
+        const { rows: r } = await pool.query('SELECT * FROM inventory_custody WHERE company_id = $1 ORDER BY issued_at DESC NULLS LAST, created_at DESC', [qCompanyId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await pool.query('SELECT * FROM inventory_custody ORDER BY issued_at DESC NULLS LAST, created_at DESC');
+        rows = r || [];
+      }
+    } else {
+      let myCompanyId = actor.company_id || null;
+      if (!myCompanyId && actor?.sub) {
+        try {
+          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+          myCompanyId = meRows[0]?.company_id || null;
+        } catch {
+          myCompanyId = null;
+        }
+      }
+      if (!myCompanyId) return res.status(200).json([]);
+      const { rows: r } = await pool.query('SELECT * FROM inventory_custody WHERE company_id = $1 ORDER BY issued_at DESC NULLS LAST, created_at DESC', [myCompanyId]);
+      rows = r || [];
+    }
+    res.status(200).json(rows);
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.post('/api/inventory/custody', requireAuth, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const { company_id, guard_id, item_id, quantity, issued_at, condition_at_issue } = b;
+    if (!company_id || !guard_id || !item_id || !quantity) return res.status(400).json({ error: 'bad_request' });
+    const { rows } = await pool.query(
+      `INSERT INTO inventory_custody (company_id, guard_id, item_id, quantity, issued_at, condition_at_issue, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6, now(), now()) RETURNING *`,
+      [company_id, guard_id, item_id, Number(quantity), issued_at || null, condition_at_issue || null]
+    );
+    res.status(200).json(rows[0] || null);
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.delete('/api/inventory/custody/:id', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { rows: before } = await pool.query('SELECT * FROM inventory_custody WHERE id = $1 LIMIT 1', [id]);
+    const row = before[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    const actor = req.user || {};
+    if (!(actor.role === 'super_admin' || actor.role === 'system_hr')) {
+      let myCompanyId = actor.company_id || null;
+      if (!myCompanyId && actor?.sub) {
+        try {
+          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+          myCompanyId = meRows[0]?.company_id || null;
+        } catch {
+          myCompanyId = null;
+        }
+      }
+      if (!myCompanyId || String(myCompanyId) !== String(row.company_id)) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
+    }
+    await pool.query('DELETE FROM inventory_custody WHERE id = $1', [id]);
+    res.status(200).json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.get('/api/inventory/logs', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    const qCompanyId = String(req.query.company_id || '').trim() || null;
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      if (qCompanyId) {
+        const { rows: r } = await pool.query('SELECT * FROM inventory_logs WHERE company_id = $1 ORDER BY created_at DESC', [qCompanyId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await pool.query('SELECT * FROM inventory_logs ORDER BY created_at DESC');
+        rows = r || [];
+      }
+    } else {
+      let myCompanyId = actor.company_id || null;
+      if (!myCompanyId && actor?.sub) {
+        try {
+          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+          myCompanyId = meRows[0]?.company_id || null;
+        } catch {
+          myCompanyId = null;
+        }
+      }
+      if (!myCompanyId) return res.status(200).json([]);
+      const { rows: r } = await pool.query('SELECT * FROM inventory_logs WHERE company_id = $1 ORDER BY created_at DESC', [myCompanyId]);
+      rows = r || [];
+    }
+    res.status(200).json(rows);
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.post('/api/inventory/logs', requireAuth, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const { action, company_id, guard_id, item_id, quantity, return_condition, amount_owed, payment_status, created_at, paid_at } = b;
+    if (!action || !company_id || !item_id) return res.status(400).json({ error: 'bad_request' });
+    const { rows } = await pool.query(
+      `INSERT INTO inventory_logs (action, company_id, guard_id, item_id, quantity, return_condition, amount_owed, payment_status, created_at, paid_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8, COALESCE($9, now()), $10) RETURNING *`,
+      [action, company_id, guard_id || null, item_id, quantity || 0, return_condition || null, amount_owed || null, payment_status || null, created_at || null, paid_at || null]
+    );
+    res.status(200).json(rows[0] || null);
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const payload = req.body || {};
+    const fields = [];
+    const values = [];
+    let i = 1;
+    for (const k of ['payment_status', 'paid_at']) {
+      if (payload[k] !== undefined) {
+        fields.push(`${k} = $${i++}`);
+        values.push(payload[k]);
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'bad_request' });
+    values.push(id);
+    const sql = `UPDATE inventory_logs SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`;
+    const { rows } = await pool.query(sql, values);
+    res.status(200).json(rows[0] || null);
+  } catch {
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+// --- Admin Alerts: High Incident Guards in last 30 days (3+ incidents) ---
+app.get('/api/admin/alerts/high-incidents', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    if (actor.role !== 'super_admin') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    const rowsSql = `
+      WITH agg AS (
+        SELECT dr.guard_id,
+               COUNT(*)::int AS incident_count,
+               MAX(dr.created_at) AS latest_at
+        FROM disciplinary_records dr
+        WHERE dr.created_at >= now() - interval '30 days'
+        GROUP BY dr.guard_id
+        HAVING COUNT(*) >= 3
+      )
+      SELECT g.id AS guard_id,
+             g.full_name,
+             c.name AS company_name,
+             a.incident_count,
+             a.latest_at,
+             last.formal_report AS incident_description,
+             last.incident_code
+      FROM agg a
+      JOIN guards g ON g.id = a.guard_id
+      LEFT JOIN companies c ON c.id = g.company_id
+      LEFT JOIN LATERAL (
+        SELECT dr2.formal_report, dr2.incident_code, dr2.created_at
+        FROM disciplinary_records dr2
+        WHERE dr2.guard_id = g.id
+        ORDER BY dr2.created_at DESC
+        LIMIT 1
+      ) last ON true
+      ORDER BY a.incident_count DESC, a.latest_at DESC
+    `;
+    const { rows } = await pool.query(rowsSql);
+    res.status(200).json(rows || []);
+  } catch (e) {
+    console.error('GET /api/admin/alerts/high-incidents error', e);
+    res.status(500).json({ error: 'error' });
+  }
+});
+
+app.get('/api/rosters', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    let myCompanyId = actor.company_id || null;
+    if (!myCompanyId && actor?.sub) {
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id, current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {}
+    }
+    const qSiteId = String(req.query?.site_id || '').trim() || null;
+    const qStart = String(req.query?.start || '').trim() || null;
+    const qEnd = String(req.query?.end || '').trim() || null;
+    await client.query('BEGIN');
+    if (myCompanyId) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(myCompanyId)]);
+    }
+    if (qSiteId) {
+      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(qSiteId)]);
+    } else if (actor?.sub) {
+      try {
+        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        const sid = sRows[0]?.current_site_id || null;
+        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
+      } catch {}
+    }
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      if (qSiteId && qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 AND shift_date BETWEEN $2 AND $3 ORDER BY shift_date ASC', [qSiteId, qStart, qEnd]);
+        rows = r || [];
+      } else if (qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE shift_date BETWEEN $1 AND $2 ORDER BY shift_date ASC', [qStart, qEnd]);
+        rows = r || [];
+      } else if (qSiteId) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 ORDER BY shift_date DESC NULLS LAST, created_at DESC', [qSiteId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await client.query('SELECT * FROM rosters ORDER BY shift_date DESC NULLS LAST, created_at DESC');
+        rows = r || [];
+      }
+    } else {
+      if (!myCompanyId) {
+        await client.query('ROLLBACK');
+        return res.status(200).json([]);
+      }
+      if (qSiteId && qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 AND shift_date BETWEEN $2 AND $3 ORDER BY shift_date ASC', [qSiteId, qStart, qEnd]);
+        rows = r || [];
+      } else if (qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE shift_date BETWEEN $1 AND $2 ORDER BY shift_date ASC', [qStart, qEnd]);
+        rows = r || [];
+      } else if (qSiteId) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 ORDER BY shift_date DESC NULLS LAST, created_at DESC', [qSiteId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await client.query('SELECT * FROM rosters ORDER BY shift_date DESC NULLS LAST, created_at DESC');
+        rows = r || [];
+      }
+    }
+    await client.query('COMMIT');
+    res.status(200).json(rows);
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/rosters', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const b = req.body || {};
+    const site_id = b.site_id || null;
+    const company_id = b.company_id || actor.company_id || null;
+    const guard_id = b.guard_id || null;
+    const shift_date = b.shift_date || b.date || null;
+    const shift_type = b.shift_type || b.shift || null;
+    const status = b.status || 'scheduled';
+    if (!guard_id || !shift_date || !shift_type) {
+      return res.status(400).json({ error: 'bad_request' });
+    }
+    await client.query('BEGIN');
+    if (company_id) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(company_id)]);
+    }
+    if (site_id) {
+      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(site_id)]);
+    } else if (actor?.sub) {
+      try {
+        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        const sid = sRows[0]?.current_site_id || null;
+        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
+      } catch {}
+    }
+    let existing = null;
+    if (site_id) {
+      try {
+        const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND site_id = $2 AND shift_date = $3 LIMIT 1', [guard_id, site_id, shift_date]);
+        existing = rows[0] || null;
+      } catch {}
+    } else {
+      try {
+        const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND shift_date = $2 LIMIT 1', [guard_id, shift_date]);
+        existing = rows[0] || null;
+      } catch {}
+    }
+    if (existing && existing.id) {
+      const { rows } = await client.query(
+        'UPDATE rosters SET shift_type = $1, status = $2, updated_at = now() WHERE id = $3 RETURNING *',
+        [shift_type, status, existing.id]
+      );
+      await client.query('COMMIT');
+      return res.status(200).json(rows[0] || null);
+    } else {
+      const cols = ['company_id','site_id','guard_id','shift_date','shift_type','status','created_at','updated_at'];
+      const vals = [company_id, site_id, guard_id, shift_date, shift_type, status];
+      const placeholders = ['$1','$2','$3','$4','$5','$6','now()','now()'];
+      const sql = `INSERT INTO rosters (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
+      const { rows } = await client.query(sql, vals);
+      await client.query('COMMIT');
+      return res.status(200).json(rows[0] || null);
+    }
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/rosters', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    let myCompanyId = actor.company_id || null;
+    if (!myCompanyId && actor?.sub) {
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id, current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {}
+    }
+    const qSiteId = String(req.query?.site_id || '').trim() || null;
+    const qStart = String(req.query?.start || '').trim() || null;
+    const qEnd = String(req.query?.end || '').trim() || null;
+    await client.query('BEGIN');
+    if (myCompanyId) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(myCompanyId)]);
+    }
+    if (qSiteId) {
+      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(qSiteId)]);
+    } else if (actor?.sub) {
+      try {
+        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        const sid = sRows[0]?.current_site_id || null;
+        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
+      } catch {}
+    }
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      if (qSiteId && qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 AND shift_date BETWEEN $2 AND $3 ORDER BY shift_date ASC', [qSiteId, qStart, qEnd]);
+        rows = r || [];
+      } else if (qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE shift_date BETWEEN $1 AND $2 ORDER BY shift_date ASC', [qStart, qEnd]);
+        rows = r || [];
+      } else if (qSiteId) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 ORDER BY shift_date DESC NULLS LAST, created_at DESC', [qSiteId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await client.query('SELECT * FROM rosters ORDER BY shift_date DESC NULLS LAST, created_at DESC');
+        rows = r || [];
+      }
+    } else {
+      if (!myCompanyId) {
+        await client.query('ROLLBACK');
+        return res.status(200).json([]);
+      }
+      if (qSiteId && qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 AND shift_date BETWEEN $2 AND $3 ORDER BY shift_date ASC', [qSiteId, qStart, qEnd]);
+        rows = r || [];
+      } else if (qStart && qEnd) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE shift_date BETWEEN sap_min_date($1) AND $2 ORDER BY shift_date ASC', [qStart, qEnd]);
+        rows = r || [];
+      } else if (qSiteId) {
+        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 ORDER BY shift_date DESC NULLS LAST, created_at DESC', [qSiteId]);
+        rows = r || [];
+      } else {
+        const { rows: r } = await client.query('SELECT * FROM rosters ORDER BY shift_date DESC NULLS LAST, created_at DESC');
+        rows = r || [];
+      }
+    }
+    await client.query('COMMIT');
+    res.status(200).json(rows);
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/rosters', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const b = req.body || {};
+    const site_id = b.site_id || null;
+    const company_id = b.company_id || actor.company_id || null;
+    const guard_id = b.guard_id || null;
+    const shift_date = b.shift_date || b.date || null;
+    const shift_type = b.shift_type || b.shift || null;
+    const status = b.status || 'scheduled';
+    if (!guard_id || !shift_date || !shift_type) {
+      return res.status(400).json({ error: 'bad_request' });
+    }
+    await client.query('BEGIN');
+    if (company_id) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(company_id)]);
+    }
+    if (site_id) {
+      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(site_id)]);
+    } else if (actor?.sub) {
+      try {
+        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        const sid = sRows[0]?.current_site_id || null;
+        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
+      } catch {}
+    }
+    let existing = null;
+    if (site_id) {
+      try {
+        const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND site_id = $2 AND shift_date = $3 LIMIT 1', [guard_id, site_id, shift_date]);
+        existing = rows[0] || null;
+      } catch {}
+    } else {
+      try {
+        const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND shift_date = $2 LIMIT 1', [guard_id, shift_date]);
+        existing = rows[0] || null;
+      } catch {}
+    }
+    if (existing && existing.id) {
+      const { rows } = await client.query(
+        'UPDATE rosters SET shift_type = $1, status = $2, updated_at = now() WHERE id = $3 RETURNING *',
+        [shift_type, status, existing.id]
+      );
+      await client.query('COMMIT');
+      return res.status(200).json(rows[0] || null);
+    } else {
+      const cols = ['company_id','site_id','guard_id','shift_date','shift_type','status','created_at','updated_at'];
+      const vals = [company_id, site_id, guard_id, shift_date, shift_type, status];
+      const placeholders = ['$1','$2','$3','$4','$5','$6', 'now()', 'now()'];
+      const sql = `INSERT INTO rosters (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
+      const { rows } = await client.query(sql, vals);
+      await client.query('COMMIT');
+      return res.status(200).json(rows[0] || null);
+    }
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
+  } finally {
+    client.release();
+  }
+});
+
 // Health check: DB connectivity and guards columns
 app.get('/api/health/db', async (req, res) => {
   try {
     const { rows: verRows } = await pool.query('SELECT version()');
     const { rows: cols } = await pool.query(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'guards' AND column_name IN ('status','performance_score','application_status')"
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'guards' AND column_name IN ('status','performance_score')"
     );
     const present = (cols || []).map(r => r.column_name);
     res.status(200).json({
@@ -1082,6 +2439,26 @@ app.use((err, req, res, next) => {
   console.error('Unhandled error', err);
   res.status(500).json({ error: 'internal_error' });
 });
+
+// --- Lifecycle Maintenance: Auto-revert stalled interviews (System HR source) ---
+async function cleanupStaleInterviews() {
+  try {
+    await pool.query(
+      `UPDATE guards
+       SET status = 'marketplace',
+           company_id = NULL,
+           updated_at = now(),
+           dossier_data = jsonb_set(COALESCE(dossier_data, '{}'::jsonb), '{interview_timeout}', to_jsonb(now())::jsonb, true)
+       WHERE status = 'interviewing'
+         AND COALESCE(dossier_data->>'interview_source','sys_hr') <> 'company_hr'
+         AND updated_at < now() - interval '3 days'`
+    );
+  } catch (e) {
+    console.error('cleanupStaleInterviews failed', e);
+  }
+}
+setInterval(cleanupStaleInterviews, 60 * 60 * 1000);
+cleanupStaleInterviews();
 
 const port = 3001;
 app.listen(port, () => {

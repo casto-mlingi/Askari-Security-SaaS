@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ApplicationStatus, Guard, Profile, UserRole } from '../types';
+import { Guard, Profile } from '../types';
 
 interface MobileNavProps {
   activeTab: string;
@@ -15,7 +15,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab, currentU
   if (!isGuard) return null; // Staff uses desktop sidebar structure mostly, or different mobile nav if needed
 
   const guard = currentUser as Guard;
-  const isActiveGuard = guard.application_status === ApplicationStatus.ACTIVE || guard.application_status === ApplicationStatus.ACTIVE_GUARD;
+  const isActiveGuard = String((guard as any)?.status || '').toLowerCase() === 'active';
 
   // Tabs for "Hold Applicant"
   const applicantTabs = [

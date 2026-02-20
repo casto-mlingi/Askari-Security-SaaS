@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Guard, Announcement, ApplicationStatus } from '../types';
+import { Guard, Announcement } from '../types';
 
 interface NoticeBoardProps {
   guard: Guard;
@@ -10,8 +10,8 @@ interface NoticeBoardProps {
 const NoticeBoard: React.FC<NoticeBoardProps> = ({ guard, announcements }) => {
   const hasHRNote = guard.dossier_data?.interviewer_notes;
   const privateNotes = guard.dossier_data?.hr_private_notes || [];
-  const isLocked = guard.application_status === ApplicationStatus.INTERVIEWING;
-  const isPending = guard.application_status === ApplicationStatus.MARKET_POOL;
+  const isLocked = String((guard as any)?.status || '').toLowerCase() === 'interviewing';
+  const isPending = String((guard as any)?.status || '').toLowerCase() === 'marketplace';
   const interviewSchedule = (guard.dossier_data as any)?.interview_schedule as { date?: string; location?: string } | undefined;
 
   return (

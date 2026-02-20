@@ -16,24 +16,15 @@ export enum SubscriptionStatus {
   TRIALING = 'trialing'
 }
 
+export type LifecycleStatus = 'draft' | 'submitted_application' | 'marketplace' | 'interviewing' | 'active' | 'blacklisted';
+
 export enum ApplicationStatus {
   DRAFT = 'draft',
   SUBMITTED_APPLICATION = 'submitted_application',
-  PENDING = 'pending',
-  PENDING_INTAKE = 'pending_intake',
-  POOL_APPLICANT = 'pool_applicant',
-  MARKET_POOL = 'market_pool',
-  INTERVIEW_LOCKED = 'interview_locked',
-  PROCUREMENT_PENDING = 'procurement_pending',
+  MARKETPLACE = 'marketplace',
   INTERVIEWING = 'interviewing',
-  HIRED = 'hired',
   ACTIVE = 'active',
-  ACTIVE_GUARD = 'active_guard',
-  REJECTED = 'rejected',
-  BLACKLISTED = 'blacklisted',
-  DISQUALIFIED = 'disqualified',
-  AWOL = 'leave_without_permit',
-  ON_LEAVE = 'on_leave'
+  BLACKLISTED = 'blacklisted'
 }
 
 export interface ApiResponse<T> {
@@ -111,6 +102,8 @@ export interface EducationRecord {
   level: EducationLevel;
   institution_name?: string;
   year: string;
+  start_date?: string;
+  end_date?: string;
   certificate_url?: string;
   weapon_proficiency?: 'pass' | 'fail' | '';
   created_at?: string;
@@ -204,7 +197,7 @@ export interface Guard {
   education_level?: GuardEducationLevel;
   security_level?: SecurityLevel;
   security_training?: SecurityTraining[];
-  application_status: ApplicationStatus;
+  status: LifecycleStatus;
   system_verification_status?: 'pending' | 'verified' | 'rejected';
   current_site_id?: string;
   assigned_supervisor_id?: string; // References Profile.id
@@ -349,4 +342,16 @@ export interface DisciplinaryRecord {
   penalty_points: number;
   incident_code: string;
   created_at: string;
+}
+
+export interface Roster {
+  id: string;
+  company_id: string;
+  site_id: string;
+  guard_id: string;
+  shift_date: string;
+  shift_type: 'day' | 'night' | 'swing';
+  status: 'scheduled' | 'present' | 'absent' | 'on_leave';
+  created_at?: string;
+  updated_at?: string;
 }

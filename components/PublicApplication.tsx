@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ApplicationStatus, Guard } from '../types';
+import { Guard } from '../types';
 
 interface PublicApplicationProps {
   onBack: () => void;
@@ -85,7 +85,7 @@ const PublicApplication: React.FC<PublicApplicationProps> = ({ onBack, onSubmit 
           dob: payload.dob,
           email: payload.email,
           is_armed: false,
-          application_status: ApplicationStatus.DRAFT,
+          status: 'draft',
           profile_score: 0,
           performance_score: 100,
           dossier_data: payload.dossier_data,

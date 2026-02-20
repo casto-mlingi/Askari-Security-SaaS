@@ -41,10 +41,11 @@ const getNavItems = (role: UserRole, currentUser?: Profile | Guard | null): NavI
     { label: 'Procurement', icon: 'Procurement', tab: 'procurement' },
     { label: 'Stock In', icon: 'Procurement', tab: 'stock-in' },
     { label: 'Operations', icon: 'Operations', tab: 'operations' },
+    { label: 'Roster', icon: 'Operations', tab: 'roster' },
     { label: 'Tactical Monitor', icon: 'Monitor', tab: 'tactical-monitor' },
     { label: 'Disciplinary', icon: 'Disciplinary', tab: 'disciplinary' },
     { label: 'Sites', icon: 'Sites', tab: 'sites' },
-    { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklist' },
+    { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklisted' },
     { label: 'Personnel', icon: 'Registry', tab: 'registry' },
     { label: 'Companies', icon: 'Companies', tab: 'companies' },
   ];
@@ -60,7 +61,7 @@ const getNavItems = (role: UserRole, currentUser?: Profile | Guard | null): NavI
   // Show applicant-style navigation for Guard accounts that are not ACTIVE yet
   if (currentUser && !('role' in (currentUser as any))) {
     const g = currentUser as Guard;
-    if (g.application_status !== ApplicationStatus.ACTIVE && g.application_status !== ApplicationStatus.ACTIVE_GUARD) {
+    if (String((g as any)?.status || '').toLowerCase() !== 'active') {
       return [
         { label: 'Continue With Application', icon: 'Register', tab: 'profile-update' },
         { label: 'Application Status', icon: 'Applicants', tab: 'application-status' },
@@ -76,30 +77,33 @@ const getNavItems = (role: UserRole, currentUser?: Profile | Guard | null): NavI
       { label: 'Wait for Approval', icon: 'Applicants', tab: 'wait-approval' },
       { label: 'Vetting', icon: 'Applicants', tab: 'vetting' },
       { label: 'Interview Report', icon: 'Report', tab: 'interview-report' },
-      { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklist' },
+      { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklisted' },
       { label: 'Personnel', icon: 'Registry', tab: 'registry' },
     ];
   }
   switch (role) {
     case UserRole.SUPER_ADMIN:
-      return all;
+      return [
+        ...all,
+        { label: 'Wait for Approval', icon: 'Applicants', tab: 'wait-approval' },
+      ];
     case UserRole.COMPANY_ADMIN:
       return all.filter(item => item.tab !== 'companies');
     case UserRole.HR_OFFICER:
       return [
         { label: 'Dashboard', icon: 'Dashboard', tab: 'overview' },
-        { label: 'Wait for Approval', icon: 'Applicants', tab: 'wait-approval' },
         { label: 'Intake', icon: 'Register', tab: 'intake' },
         { label: 'Vetting', icon: 'Applicants', tab: 'vetting' },
         { label: 'Interview Report', icon: 'Report', tab: 'interview-report' },
+        { label: 'Roster', icon: 'Operations', tab: 'roster' },
         { label: 'Disciplinary', icon: 'Disciplinary', tab: 'disciplinary' },
-        { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklist' },
+        { label: 'Blacklist', icon: 'Blacklist', tab: 'blacklisted' },
         { label: 'Personnel', icon: 'Registry', tab: 'registry' },
       ];
     case UserRole.PROCUREMENT:
       return all.filter(item => ['overview', 'procurement', 'stock-in'].includes(item.tab));
     case UserRole.SUPERVISOR:
-      return all.filter(item => ['overview', 'operations', 'tactical-monitor', 'blacklist'].includes(item.tab));
+      return all.filter(item => ['overview', 'operations', 'roster', 'tactical-monitor', 'blacklisted'].includes(item.tab));
     default:
       return [];
   }

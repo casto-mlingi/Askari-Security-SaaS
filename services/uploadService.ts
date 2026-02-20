@@ -1,6 +1,6 @@
 export const uploadToAmini = async (file: File): Promise<string> => {
   const env: any = (import.meta as any)?.env || {};
-  const apiBase = env?.VITE_API_BASE_URL || 'http://localhost:3001/api';
+  const apiBase = env?.VITE_API_BASE_URL || '/api';
   const endpoint = env?.VITE_UPLOAD_URL || `${apiBase}/upload`;
 
   const token = localStorage.getItem('amini_auth_token');

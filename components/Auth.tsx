@@ -47,7 +47,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
     try {
       const controller = new AbortController();
       loginAbortRef.current = controller;
-      const result = await api.post<{ token: string, user: any }>('/auth/login', { email: normalizedEmail, password }, { signal: controller.signal });
+      const result = await api.post<{ token: string, user: any }>('/api/auth/login', { email: normalizedEmail, password }, { signal: controller.signal });
       if (result.error || !result.data) {
         const msg = String(result.error || 'Invalid email or password');
         setError(msg.toLowerCase().includes('canceled') ? 'Request canceled. Please try again.' : 'Invalid email or password');

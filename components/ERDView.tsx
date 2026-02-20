@@ -70,7 +70,7 @@ const ERDView: React.FC = () => {
         { name: 'password_hash', type: 'TEXT' },
         { name: 'full_name', type: 'TEXT', meta: 'NOT NULL' },
         { name: 'dob', type: 'DATE', meta: 'NOT NULL' },
-        { name: 'application_status', type: 'TEXT', meta: 'CHECK' },
+        { name: 'status', type: 'TEXT', meta: 'CHECK' },
         { name: 'current_site_id', type: 'UUID (FK)', meta: 'SET NULL' },
         { name: 'assigned_supervisor_id', type: 'UUID (FK)', meta: 'SET NULL' },
         { name: 'is_armed', type: 'BOOLEAN', meta: 'DEFAULT FALSE' },

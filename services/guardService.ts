@@ -1,11 +1,14 @@
-import { api } from './api';
-import { Guard, ApiResponse, ApplicationStatus, EducationRecord, Guarantor, ResubmitRequest } from '../types';
+import { api, getApiBase } from './api';
+import { Guard, ApiResponse, EducationRecord, Guarantor, ResubmitRequest } from '../types';
 
 export const guardService = {
   /**
    * Fetches all guards for the current tenant, INCLUDING related data.
    */
   async getGuards(): Promise<ApiResponse<Guard[]>> {
+    try {
+      console.log('Super Admin API Call:', getApiBase() + '/guards');
+    } catch {}
     const result = await api.get<Guard[]>('/guards');
     if (result.error) {
       const local = JSON.parse(localStorage.getItem('guards_local') || '[]');
@@ -45,13 +48,13 @@ export const guardService = {
       ...coreGuardFields
     } = guardData;
 
-    // Default application status: move new submissions directly to pool applicants
-    if (!('application_status' in coreGuardFields) || !coreGuardFields.application_status) {
-      coreGuardFields.application_status = ApplicationStatus.MARKET_POOL;
-    }
-
     const result = await api.post<Guard>('/guards', coreGuardFields);
     if (result.error || !result.data) {
+      const hasToken = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
+      if (hasToken) {
+        // Authenticated HR path: do NOT generate a local fallback ID.
+        return { error: result.error || 'Create failed' };
+      }
       const infoFields = [
         coreGuardFields['full_name'], coreGuardFields['nida_number'], coreGuardFields['phone'], coreGuardFields['dob'],
         coreGuardFields['gender'], coreGuardFields['next_of_kin_name'], coreGuardFields['next_of_kin_phone'],
@@ -78,7 +81,7 @@ export const guardService = {
         profile_score: typeof (guardData as any).profile_score === 'number' ? (guardData as any).profile_score : 0,
         performance_score: typeof (guardData as any).performance_score === 'number' ? (guardData as any).performance_score : 100,
         readiness_score: readinessScore,
-        application_status: coreGuardFields.application_status as ApplicationStatus,
+        status: (coreGuardFields as any).status || 'draft',
         current_site_id: coreGuardFields.current_site_id,
         assigned_supervisor_id: coreGuardFields.assigned_supervisor_id,
         company_id: coreGuardFields.company_id,
@@ -143,9 +146,8 @@ export const guardService = {
   /**
    * Transitions a guard through the vetting workflow.
    */
-  async updateStatus(id: string, status: ApplicationStatus, metadata?: any): Promise<ApiResponse<Guard>> {
-    
-    const updatePayload: any = { application_status: status };
+  async updateStatus(id: string, status: 'draft' | 'submitted_application' | 'marketplace' | 'interviewing' | 'active' | 'blacklisted', metadata?: any): Promise<ApiResponse<Guard>> {
+    const updatePayload: any = { status };
 
     if (metadata) {
       updatePayload.dossier_data = metadata;

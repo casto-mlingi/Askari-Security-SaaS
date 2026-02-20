@@ -1,14 +1,29 @@
 import { ApiResponse } from '../types';
 
-/**
- * Base URL for the AMINI Backend.
- * In production, this would be an environment variable (e.g., process.env.API_URL).
- */
-const API_BASE_URL = (import.meta as any)?.env?.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL: string = 'http://localhost:3001/api';
+
+export const getApiBase = () => API_BASE_URL;
+
+function buildUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (/^[\w.-]+:\d+/.test(path)) {
+    const fixed = path.replace(/^\/+/, '');
+    return `http://${fixed}`;
+  }
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  let p = String(path || '');
+  if (!p.startsWith('/')) p = '/' + p;
+  if (base.endsWith('/api') && p.startsWith('/api/')) {
+    p = p.slice(4);
+  } else if (base.endsWith('/api') && p === '/api') {
+    p = '';
+  }
+  return `${base}${p}`;
+}
 
 class ApiClient {
   private getHeaders(): HeadersInit {
-    const token = localStorage.getItem('amini_auth_token') || localStorage.getItem('token');
+    const token = (typeof window !== 'undefined' ? (localStorage.getItem('amini_auth_token') || localStorage.getItem('token')) : null) || '';
     return {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -16,8 +31,8 @@ class ApiClient {
   }
 
   private async handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
-    if (response.status === 401) {
-      localStorage.removeItem('amini_auth_token');
+    if (response.status === 401 && typeof window !== 'undefined') {
+      try { localStorage.removeItem('amini_auth_token'); } catch {}
     }
     let result: any = null;
     try {
@@ -26,7 +41,7 @@ class ApiClient {
       return { error: 'Invalid server response' };
     }
     if (!response.ok) {
-      const msg = result?.message || result?.error || 'Request failed';
+      const msg = result?.detail || result?.message || result?.error || 'Request failed';
       return { error: msg };
     }
     return { data: result };
@@ -34,7 +49,8 @@ class ApiClient {
 
   async get<T>(path: string, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>> {
     try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
+      const url = buildUrl(path);
+      const response = await fetch(url, {
         method: 'GET',
         headers: this.getHeaders(),
         signal: options?.signal,
@@ -48,7 +64,8 @@ class ApiClient {
 
   async post<T>(path: string, body: any, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>> {
     try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
+      const url = buildUrl(path);
+      const response = await fetch(url, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(body),
@@ -63,7 +80,8 @@ class ApiClient {
 
   async patch<T>(path: string, body: any, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>> {
     try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
+      const url = buildUrl(path);
+      const response = await fetch(url, {
         method: 'PATCH',
         headers: this.getHeaders(),
         body: JSON.stringify(body),
@@ -78,7 +96,8 @@ class ApiClient {
 
   async delete<T>(path: string, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>> {
     try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
+      const url = buildUrl(path);
+      const response = await fetch(url, {
         method: 'DELETE',
         headers: this.getHeaders(),
         signal: options?.signal,
@@ -92,3 +111,4 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Guard, Site, Profile, IncidentReport, DisciplinaryCode, ApplicationStatus, UserRole, ResubmitRequest } from '../types';
+import { Guard, Site, Profile, IncidentReport, DisciplinaryCode, UserRole, ResubmitRequest } from '../types';
 import { analyzeGuardDossier } from '../services/ai';
 import FileUploader from './FileUploader';
 import { api } from '../services/api';
@@ -13,7 +13,7 @@ interface VettingWorkflowProps {
   incidents: IncidentReport[];
   disciplinaryCodes: DisciplinaryCode[];
   onLock: (guardId: string, companyId: string, notes: string, schedule?: { date: string; location: string }) => void;
-  onFinalize: (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, rejectionReason?: string) => void;
+  onFinalize: (guardId: string, result: 'pass' | 'fail' | 'blacklisted', terms?: any, rejectionReason?: string) => void;
   currentUser?: Profile | null;
   resubmitRequests?: ResubmitRequest[];
   onResubmitDecision?: (requestId: string, guardId: string, decision: 'approved' | 'rejected') => void;
@@ -32,8 +32,10 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
   resubmitRequests = [],
   onResubmitDecision
 }) => {
-  const isSystemHR = currentUser?.role === UserRole.SYSTEM_HR;
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'interviews' | 'resubmits'>(isSystemHR ? 'marketplace' : 'interviews');
+  const isPrivileged = currentUser?.role === UserRole.SYSTEM_HR || currentUser?.role === UserRole.SUPER_ADMIN;
+  const isSystemHR = currentUser?.role === UserRole.SYSTEM_HR || currentUser?.role === UserRole.SUPER_ADMIN;
+  const isCompanyHR = currentUser?.role === UserRole.HR_OFFICER || currentUser?.role === UserRole.COMPANY_ADMIN;
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'submitted' | 'interviews' | 'resubmits' | 'hired' | 'blacklisted'>('marketplace');
   const [selectedGuard, setSelectedGuard] = useState<Guard | null>(null);
   const [detailGuard, setDetailGuard] = useState<Guard | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -44,6 +46,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
   const [lockNote, setLockNote] = useState('');
   const [interviewDate, setInterviewDate] = useState('');
   const [interviewLocation, setInterviewLocation] = useState('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   
   const defaultCompanyAddress = companies.find(c => c.id === currentUser?.company_id)?.address || '';
   const ensureDefaultLocation = () => {
@@ -73,20 +76,21 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 
   // Filter lists
   const poolApplicants = useMemo(() => {
-    const unassigned = guards.filter(g => !g.company_id || g.company_id === '');
-    const verifiedOnly = unassigned.filter(g => (g.system_verification_status || '').toLowerCase() === 'verified');
-    return verifiedOnly.length > 0 ? verifiedOnly : unassigned;
+    const s = (g: any) => String(g?.status || '').toLowerCase();
+    if (isPrivileged) {
+      return guards.filter(g => (s(g) === 'marketplace' || s(g) === 'interviewing'));
+    }
+    return guards.filter(g => s(g) === 'marketplace');
+  }, [guards, isPrivileged]);
+  const submittedApplicants = useMemo(() => {
+    return guards.filter(g => String((g as any)?.status || '').toLowerCase() === 'submitted_application');
   }, [guards]);
-  const lockedApplicants = useMemo(() => {
+  const interviewApplicants = useMemo(() => {
+    const s = (g: any) => String(g?.status || '').toLowerCase() === 'interviewing';
+    if (isPrivileged) return guards.filter(g => s(g) && !locallyRejectedIds.includes(g.id));
     const compId = currentUser?.company_id;
-    const status = (g: Guard) => (g.application_status as any);
-    return guards.filter(g => {
-      const s = status(g);
-      const isInterview = s === ApplicationStatus.INTERVIEWING || s === 'interview';
-      const isPending = s === ApplicationStatus.PENDING || s === 'pending';
-      return g.company_id === compId && (isInterview || isPending) && !locallyRejectedIds.includes(g.id);
-    });
-  }, [guards, currentUser?.company_id, locallyRejectedIds]);
+    return guards.filter(g => s(g) && String(g.company_id || '') === String(compId || '') && !locallyRejectedIds.includes(g.id));
+  }, [guards, currentUser?.company_id, locallyRejectedIds, isPrivileged]);
   const supervisors = useMemo(() => profiles.filter(p => p.role === UserRole.SUPERVISOR), [profiles]);
   const selectedSiteObj = useMemo(() => sites.find(s => s.id === deploymentSite) || null, [sites, deploymentSite]);
   const siteSupervisorProfile = useMemo(() => profiles.find(p => p.id === selectedSiteObj?.supervisor_id), [profiles, selectedSiteObj?.supervisor_id]);
@@ -117,18 +121,37 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     });
     return arr;
   }, [poolApplicants, sortKey]);
+  
+  const hiredGuards = useMemo(() => {
+    const all = guards.filter(g => !!g.company_id && String((g as any)?.status || '').toLowerCase() === 'active');
+    if (isCompanyHR) {
+      return all.filter(g => String(g.company_id) === String(currentUser?.company_id || ''));
+    }
+    return all;
+  }, [guards, isCompanyHR, currentUser?.company_id]);
+  const blacklistedGuards = useMemo(() => {
+    return guards.filter(g => {
+      const s = String((g as any)?.status || '').toLowerCase();
+      const score = Number((g as any)?.performance_score ?? 100);
+      return s === 'blacklisted' || s === 'blacklist' || (!Number.isNaN(score) && score < 5);
+    });
+  }, [guards]);
 
   const handleLockSubmit = () => {
-    const companyId = currentUser?.company_id;
-    if (!selectedGuard || !companyId) {
-      alert("You must be logged in as a Company Admin or HR to lock applicants.");
+    let targetCompanyId = currentUser?.company_id || '';
+    if (isPrivileged) {
+      targetCompanyId = selectedCompanyId || '';
+    }
+    if (!selectedGuard || !targetCompanyId) {
+      alert(isPrivileged ? "Select a Company to call for interview." : "You must be logged in as a Company Admin or HR to lock applicants.");
       return;
     }
-    onLock(selectedGuard.id, companyId, lockNote, { date: interviewDate, location: interviewLocation || defaultCompanyAddress || 'Company Office' });
+    onLock(selectedGuard.id, targetCompanyId, lockNote, { date: interviewDate, location: interviewLocation || defaultCompanyAddress || 'Company Office' });
     setSelectedGuard(null);
     setLockNote('');
     setInterviewDate('');
     setInterviewLocation('');
+    setSelectedCompanyId('');
     setActiveTab('interviews');
   };
 
@@ -305,7 +328,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
       if (!blacklist) {
         await api.patch(`/guards/${guardId}`, {
           company_id: null,
-          application_status: 'pool'
+          status: 'marketplace'
         });
         setLocallyRejectedIds(prev => [...prev, guardId]);
       }
@@ -368,21 +391,32 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
       <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm flex flex-col gap-6">
         <div>
           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">Vetting Workflow</h2>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-4">Recruitment & Background Checks</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-4">Marketplace • Submitted • Interviews • Active • Blacklist</p>
         </div>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-nowrap overflow-x-auto border border-slate-200 shadow-inner w-full md:w-auto">
-            {isSystemHR && (
-              <button onClick={() => setActiveTab('marketplace')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'marketplace' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                Marketplace ({poolApplicants.length})
+            <button onClick={() => setActiveTab('marketplace')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'marketplace' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+              Marketplace ({poolApplicants.length})
+            </button>
+            {isPrivileged && (
+              <button onClick={() => setActiveTab('submitted')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'submitted' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+                Submitted ({submittedApplicants.length})
               </button>
             )}
             <button onClick={() => setActiveTab('interviews')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'interviews' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-              Interviews ({lockedApplicants.length})
+              Interviews ({interviewApplicants.length})
             </button>
-            {isSystemHR && (
+            <button onClick={() => setActiveTab('hired')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'hired' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+              Hired (Active) ({hiredGuards.length})
+            </button>
+            {isPrivileged && (
               <button onClick={() => setActiveTab('resubmits')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'resubmits' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
                 Resubmit Requests
+              </button>
+            )}
+            {isPrivileged && (
+              <button onClick={() => setActiveTab('blacklisted')} className={`flex-none whitespace-nowrap px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'blacklisted' ? 'bg-white text-primary shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+                Blacklist ({blacklistedGuards.length})
               </button>
             )}
           </div>
@@ -399,7 +433,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     </div>
       </div>
 
-      {isSystemHR && activeTab === 'marketplace' && (
+      {activeTab === 'marketplace' && (
         <>
         {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -508,7 +542,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
                     className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95 text-center"
                   >
-                      Review & Lock
+                      {isPrivileged ? 'Call for Interview' : 'Review & Lock'}
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
@@ -641,10 +675,61 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
         </>
       )}
 
+      {isPrivileged && activeTab === 'submitted' && (
+        <div className="space-y-4">
+          {submittedApplicants.length ? submittedApplicants.map(guard => (
+            <div key={guard.id} className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                {guard.passport_photo_url ? (
+                  <img src={guard.passport_photo_url} alt={guard.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                ) : (
+                  <div className="w-12 h-12 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-black text-lg">
+                    {guard.full_name?.[0] || 'G'}
+                  </div>
+                )}
+                <div>
+                  <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Submitted Application</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Review</button>
+                <button onClick={() => { setSelectedGuard(guard); setDecisionMode('hire'); }} className="px-4 py-2 text-white text-[10px] font-black uppercase tracking-widest rounded-xl" style={{ backgroundColor: '#2171B5' }}>Hire</button>
+              </div>
+            </div>
+          )) : (
+            <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
+              <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No submitted applications</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isPrivileged && activeTab === 'blacklisted' && (
+        <div className="space-y-4">
+          {blacklistedGuards.length ? blacklistedGuards.map(guard => (
+            <div key={guard.id} className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-6">
+              <div>
+                <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Blacklisted</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Review</button>
+                <button onClick={() => onFinalize(guard.id, 'fail', undefined, 'Reinstated by Super Admin')} className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Reinstate</button>
+              </div>
+            </div>
+          )) : (
+            <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
+              <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No blacklisted applicants</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'interviews' && (
         <div className="space-y-6">
-           {console.log("Guards passing filter:", lockedApplicants.length, lockedApplicants)}
-           {lockedApplicants.map(guard => (
+           {console.log("Guards passing filter:", interviewApplicants.length, interviewApplicants)}
+           {interviewApplicants.map(guard => (
              <div
                key={guard.id}
                onClick={() => setDetailGuard(guard)}
@@ -662,9 +747,14 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                       <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{guard.full_name}</h3>
                       <span className="bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md">Interview Locked</span>
                    </div>
-                   <p className="text-sm font-medium text-slate-500 italic mb-4">"{guard.dossier_data?.interviewer_notes || 'No notes added.'}"</p>
+                   <p className="text-sm font-medium text-slate-500 italic">"{guard.dossier_data?.interviewer_notes || 'No notes added.'}"</p>
+                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700">
+                     <div>Company: <strong>{companies.find(c => c.id === guard.company_id)?.name || '—'}</strong></div>
+                     <div>Site: <strong>{sites.find(s => s.id === guard.current_site_id)?.name || '—'}</strong></div>
+                     <div>Supervisor: <strong>{profiles.find(p => p.id === guard.assigned_supervisor_id)?.full_name || '—'}</strong></div>
+                   </div>
                    
-                   <div className="flex flex-wrap gap-4">
+                   <div className="mt-4 flex flex-wrap gap-4">
                       {analyzingId === guard.id ? (
                         <span className="px-6 py-3 bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl animate-pulse">Running Analysis...</span>
                       ) : (
@@ -704,7 +794,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 </div>
              </div>
            )) }
-           {lockedApplicants.length === 0 && (
+           {interviewApplicants.length === 0 && (
              <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
                 <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No active interviews</p>
              </div>
@@ -712,7 +802,73 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
         </div>
       )}
 
-      {isSystemHR && activeTab === 'resubmits' && (
+      {activeTab === 'hired' && (
+        <>
+          {viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {hiredGuards.length > 0 ? hiredGuards.map(guard => (
+                <div key={guard.id} className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group">
+                  <div className="flex items-center gap-4 mb-4">
+                    {guard.passport_photo_url ? (
+                      <img src={guard.passport_photo_url} alt={guard.full_name} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
+                    ) : (
+                      <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-xl">
+                        {guard.full_name?.[0] || 'G'}
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{guard.full_name}</h4>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Active • {companies.find(c => c.id === guard.company_id)?.name || 'Assigned'}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-xs text-slate-600">
+                    <div className="flex justify-between"><span>Company</span><span className="font-bold">{companies.find(c => c.id === guard.company_id)?.name || String(guard.company_id || '')}</span></div>
+                    <div className="flex justify-between"><span>Site</span><span className="font-bold">{sites.find(s => s.id === guard.current_site_id)?.name || '—'}</span></div>
+                    <div className="flex justify-between"><span>Supervisor</span><span className="font-bold">{profiles.find(p => p.id === guard.assigned_supervisor_id)?.full_name || '—'}</span></div>
+                  </div>
+                </div>
+              )) : (
+                <div className="col-span-full py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
+                  <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No active hires</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {hiredGuards.length > 0 ? hiredGuards.map(guard => (
+                <div key={guard.id} className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all flex items-center justify-between gap-6">
+                  <div className="flex items-center gap-4">
+                    {guard.passport_photo_url ? (
+                      <img src={guard.passport_photo_url} alt={guard.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                    ) : (
+                      <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-lg">{guard.full_name?.[0] || 'G'}</div>
+                    )}
+                    <div>
+                      <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
+                      <div className="flex gap-2 text-[10px] font-black uppercase tracking-widest">
+                        <span className="text-emerald-600">Active</span>
+                        <span className="text-slate-500">•</span>
+                        <span className="text-slate-700">{companies.find(c => c.id === guard.company_id)?.name || String(guard.company_id || '')}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-700">
+                    <div className="flex gap-4">
+                      <span>Site: <strong>{sites.find(s => s.id === guard.current_site_id)?.name || '—'}</strong></span>
+                      <span>Supervisor: <strong>{profiles.find(p => p.id === guard.assigned_supervisor_id)?.full_name || '—'}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              )) : (
+                <div className="col-span-full py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
+                  <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No active hires</p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {isPrivileged && activeTab === 'resubmits' && (
         <div className="space-y-6">
           <div className="p-6 bg-white rounded-[2.5rem] border border-slate-200">
             <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Applicants who requested to edit CV</p>
@@ -781,6 +937,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DOB / Age</span>
                       <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.dob || '—'} • {safeAge(detailGuard.dob)}</span>
                     </div>
+                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Physical Address</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">
+                        {(detailGuard as any)?.physical_address || (detailGuard as any)?.dossier_data?.physical_address || '—'}
+                      </span>
+                    </div>
                     <div className="flex justify-between gap-4 py-2">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone</span>
                       <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.phone || '—'}</span>
@@ -793,7 +955,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   <div className="space-y-3">
                     <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Application</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.application_status}</span>
+                      <span className="text-xs font-bold text-slate-800 text-right">{String((detailGuard as any)?.status || '').replace('_',' ') || '—'}</span>
                     </div>
                     <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Score</span>
@@ -835,18 +997,23 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Education</h4>
-                  {detailGuard.education_history?.length ? (
-                    <div className="space-y-3">
-                      {detailGuard.education_history.map((e, idx) => (
-                        <div key={e.id || idx} className="border border-slate-100 rounded-xl p-4">
-                          <div className="flex items-center justify-between gap-4">
-                            <p className="text-xs font-black text-slate-900 uppercase tracking-tight">{e.level?.replace('_', ' ') || '—'}</p>
-                            <p className="text-[10px] font-mono font-bold text-slate-400 uppercase">{e.year || '—'}</p>
-                          </div>
-                          <div className="mt-3">
-                            {renderDocLink('Certificate', e.certificate_url)}
-                          </div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Education History</h4>
+                  {((detailGuard as any)?.education || detailGuard.education_history || [])?.length ? (
+                    <div className="overflow-hidden border border-slate-100 rounded-xl">
+                      <div className="grid grid-cols-5 gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100">
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">School Name</div>
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Qualification</div>
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Start Date</div>
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">End Date</div>
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Certificate</div>
+                      </div>
+                      {(((detailGuard as any)?.education as any[]) || detailGuard.education_history).map((e: any, idx: number) => (
+                        <div key={`${e.id || 'row'}-${idx}`} className="grid grid-cols-5 gap-2 px-4 py-3 border-b border-slate-100 last:border-b-0">
+                          <div className="text-xs font-bold text-slate-800 truncate">{e.institution_name || '—'}</div>
+                          <div className="text-xs font-bold text-slate-800 truncate">{e.qualification || (e.level ? String(e.level).replace('_',' ') : '—')}</div>
+                          <div className="text-xs text-slate-700">{e.start_date || '—'}</div>
+                          <div className="text-xs text-slate-700">{e.end_date || e.year || '—'}</div>
+                          <div className="text-right">{renderDocLink('View Certificate', e.certificate_url)}</div>
                         </div>
                       ))}
                     </div>
@@ -866,11 +1033,14 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                           <div className="min-w-0">
                             <p className="text-sm font-black text-slate-900 uppercase tracking-tight truncate">{g.name}</p>
                             <p className="text-xs font-medium text-slate-500">{g.relationship} • {g.phone}</p>
+                            <p className="text-[11px] font-bold text-slate-600 mt-1">{g.occupation || '—'}</p>
+                            <p className="text-[11px] text-slate-500">{(g as any).address || (g as any).residence_address || '—'}</p>
                           </div>
                         </div>
                         <div className="mt-4">
                           {renderDocLink('Guarantor Letter', g.letter_url)}
                           {renderDocLink('Residence Letter', g.residence_letter_url)}
+                          {renderDocLink('ID Copy', (g as any).id_copy_url)}
                         </div>
                       </div>
                     ))}
@@ -929,6 +1099,32 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
             <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
                 {decisionMode === 'view' && (
                     <div className="space-y-6">
+                        {isPrivileged && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Select Company</label>
+                              <select 
+                                value={selectedCompanyId} 
+                                onChange={e => setSelectedCompanyId(e.target.value)} 
+                                className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary"
+                              >
+                                <option value="">-- Choose Company --</option>
+                                {companies.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
+                              <input 
+                                type="datetime-local" 
+                                value={interviewDate} 
+                                onChange={e => setInterviewDate(e.target.value)} 
+                                className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                        )}
                         <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
                              <p className="text-sm font-bold text-blue-800 mb-2">Locking Policy</p>
                              <p className="text-xs text-blue-600 leading-relaxed">
@@ -985,18 +1181,25 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Assign Site</label>
                                 <select value={deploymentSite} onChange={e => setDeploymentSite(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary">
                                     <option value="">-- Select Site --</option>
-                                    {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    {(
+                                      (isPrivileged || !selectedGuard?.company_id)
+                                        ? sites
+                                        : sites.filter(s => String(s.company_id || '') === String(selectedGuard.company_id || ''))
+                                      ).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Supervisor</label>
-                                <div className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                                  <div className="text-xs font-bold text-slate-700">
-                                    <p>{siteSupervisorProfile?.full_name || '—'}</p>
-                                    <p className="text-[10px] text-slate-500">{(siteSupervisorProfile as any)?.phone || '—'}</p>
-                                  </div>
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Auto</span>
-                                </div>
+                                <select value={deploymentSupervisor} onChange={e => setDeploymentSupervisor(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary">
+                                  <option value="">-- Select Supervisor --</option>
+                                  {(
+                                    (isPrivileged || !selectedGuard?.company_id)
+                                      ? supervisors
+                                      : supervisors.filter(p => String(p.company_id || '') === String(selectedGuard.company_id || ''))
+                                    ).map(p => (
+                                    <option key={p.id} value={p.id}>{p.full_name}</option>
+                                  ))}
+                                </select>
                             </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1059,9 +1262,9 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 
             <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
                 {decisionMode === 'view' ? (
-                     <button onClick={handleLockSubmit} className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95">
-                        Confirm Lock
-                     </button>
+                    <button onClick={handleLockSubmit} className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95">
+                        {isPrivileged ? 'Call for Interview' : 'Confirm Lock'}
+                    </button>
                 ) : decisionMode === 'hire' ? (
                     <>
                       {!hireSuccess ? (

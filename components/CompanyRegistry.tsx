@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Company, UserRole, Profile, Guard, ApplicationStatus, IncidentReport } from '../types';
+import { Company, UserRole, Profile, Guard, IncidentReport } from '../types';
 import { api } from '../services/api';
 
 interface CompanyRegistryProps {
@@ -53,12 +53,15 @@ const CompanyRegistry: React.FC<CompanyRegistryProps> = ({
     
     return {
       staff: companyStaff,
-      activeGuards: companyGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE || g.application_status === ApplicationStatus.ACTIVE_GUARD),
-      pendingInterview: companyGuards.filter(g => g.application_status === ApplicationStatus.INTERVIEWING),
-      blacklisted: companyGuards.filter(g => g.application_status === ApplicationStatus.BLACKLISTED),
+      activeGuards: companyGuards.filter(g => String((g as any)?.status || '').toLowerCase() === 'active'),
+      pendingInterview: companyGuards.filter(g => String((g as any)?.status || '').toLowerCase() === 'interviewing'),
+      blacklisted: companyGuards.filter(g => {
+        const s = String((g as any)?.status || '').toLowerCase();
+        return s === 'blacklist' || s === 'blacklisted';
+      }),
       incidentCount: incidents.filter(i => {
         const guard = guards.find(g => g.id === i.guard_id);
-        return guard && (guard.company_id === selectedCompanyId) && (guard.application_status === ApplicationStatus.ACTIVE || guard.application_status === ApplicationStatus.ACTIVE_GUARD);
+        return guard && (guard.company_id === selectedCompanyId) && (String((guard as any)?.status || '').toLowerCase() === 'active');
       }).length
     };
   }, [selectedCompanyId, profiles, guards, incidents]);

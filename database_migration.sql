@@ -355,6 +355,25 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 -- Add company_id columns to inventory tables
 ALTER TABLE IF EXISTS inventory_items ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE IF EXISTS inventory_logs ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+
+-- Enforce unique NIDA numbers by deduplicating and adding a unique constraint
+DO $$
+BEGIN
+  WITH d AS (
+    SELECT id FROM (
+      SELECT id, TRIM(nida_number) AS n, ROW_NUMBER() OVER (PARTITION BY TRIM(nida_number) ORDER BY created_at NULLS FIRST, id) AS rn
+      FROM guards
+      WHERE nida_number IS NOT NULL AND TRIM(nida_number) <> ''
+    ) q WHERE q.rn > 1
+  )
+  DELETE FROM guards g USING d WHERE g.id = d.id;
+  BEGIN
+    ALTER TABLE guards ADD CONSTRAINT unique_nida UNIQUE (nida_number);
+    RAISE NOTICE 'Added unique_nida constraint on guards.nida_number';
+  EXCEPTION WHEN others THEN
+    RAISE NOTICE 'Failed to add unique_nida constraint: %', SQLERRM;
+  END;
+END $$;
 ALTER TABLE IF EXISTS inventory_custody ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 
 -- Enable RLS on inventory tables
@@ -490,3 +509,83 @@ USING (
 CREATE INDEX IF NOT EXISTS idx_inventory_items_company_id ON inventory_items(company_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_logs_company_id ON inventory_logs(company_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_custody_company_id ON inventory_custody(company_id);
+
+CREATE TABLE IF NOT EXISTS disciplinary_records (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    guard_id UUID NOT NULL REFERENCES guards(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
+    formal_report TEXT,
+    penalty_points INTEGER NOT NULL DEFAULT 0,
+    incident_code TEXT,
+    evidence_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_disciplinary_records_guard_id ON disciplinary_records(guard_id);
+CREATE INDEX IF NOT EXISTS idx_disciplinary_records_company_id ON disciplinary_records(company_id);
+
+-- Ensure unique NIDA constraint exists (idempotent)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM   pg_constraint
+        WHERE  conname = 'uq_guards_nida_number'
+        AND    conrelid = 'guards'::regclass
+    ) THEN
+        ALTER TABLE guards ADD CONSTRAINT uq_guards_nida_number UNIQUE (nida_number);
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION enforce_guard_score_readonly()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.performance_score IS DISTINCT FROM OLD.performance_score THEN
+    IF current_setting('app.allow_score_update', true) IS DISTINCT FROM 'true' THEN
+      RAISE EXCEPTION 'performance_score is read-only; update via disciplinary records';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_enforce_guard_score_readonly ON guards;
+CREATE TRIGGER trg_enforce_guard_score_readonly
+BEFORE UPDATE ON guards
+FOR EACH ROW
+EXECUTE PROCEDURE enforce_guard_score_readonly();
+
+CREATE OR REPLACE FUNCTION adjust_guard_score_on_incident()
+RETURNS TRIGGER AS $$
+DECLARE
+  current_score INTEGER;
+  pts INTEGER;
+  next_score INTEGER;
+BEGIN
+  SELECT COALESCE(performance_score, 100) INTO current_score FROM guards WHERE id = NEW.guard_id;
+  pts := GREATEST(0, COALESCE(NEW.penalty_points, 0));
+  next_score := GREATEST(0, LEAST(100, current_score - pts));
+  PERFORM set_config('app.allow_score_update', 'true', true);
+  IF next_score <= 5 THEN
+    UPDATE guards
+      SET performance_score = next_score,
+          status = 'blacklisted',
+          current_site_id = NULL,
+          assigned_supervisor_id = NULL,
+          updated_at = NOW()
+      WHERE id = NEW.guard_id;
+  ELSE
+    UPDATE guards
+      SET performance_score = next_score,
+          updated_at = NOW()
+      WHERE id = NEW.guard_id;
+  END IF;
+  PERFORM set_config('app.allow_score_update', 'false', true);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_adjust_guard_score_on_incident ON disciplinary_records;
+CREATE TRIGGER trg_adjust_guard_score_on_incident
+AFTER INSERT ON disciplinary_records
+FOR EACH ROW
+EXECUTE PROCEDURE adjust_guard_score_on_incident();

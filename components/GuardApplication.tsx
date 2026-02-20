@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Guard, ApplicationStatus, UserRole } from '../types';
+import { Guard, UserRole } from '../types';
 import { guardService } from '../services/guardService';
 import { api } from '../services/api';
 
@@ -125,7 +125,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           dob: formData.dob || '2000-01-01',
           email: formData.email,
           is_armed: false,
-          application_status: ApplicationStatus.DRAFT,
+          status: 'draft',
           profile_score: 0,
           performance_score: undefined,
           dossier_data: {},
@@ -153,7 +153,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
             dob: formData.dob || '2000-01-01',
             email: formData.email,
             is_armed: false,
-            application_status: ApplicationStatus.DRAFT,
+            status: 'draft',
             profile_score: 0,
             performance_score: 100,
             dossier_data: {},

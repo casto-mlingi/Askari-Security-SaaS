@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Guard, IncidentReport, ApplicationStatus, DisciplinaryCode, Site, LeaveRequest, Profile } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Guard, IncidentReport, DisciplinaryCode, Site, LeaveRequest, Profile, Company } from '../types';
 import PerformanceLineChart from './PerformanceLineChart';
 // ✅ FIXED: Imported only once, using the correct relative path
 import { suggestDisciplinaryPolicy, generateFormalDisciplinaryRecord } from '../services/ai';
@@ -56,12 +56,33 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
   const [formalReportText, setFormalReportText] = useState('');
   const [incidentCodeText, setIncidentCodeText] = useState('');
   const [penaltyPointsValue, setPenaltyPointsValue] = useState<number>(0);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [guardContext, setGuardContext] = useState<{ company?: Company | null; site?: Site | null; supervisor?: Profile | null }>({});
+
+  useEffect(() => {
+    const loadCompanies = async () => {
+      try {
+        const r = await api.get<Company[]>('/companies');
+        setCompanies(r.data || []);
+      } catch {}
+    };
+    loadCompanies();
+  }, []);
+
+  useEffect(() => {
+    const g = guards.find(x => x.id === selectedGuardId);
+    if (!g) {
+      setGuardContext({});
+      return;
+    }
+    const company = companies.find(c => c.id === g.company_id) || null;
+    const site = sites.find(s => s.id === g.current_site_id || s.id === g.assigned_site_id) || null;
+    const supervisor = profiles.find(p => p.id === (g.assigned_supervisor_id || site?.supervisor_id || '')) || null;
+    setGuardContext({ company, site, supervisor });
+  }, [selectedGuardId, companies, sites, profiles, guards]);
 
   const deployedGuards = useMemo(() => guards.filter(g => 
-    g.application_status === ApplicationStatus.ACTIVE || 
-    g.application_status === ApplicationStatus.ACTIVE_GUARD || 
-    g.application_status === ApplicationStatus.ON_LEAVE || 
-    g.application_status === ApplicationStatus.AWOL
+    String((g as any)?.status || '').toLowerCase() === 'active'
   ), [guards]);
 
   const filteredIncidents = useMemo(() => incidents.filter(i => {
@@ -170,6 +191,13 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
         <div className="space-y-6">
             <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
               <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-4">Rough Field Notes → Formal Report</h3>
+              {selectedGuardId && (
+                <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                  <div>Company: <span className="text-slate-900">{guardContext.company?.name || '—'}</span></div>
+                  <div>Site: <span className="text-slate-900">{guardContext.site?.name || '—'}</span></div>
+                  <div>Supervisor: <span className="text-slate-900">{guardContext.supervisor?.full_name || '—'}</span></div>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <select value={selectedGuardId} onChange={e => setSelectedGuardId(e.target.value)} className="h-12 px-4 bg-white border border-slate-200 rounded-xl font-bold uppercase text-[10px]">
                   <option value="">Select Guard</option>

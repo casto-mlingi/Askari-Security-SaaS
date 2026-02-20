@@ -27,6 +27,7 @@ import WaitForApproval from './components/WaitForApproval';
 import ForensicDisclosure from './components/ForensicDisclosure';
 import PublicApplication from './components/PublicApplication';
 import SetPassword from './components/SetPassword';
+import RosterManager from './components/RosterManager';
 import { NotificationManager } from './components/Notification';
 import { AMINI_SQL_SCHEMA } from './constants/sql';
 import { api } from './services/api';
@@ -35,7 +36,7 @@ import {
   MOCK_INCIDENTS, MOCK_EQUIPMENT, MOCK_DISCIPLINARY_CODES,
   MOCK_LEAVE_REQUESTS, MOCK_ATTENDANCE, MOCK_ANNOUNCEMENTS 
 } from './constants/mock';
-import { Guard, Profile, UserRole, ApplicationStatus, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement, DisciplinaryRecord } from './types';
+import { Guard, Profile, UserRole, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement, DisciplinaryRecord } from './types';
 
 const App: React.FC = () => {
   
@@ -72,6 +73,7 @@ const App: React.FC = () => {
   const [resubmitRequests, setResubmitRequests] = useState<any[]>([]);
   const [dbCompanyId, setDbCompanyId] = useState<string | undefined>(undefined);
   const [blacklistedGuards, setBlacklistedGuards] = useState<Guard[]>([]);
+  const [redAlerts, setRedAlerts] = useState<Array<{ guard_id: string; full_name: string; company_name: string | null; incident_description?: string | null }>>([]);
 
   // --- 1. STRICT DATA FETCHING ---
   const isFetchingRef = useRef(false);
@@ -112,7 +114,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const refreshOnBlacklist = async () => {
-      if (activeTab !== 'blacklist') return;
+      if (activeTab !== 'blacklisted') return;
       try {
         const res = await api.get<Guard[]>('/guards/blacklisted');
         if (res?.data) {
@@ -146,6 +148,13 @@ const App: React.FC = () => {
   const isSystemHR = roleText === 'system_hr';
   const userCompanyId = isGuard ? (user as Guard).company_id : (user as Profile)?.company_id;
   const currentUserName = user?.full_name || 'N/A';
+
+  useEffect(() => {
+    const isSuperAdmin = userRole === UserRole.SUPER_ADMIN;
+    if (activeTab === 'wait-approval' && !(isSystemHR || isSuperAdmin)) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, isSystemHR, userRole]);
 
   // --- Sync User Company with DB ---
   useEffect(() => {
@@ -203,6 +212,21 @@ const App: React.FC = () => {
     fetchDisciplinaryRecords();
   }, [userCompanyId]);
 
+  // Red Alerts for Super Admin: load on login
+  useEffect(() => {
+    const loadRedAlerts = async () => {
+      if (userRole !== UserRole.SUPER_ADMIN) return;
+      try {
+        const r = await api.get('/admin/alerts/high-incidents');
+        const arr = (r?.data || []) as any[];
+        setRedAlerts(arr);
+        if (arr.length > 0) {
+          (window as any).showNotification?.('error', `🚨 Red Alerts: ${arr.length} high-risk guard(s)`);
+        }
+      } catch {}
+    };
+    loadRedAlerts();
+  }, [user?.id, userRole]);
   // (Removed diagnostics and temporary company override)
 
   // --- Filter Data based on Multi-Tenancy ---
@@ -210,12 +234,9 @@ const App: React.FC = () => {
     if (isApplicant) return [];
     if (roleText === 'system_hr') {
       const list = (guards || []).filter(g => {
-        const status = String(g?.application_status || '').toLowerCase();
+        const s = String((g as any)?.status || '').toLowerCase();
         const hasNoCompany = !g?.company_id || g?.company_id === '';
-        const allowed = new Set([
-          String(ApplicationStatus.SUBMITTED_APPLICATION).toLowerCase()
-        ]);
-        return hasNoCompany && allowed.has(status);
+        return hasNoCompany && s === 'submitted_application';
       });
       return list;
     }
@@ -323,7 +344,7 @@ const App: React.FC = () => {
 
     if (finalUser && !('role' in finalUser)) {
       const g = finalUser as Guard;
-      if (g.application_status === ApplicationStatus.BLACKLISTED) {
+      if (String((g as any)?.status || '').toLowerCase() === 'blacklisted') {
         (window as any).showNotification?.('error', 'Your account has been blacklisted. Please contact the deployment office.');
         try { localStorage.removeItem('amini_auth_token'); } catch {}
         return;
@@ -376,9 +397,10 @@ const App: React.FC = () => {
         setActiveTab('profile-update');
         return;
       }
-      if (g.application_status === ApplicationStatus.DRAFT) {
+      const s = String((g as any)?.status || '').toLowerCase();
+      if (s === 'draft') {
         setActiveTab('profile-update');
-      } else if (g.application_status === ApplicationStatus.ACTIVE) {
+      } else if (s === 'active') {
         setActiveTab('overview');
       } else {
         setActiveTab('application-status');
@@ -393,14 +415,19 @@ const App: React.FC = () => {
       if (roleText === 'applicant') {
         setActiveTab('profile-update');
       } else {
-        setActiveTab('overview');
+        setActiveTab('vetting');
+        try { 
+          if (typeof window !== 'undefined') { 
+            window.location.hash = '#vetting'; 
+          } 
+        } catch {}
       }
     }
   };
 
   useEffect(() => {
     if (!user) return;
-    const isActiveGuard = isGuard && (((user as Guard)?.application_status === ApplicationStatus.ACTIVE) || ((user as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD));
+    const isActiveGuard = isGuard && (String(((user as any)?.status) || '').toLowerCase() === 'active');
     const roleText = (user && ('role' in user)) ? String((user as any)?.role || '').toLowerCase() : '';
     const isApplicantRole = roleText === 'applicant';
     const allowedApplicantTabs = new Set(['application-status', 'profile-update', 'notice-board']);
@@ -424,7 +451,7 @@ const App: React.FC = () => {
 
   const handlePublicApply = (newGuard: Guard) => {
     const existing = guards.find(g => g.nida_number === newGuard.nida_number);
-    if (existing && existing.application_status === ApplicationStatus.BLACKLISTED) {
+    if (existing && String((existing as any)?.status || '').toLowerCase() === 'blacklisted') {
       alert(`Access Denied: Blacklisted.`);
       return;
     }
@@ -437,7 +464,7 @@ const App: React.FC = () => {
       try {
         const targetId = newGuard?.id || (user as Profile)?.id;
         const result = await api.patch(`/guards/${targetId}`, {
-          application_status: ApplicationStatus.SUBMITTED_APPLICATION,
+          status: 'submitted_application',
           company_id: null
         });
         const data = result.data as Guard | undefined;
@@ -460,7 +487,8 @@ const App: React.FC = () => {
         const payload = {
           ...newGuard,
           company_id: userCompanyId,
-          application_status: ApplicationStatus.INTERVIEWING
+          status: 'interviewing',
+          dossier_data: { ...(newGuard as any)?.dossier_data, interview_source: 'company_hr' }
         } as Partial<Guard>;
         const result = await api.post('/guards', payload);
         const data = result.data as Guard | undefined;
@@ -480,10 +508,18 @@ const App: React.FC = () => {
 
   const handleLockGuard = async (guardId: string, companyId: string, notes: string, schedule?: { date: string; location: string }) => {
     try {
+      const g = guards.find(x => x.id === guardId);
+      const sc = Number((g as any)?.performance_score ?? 100);
+      if (!Number.isNaN(sc) && sc < 5) {
+        (window as any).showNotification?.('error', 'Blocked: Guard is blacklisted (score < 5).');
+        return;
+      }
+    } catch {}
+    try {
       const result = await api.patch(`/guards/${guardId}`, {
-        application_status: ApplicationStatus.INTERVIEWING,
+        status: 'interviewing',
         company_id: companyId,
-        dossier_data: { interviewer_notes: notes, interview_schedule: schedule || null }
+        dossier_data: { interviewer_notes: notes, interview_schedule: schedule || null, interview_source: isSystemHR ? 'sys_hr' : 'company_hr', interview_locked_at: new Date().toISOString() }
       });
       const data = result.data as any;
       if (!data) {
@@ -491,9 +527,9 @@ const App: React.FC = () => {
           if (g.id === guardId) {
             return {
               ...g,
-              application_status: ApplicationStatus.INTERVIEWING,
+              status: 'interviewing',
               company_id: companyId,
-              dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null }
+              dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null, interview_source: isSystemHR ? 'sys_hr' : 'company_hr' }
             };
           }
           return g;
@@ -508,9 +544,9 @@ const App: React.FC = () => {
         if (g.id === guardId) {
           return {
             ...g,
-            application_status: ApplicationStatus.INTERVIEWING,
+            status: 'interviewing',
             company_id: companyId,
-            dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null }
+            dossier_data: { ...g.dossier_data, interviewer_notes: notes, interview_schedule: schedule || null, interview_source: isSystemHR ? 'sys_hr' : 'company_hr', interview_locked_at: new Date().toISOString() }
           };
         }
         return g;
@@ -519,26 +555,46 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklist', terms?: any, reason?: string) => {
+  const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklisted', terms?: any, reason?: string) => {
     try {
+      try {
+        const g = guards.find(x => x.id === guardId);
+        const sc = Number((g as any)?.performance_score ?? 100);
+        if (!Number.isNaN(sc) && sc < 5) {
+          (window as any).showNotification?.('error', 'Blocked: Guard is blacklisted (score < 5).');
+          return;
+        }
+      } catch {}
       if (result === 'pass' && terms) {
-        const updatePayload = {
-          application_status: ApplicationStatus.ACTIVE_GUARD,
-          company_id: dbCompanyId || userCompanyId || null,
+        const supervisorId = terms.supervisorId || null;
+        const siteId = terms.siteId || null;
+        if (!siteId || !supervisorId) {
+          (window as any).showNotification?.('error', 'Active requires Site and Supervisor');
+          return;
+        }
+        const computedCompanyId = dbCompanyId || userCompanyId || null;
+        const updatePayload: any = {
+          status: 'active',
           agreed_salary: Number(terms.salary),
           contract_start_date: terms.startDate || null,
           contract_end_date: terms.endDate || null,
           employment_contract_url: terms.contractUrl || null,
-          current_site_id: terms.siteId || null,
-          assigned_supervisor_id: terms.supervisorId || null,
-          assigned_site_id: terms.siteId || null,
+          current_site_id: siteId,
+          assigned_supervisor_id: supervisorId,
           deployment_date: terms.startDate || new Date().toISOString()
         };
+        if (computedCompanyId) {
+          updatePayload.company_id = computedCompanyId;
+        }
         const result = await api.patch(`/guards/${guardId}`, updatePayload);
+        if ((result as any)?.error) {
+          (window as any).showNotification?.('error', String((result as any).error || 'Hire failed'));
+          return;
+        }
         const data = result.data as any;
         if (!data) {
-          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
-          (window as any).showNotification?.('warning', 'Offline: selection saved locally.');
+          (window as any).showNotification?.('error', 'Hire failed: No response from server');
+          return;
         } else {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
         }
@@ -554,23 +610,31 @@ const App: React.FC = () => {
           });
         } catch {}
         (window as any).showNotification?.('success', 'Guard hired and activated.');
-      } else if (result === 'blacklist') {
+        try {
+          setSelectedGuardForAudit(null);
+        } catch {}
+      } else if (result === 'blacklisted') {
         const updatePayload = {
-          application_status: ApplicationStatus.BLACKLISTED,
+          status: 'blacklisted',
           dossier_data: { rejection_reason: reason }
         };
         const result = await api.patch(`/guards/${guardId}`, updatePayload);
         const data = result.data as any;
         if (!data) {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
-          (window as any).showNotification?.('warning', 'Offline: blacklist saved locally.');
+          (window as any).showNotification?.('warning', 'Offline: blacklisted saved locally.');
         } else {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
           (window as any).showNotification?.('success', 'Applicant blacklisted.');
         }
       } else {
-        const updatePayload = {
-          application_status: ApplicationStatus.SUBMITTED_APPLICATION,
+        const wantReinstate = String(reason || '').toLowerCase().includes('reinstate');
+        const updatePayload = wantReinstate ? {
+          status: 'marketplace',
+          company_id: null,
+          dossier_data: { admin_note: reason }
+        } : {
+          status: 'submitted_application',
           company_id: null,
           dossier_data: { rejection_reason: reason }
         };
@@ -578,10 +642,10 @@ const App: React.FC = () => {
         const data = result.data as any;
         if (!data) {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...updatePayload } : g));
-          (window as any).showNotification?.('warning', 'Offline: returned to applicant.');
+          (window as any).showNotification?.('warning', wantReinstate ? 'Offline: reinstatement saved locally.' : 'Offline: returned to applicant.');
         } else {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
-          (window as any).showNotification?.('success', 'Applicant returned to previous stage.');
+          (window as any).showNotification?.('success', wantReinstate ? 'Guard reinstated to Marketplace.' : 'Applicant returned to previous stage.');
         }
       }
     } catch (e) {
@@ -590,18 +654,18 @@ const App: React.FC = () => {
   };
 
   const handleApproveToMarketplace = (guardId: string) => {
-    setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.MARKET_POOL } : g));
+    setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'marketplace', company_id: null } : g));
   };
   const handleRequestEditFromHR = (guardId: string, note: string) => {
     setGuards(prev => prev.map(g => {
       if (g.id !== guardId) return g;
       const notes = [ ...(g.dossier_data?.hr_private_notes || []), { id: `hrn-${Date.now()}`, author_id: (user as Profile)?.id, note, created_at: new Date().toISOString() } ];
-      return { ...g, application_status: ApplicationStatus.DRAFT, dossier_data: { ...(g.dossier_data || {}), allow_edit: true, hr_private_notes: notes } };
+      return { ...g, status: 'draft', dossier_data: { ...(g.dossier_data || {}), allow_edit: true, hr_private_notes: notes } };
     }));
   };
 
   const handleIssueKit = (guardId: string, items: any, sig: string) => {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.ACTIVE_GUARD, performance_score: 100 } : g));
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...(g as any), status: 'active', performance_score: 100 } : g));
   };
 
   const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
@@ -649,9 +713,9 @@ const App: React.FC = () => {
         ? Math.max(0, (current.performance_score || 100) - (codeMeta?.points || 0))
         : undefined;
       if (typeof scoreAfter === 'number' && scoreAfter <= 5) {
-        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter } : g));
+        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'blacklisted', performance_score: scoreAfter } : g));
         try {
-          await api.patch('/guards/' + guardId, { application_status: ApplicationStatus.BLACKLISTED, performance_score: scoreAfter });
+          await api.patch('/guards/' + guardId, { status: 'blacklisted', performance_score: scoreAfter });
         } catch (e) {}
       }
 
@@ -677,7 +741,7 @@ const App: React.FC = () => {
   };
 
   const handleReinstate = (guardId: string) => {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.POOL_APPLICANT, company_id: undefined, performance_score: 100 } : g));
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'marketplace', company_id: undefined, performance_score: 100 } : g));
   };
 
   const handleShiftPersonnel = (personId: string, targetSiteId: string, type: 'guard' | 'supervisor') => {
@@ -839,7 +903,7 @@ const App: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4 sm:gap-6">
                                 <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
                                     <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Active Guards</p>
-                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredGuards.filter(g => g.application_status === ApplicationStatus.ACTIVE).length}</p>
+                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredGuards.filter(g => String((g as any)?.status || '').toLowerCase() === 'active').length}</p>
                                 </div>
                                 <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
                                     <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Total Sites</p>
@@ -854,6 +918,52 @@ const App: React.FC = () => {
                                     <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
                                 </div>
                             </div>
+                            {userRole === UserRole.SUPER_ADMIN && redAlerts.length > 0 && (
+                              <div className="mt-6 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-red-500 text-xl">🚨</span>
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-red-100">Red Alert — High-Risk Guards (Last 30 Days)</p>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {redAlerts.map(a => (
+                                    <div key={a.guard_id} className="border-2 border-red-500 animate-pulse rounded-2xl bg-white text-slate-900 p-5 shadow-xl flex items-start justify-between gap-4">
+                                      <div>
+                                        <h4 className="font-black uppercase tracking-tight leading-none">{a.full_name}</h4>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mt-1">{a.company_name || 'Unassigned'}</p>
+                                        <p className="mt-2 text-xs text-slate-700">{a.incident_description || 'Most recent incident'}</p>
+                                      </div>
+                                      <div className="flex flex-col gap-2">
+                                        <button
+                                          onClick={() => {
+                                            const guard = guards.find(x => x.id === a.guard_id);
+                                            if (guard) setSelectedGuardForAudit(guard);
+                                          }}
+                                          className="px-3 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg"
+                                        >
+                                          Review Details
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            try {
+                                              await api.patch('/guards/' + a.guard_id, { status: 'blacklisted' });
+                                              setGuards(prev => prev.map(g => g.id === a.guard_id ? { ...g, status: 'blacklisted', current_site_id: null, assigned_supervisor_id: null } : g));
+                                              setRedAlerts(prev => prev.filter(x => x.guard_id !== a.guard_id));
+                                              (window as any).showNotification?.('error', 'Guard immediately blacklisted.');
+                                            } catch {
+                                              setGuards(prev => prev.map(g => g.id === a.guard_id ? { ...g, status: 'blacklisted', current_site_id: null, assigned_supervisor_id: null } : g));
+                                              (window as any).showNotification?.('warning', 'Offline: blacklisted saved locally.');
+                                            }
+                                          }}
+                                          className="px-3 py-2 bg-red-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg"
+                                        >
+                                          Immediate Blacklist
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="mt-8 bg-white rounded-[2rem] p-6 text-slate-900">
                                 <h3 className="text-sm font-black uppercase tracking-widest mb-4">Fleet-Wide Metrics</h3>
                                 <PerformanceLineChart 
@@ -892,7 +1002,7 @@ const App: React.FC = () => {
                 />
             )}
 
-            {activeTab === 'vetting' && (isSystemHR || userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
+            {activeTab === 'vetting' && (isSystemHR || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
                 <VettingWorkflow 
                     guards={filteredGuards} 
                     sites={filteredSites} 
@@ -910,20 +1020,20 @@ const App: React.FC = () => {
                         if (error) {
                           setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
                           if (decision === 'approved') {
-                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
+                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
                           }
                           (window as any).showNotification?.('warning', 'Offline: decision saved locally.');
                         } else {
                           setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...data } : r));
                           if (decision === 'approved') {
-                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
+                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
                           }
                           (window as any).showNotification?.('success', `Request ${decision}.`);
                         }
                       } catch (e) {
                         setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
                         if (decision === 'approved') {
-                          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, application_status: ApplicationStatus.DRAFT } : g));
+                          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
                         }
                         (window as any).showNotification?.('warning', 'Error: decision saved locally.');
                       }
@@ -962,6 +1072,15 @@ const App: React.FC = () => {
                 />
             )}
 
+            {activeTab === 'roster' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
+                <RosterManager 
+                    guards={filteredGuards}
+                    sites={filteredSites}
+                    currentUser={user as Profile}
+                    userRole={userRole}
+                />
+            )}
+
             {activeTab === 'tactical-monitor' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.COMPANY_ADMIN) && (
                 <TacticalMonitor 
                     sites={filteredSites}
@@ -997,8 +1116,8 @@ const App: React.FC = () => {
                         if (g.id === guardId) {
                           const current = typeof g.performance_score === 'number' ? g.performance_score : (g.profile_score || 0);
                           const next = Math.max(0, current - codePts);
-                          const nextStatus = (next <= 5) ? ApplicationStatus.BLACKLISTED : g.application_status;
-                          return { ...g, performance_score: next, application_status: nextStatus };
+                          const nextStatus = (next <= 5) ? 'blacklisted' : (g as any).status;
+                          return { ...g, performance_score: next, status: nextStatus as any };
                         }
                         return g;
                       }));
@@ -1007,7 +1126,7 @@ const App: React.FC = () => {
                         const base = typeof current?.performance_score === 'number' ? current?.performance_score : (current?.profile_score || 0);
                         const next = Math.max(0, (base || 0) - codePts);
                         const patchPayload: any = { performance_score: next };
-                        if (next <= 5) patchPayload.application_status = ApplicationStatus.BLACKLISTED;
+                        if (next <= 5) patchPayload.status = 'blacklisted';
                         await api.patch('/guards/' + guardId, patchPayload);
                       } catch {}
                     }}
@@ -1050,7 +1169,7 @@ const App: React.FC = () => {
                 />
             )}
 
-            {activeTab === 'blacklist' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.SUPERVISOR) && (
+            {activeTab === 'blacklisted' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.SUPERVISOR) && (
                 <BlacklistManager 
                     guards={blacklistedGuards}
                     incidents={filteredIncidents}
@@ -1104,7 +1223,7 @@ const App: React.FC = () => {
                       id: (user as Profile).id,
                       full_name: (user as Profile).full_name,
                       email: (user as Profile).email,
-                      application_status: ApplicationStatus.DRAFT
+                      status: 'draft'
                     } as any)
                   } 
                   userId={(user as Profile).id}
@@ -1152,7 +1271,7 @@ const App: React.FC = () => {
                       id: (user as Profile).id,
                       full_name: (user as Profile).full_name,
                       email: (user as Profile).email,
-                      application_status: ApplicationStatus.DRAFT
+                      status: 'draft'
                     } as any)
                   } 
                 />
@@ -1162,10 +1281,10 @@ const App: React.FC = () => {
 
       {isGuard && user && (
         <>
-            {activeTab === 'overview' && ((user as Guard)?.application_status === ApplicationStatus.ACTIVE || (user as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD) && (
+            {activeTab === 'overview' && (String((user as any)?.status || '').toLowerCase() === 'active') && (
                 <GuardProfile guard={user as Guard} />
             )}
-            {activeTab === 'application-status' && ((user as Guard)?.application_status !== ApplicationStatus.ACTIVE && (user as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD) && (
+            {activeTab === 'application-status' && (String((user as any)?.status || '').toLowerCase() !== 'active') && (
                 <ApplicantDashboard 
                   guard={user as Guard} 
                   onContinue={() => setActiveTab('profile-update')}
@@ -1190,10 +1309,10 @@ const App: React.FC = () => {
                   }}
                 />
             )}
-            {activeTab === 'profile-update' && ((user as Guard)?.application_status !== ApplicationStatus.ACTIVE && (user as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD) && (
+            {activeTab === 'profile-update' && (String((user as any)?.status || '').toLowerCase() !== 'active') && (
                 <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} isApplicantFlow={true} applicantData={user as Guard} />
             )}
-            {activeTab === 'operations' && ((user as Guard)?.application_status === ApplicationStatus.ACTIVE || (user as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD) && (
+            {activeTab === 'operations' && (String((user as any)?.status || '').toLowerCase() === 'active') && (
                 <GuardOperations 
                     guard={user as Guard}
                     site={guardSite}
@@ -1204,7 +1323,7 @@ const App: React.FC = () => {
                     onRequestLeave={handleLeaveRequest}
                 />
             )}
-            {activeTab === 'notice-board' && (user as Guard)?.application_status !== ApplicationStatus.ACTIVE && (
+            {activeTab === 'notice-board' && (String((user as any)?.status || '').toLowerCase() !== 'active') && (
                 <NoticeBoard guard={user as Guard} announcements={filteredAnnouncements} />
             )}
         </>

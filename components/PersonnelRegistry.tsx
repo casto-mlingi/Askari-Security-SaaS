@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Profile, Company, UserRole, Guard, ApplicationStatus, Site, SecurityTraining } from '../types';
+import { Profile, Company, UserRole, Guard, Site, SecurityTraining } from '../types';
 import { api } from '../services/api';
 
 interface PersonnelRegistryProps {
@@ -292,9 +292,9 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                         <div className="flex justify-between items-center py-2 border-b border-slate-50">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</span>
                             <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border ${
-                                (guard.application_status === ApplicationStatus.ACTIVE || guard.application_status === ApplicationStatus.ACTIVE_GUARD) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                                (String((guard as any)?.status || '').toLowerCase() === 'active') ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
                                 'bg-slate-50 text-slate-500 border-slate-200'
-                            }`}>{guard.application_status?.replace('_', ' ')}</span>
+                            }`}>{String((guard as any)?.status || '').replace('_', ' ') || 'unknown'}</span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b border-slate-50">
                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Training</span>
@@ -323,7 +323,7 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
                     <button onClick={() => onViewGuardAudit(guard)} className="w-full py-4 bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-900 hover:text-white transition-all">
                         View Dossier
                     </button>
-                    {currentUser.role !== UserRole.SUPERVISOR && currentUser.role !== UserRole.SUPER_ADMIN && (guard.application_status !== ApplicationStatus.ACTIVE && guard.application_status !== ApplicationStatus.ACTIVE_GUARD) && (
+                    {currentUser.role !== UserRole.SUPERVISOR && currentUser.role !== UserRole.SUPER_ADMIN && (String((guard as any)?.status || '').toLowerCase() !== 'active') && (
                       <button
                         onClick={() => onOpenIntakeEditor?.(guard)}
                         className="w-full mt-3 py-4 bg-primary text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:opacity-90 transition-all"

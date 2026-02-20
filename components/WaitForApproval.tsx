@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Guard, ApplicationStatus, Profile, UserRole } from '../types';
+import { Guard, Profile, UserRole } from '../types';
 import { api } from '../services/api';
  
 interface WaitForApprovalProps {
@@ -12,10 +12,9 @@ interface WaitForApprovalProps {
 }
  
 const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, onOpenDossier, onApproved, onRequestedEdit, computeReadiness }) => {
-  const isSystemHR = currentUser?.role === UserRole.SYSTEM_HR;
+  const isPrivileged = currentUser?.role === UserRole.SYSTEM_HR || currentUser?.role === UserRole.SUPER_ADMIN;
   const applicants = useMemo(() => {
-    const statuses = new Set([ApplicationStatus.SUBMITTED_APPLICATION, ApplicationStatus.PENDING]);
-    return guards.filter(g => statuses.has(g.application_status as ApplicationStatus));
+    return guards.filter(g => String((g as any)?.status || '').toLowerCase() === 'submitted_application');
   }, [guards]);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedForEdit, setSelectedForEdit] = useState<Guard | null>(null);
@@ -24,9 +23,9 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
  
   const handleApprove = async (g: Guard) => {
     try {
-      const result = await api.patch(`/guards/${g.id}`, { application_status: ApplicationStatus.MARKET_POOL });
+      const result = await api.patch(`/guards/${g.id}`, { status: 'marketplace', company_id: null });
       if (result?.data) {
-        (window as any).showNotification?.('success', 'Applicant moved to Market Pool.');
+        (window as any).showNotification?.('success', 'Approved to Marketplace.');
       } else {
         (window as any).showNotification?.('warning', 'Offline: approval saved locally.');
       }
@@ -54,7 +53,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
         status: 'approved'
       });
       await api.patch(`/guards/${g.id}`, {
-        application_status: ApplicationStatus.DRAFT,
+        status: 'draft',
         dossier_data: {
           ...(g.dossier_data || {}),
           allow_edit: true,
@@ -139,7 +138,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
                 <div className="flex justify-between"><span>Skill: Fire Safety</span><span className="font-black text-slate-700">{Array.isArray(g.security_training) && g.security_training.includes('fire_safety') ? '✓' : 'NA'}</span></div>
               </div>
               {/* details moved to Applicant Disclosure (View Dossier) for a cleaner card */}
-              {isSystemHR && (
+              {isPrivileged && (
                 <div className="mt-6 space-y-3">
                   <div className="flex gap-3">
                     <button onClick={() => handleApprove(g)} className="flex-1 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg">

@@ -1,7 +1,7 @@
 
 
 import React, { useMemo } from 'react';
-import { Guard, ApplicationStatus } from '../types';
+import { Guard } from '../types';
 
 interface GuardProfileProps {
   guard: Guard;
@@ -81,11 +81,11 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
             <h2 className="text-2xl font-black uppercase tracking-tighter leading-none">{guard.full_name}</h2>
             <div className="flex items-center gap-3 mt-3">
               <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                guard.application_status === ApplicationStatus.BLACKLISTED 
-                  ? 'bg-red-50 text-red-600 border-red-100' 
+                (String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted')
+                  ? 'bg-red-50 text-red-600 border-red-100'
                   : 'bg-primary/20 text-primary-light border-white/10'
               }`}>
-                {guard.application_status === ApplicationStatus.BLACKLISTED ? 'Blacklisted' : 'Active Duty'}
+                {(String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted') ? 'Blacklisted' : 'Active Duty'}
               </span>
               <span className="text-[10px] font-mono text-white/40 font-bold">ID: {guard.id.slice(0, 8)}</span>
             </div>
@@ -104,9 +104,9 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           <div className="text-right">
             <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Status</p>
             <p className={`text-lg font-black uppercase tracking-tight ${
-              guard.application_status === ApplicationStatus.BLACKLISTED ? 'text-red-400' : 'text-white/90'
+              (String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted') ? 'text-red-400' : 'text-white/90'
             }`}>
-              {String(guard.application_status || 'active').replace('_',' ')}
+              {String((guard as any)?.status || 'active').replace('_',' ')}
             </p>
           </div>
         </div>
@@ -201,6 +201,58 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
               <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">No education history found.</p>
             )}
           </div>
+        </section>
+
+        {/* Incident History */}
+        <section>
+          <SectionHeader title="Incident History" icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3M12 2a10 10 0 100 20 10 10 0 000-20z" strokeWidth="2.5" /></svg>} />
+          {Array.isArray((guard as any).incidents) && (guard as any).incidents.length > 0 ? (
+            <div className="space-y-3">
+              {(guard as any).incidents.map((inc: any) => (
+                <div key={inc.id || inc.created_at} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{inc.incident_code || inc.code || 'INCIDENT'}</span>
+                    <span className="text-[10px] font-bold text-slate-500">{new Date(inc.created_at || inc.date || new Date()).toLocaleDateString()}</span>
+                  </div>
+                  <p className="mt-2 text-sm font-bold text-slate-700">{inc.formal_report || inc.description || 'No description'}</p>
+                  {inc.evidence_url && (
+                    <div className="mt-3 flex items-center gap-3">
+                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21.44 11.05l-8.49 8.49a5 5 0 01-7.07-7.07l8.49-8.49a3 3 0 114.24 4.24l-8.49 8.49a1 1 0 01-1.41-1.41l8.49-8.49" strokeWidth="2.5" /></svg>
+                      {/\.(png|jpe?g|gif|webp)$/i.test(String(inc.evidence_url)) ? (
+                        <img src={inc.evidence_url} alt="Evidence" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
+                      ) : (
+                        <a href={inc.evidence_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Download Attachment</a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : Array.isArray((guard as any).disciplinary_records) && (guard as any).disciplinary_records.length > 0 ? (
+            <div className="space-y-3">
+              {(guard as any).disciplinary_records.map((inc: any) => (
+                <div key={inc.id || inc.created_at} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{inc.incident_code || 'INCIDENT'}</span>
+                    <span className="text-[10px] font-bold text-slate-500">{new Date(inc.created_at || new Date()).toLocaleDateString()}</span>
+                  </div>
+                  <p className="mt-2 text-sm font-bold text-slate-700">{inc.formal_report || 'No description'}</p>
+                  {inc.evidence_url && (
+                    <div className="mt-3 flex items-center gap-3">
+                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21.44 11.05l-8.49 8.49a5 5 0 01-7.07-7.07l8.49-8.49a3 3 0 114.24 4.24l-8.49 8.49a1 1 0 01-1.41-1.41l8.49-8.49" strokeWidth="2.5" /></svg>
+                      {/\.(png|jpe?g|gif|webp)$/i.test(String(inc.evidence_url)) ? (
+                        <img src={inc.evidence_url} alt="Evidence" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
+                      ) : (
+                        <a href={inc.evidence_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Download Attachment</a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">No incidents recorded.</p>
+          )}
         </section>
 
         {/* Documents */}

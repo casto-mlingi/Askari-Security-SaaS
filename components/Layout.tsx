@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { UserRole, Profile, Guard, ApplicationStatus } from '../types';
+import React, { useEffect, useState } from 'react';
+import { UserRole, Profile, Guard } from '../types';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
+import { api } from '../services/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,17 +19,19 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, userRole, onLogout, companyName, currentUser, unreadAlertsCount, noticesPublicCount }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
-  const guardInactive = userRole === UserRole.GUARD && ((currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE && (currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD);
+    const s = String(((currentUser as any)?.status) || '').toLowerCase();
+    const guardInactive = userRole === UserRole.GUARD && s !== 'active';
     return guardInactive || (!!currentUser && 'role' in (currentUser as any) && String((currentUser as Profile)?.role || '').toLowerCase() === 'applicant');
   });
   const isGuard = userRole === UserRole.GUARD;
   const isSuperAdmin = userRole === UserRole.SUPER_ADMIN;
   const isApplicant = !!currentUser && 'role' in (currentUser as any) && String((currentUser as Profile)?.role || '').toLowerCase() === 'applicant';
   
+  
   // Define what the "Home" tab is for different roles to decide when to show the Back button
   // For a guard, if they are active, home is 'overview'. If applicant, 'application-status'.
   const homeTab = isGuard 
-    ? ((currentUser as Guard)?.application_status === ApplicationStatus.ACTIVE || (currentUser as Guard)?.application_status === ApplicationStatus.ACTIVE_GUARD) ? 'overview' : 'application-status' 
+    ? (String(((currentUser as any)?.status) || '').toLowerCase() === 'active') ? 'overview' : 'application-status' 
     : (isApplicant ? 'application-status' : 'overview');
     
   const showBackButton = activeTab !== homeTab;
@@ -40,7 +43,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
   return (
     <div className="flex h-screen bg-background overflow-hidden mobile-scroll">
       {/* Desktop Sidebar */}
-      {((!isGuard && userRole) || (isGuard && ((currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE && (currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD))) && (
+      {((!isGuard && userRole) || (isGuard && String(((currentUser as any)?.status) || '').toLowerCase() !== 'active')) && (
         <div className={`fixed lg:static inset-y-0 left-0 w-72 z-[110] transform transition-all duration-300 ease-out lg:translate-x-0 shadow-2xl lg:shadow-none ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}>
@@ -49,7 +52,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
       )}
 
       {/* Mobile Drawer Overlay */}
-      {isSidebarOpen && ((!isGuard && userRole) || (isGuard && ((currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE && (currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD))) && (
+      {isSidebarOpen && ((!isGuard && userRole) || (isGuard && String(((currentUser as any)?.status) || '').toLowerCase() !== 'active')) && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] lg:hidden animate-in fade-in duration-300"
           onClick={() => setIsSidebarOpen(false)}
@@ -59,7 +62,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
       <div className="flex flex-col flex-grow min-w-0">
         <header className="h-16 md:h-20 bg-white/95 backdrop-blur-xl border-b border-border-light flex items-center justify-between px-4 md:px-8 lg:px-12 shrink-0 z-20 shadow-sm">
           <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
-            {(!isGuard || (((currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE) && ((currentUser as Guard)?.application_status !== ApplicationStatus.ACTIVE_GUARD))) && (
+            {(!isGuard || (String(((currentUser as any)?.status) || '').toLowerCase() !== 'active')) && (
               <button
                 onClick={() => setIsSidebarOpen(true)}
                 className="lg:hidden p-3 text-text-secondary hover:text-text hover:bg-surface-secondary rounded-xl transition-all duration-200 active:scale-95 mobile-optimized"
@@ -99,6 +102,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
           </div>
 
           <div className="flex items-center gap-4 md:gap-8">
+            
             <div className="hidden md:flex flex-col items-end">
               <span className="text-xs font-semibold text-text-muted uppercase tracking-wider leading-none">Access Level</span>
               <span className="text-base font-bold text-text uppercase mt-1 tracking-tight">{userRole?.replace?.('_', ' ') || 'NONE'}</span>

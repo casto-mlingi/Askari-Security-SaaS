@@ -60,7 +60,7 @@ const SiteManager: React.FC<SiteManagerProps> = ({ sites, profiles, guards, onAd
   const [newSupervisorId, setNewSupervisorId] = useState<string | undefined>(undefined);
   const selectedSite = sites.find(s => s.id === selectedSiteId);
   const siteSupervisor = profiles.find(p => p.id === selectedSite?.supervisor_id);
-  const activeGuards = useMemo(() => guards.filter(g => g.application_status === 'active'), [guards]);
+  const activeGuards = useMemo(() => guards.filter(g => String((g as any)?.status || '').toLowerCase() === 'active'), [guards]);
 
   const unassignedSupervisors = useMemo(() => profiles.filter(p => p.role === UserRole.SUPERVISOR && !sites.some(s => s.supervisor_id === p.id)), [profiles, sites]);
   const assignableGuards = useMemo(() => activeGuards.filter(g => g.current_site_id !== selectedSiteId), [activeGuards, selectedSiteId]);

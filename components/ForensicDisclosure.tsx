@@ -12,8 +12,8 @@ interface ForensicDisclosureProps {
 const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes }) => {
   const isInitiallyBlacklisted = (() => {
     const score = typeof guard.performance_score === 'number' ? guard.performance_score : undefined;
-    const status = String(guard.application_status || '').toLowerCase();
-    return (typeof score === 'number' && score <= 5) || status === 'blacklisted';
+    const status = String((guard as any)?.status || '').toLowerCase();
+    return (typeof score === 'number' && score <= 5) || status === 'blacklisted' || status === 'blacklist';
   })();
   const [activeTab, setActiveTab] = useState<'forensic' | 'incident'>(isInitiallyBlacklisted ? 'incident' : 'forensic');
   const guardIncidents = useMemo(
@@ -33,9 +33,9 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
   }, [guard.dob]);
   const isBlacklisted = useMemo(() => {
     const score = typeof guard.performance_score === 'number' ? guard.performance_score : undefined;
-    const status = String(guard.application_status || '').toLowerCase();
-    return (typeof score === 'number' && score <= 5) || status === 'blacklisted';
-  }, [guard.performance_score, guard.application_status]);
+    const status = String((guard as any)?.status || '').toLowerCase();
+    return (typeof score === 'number' && score <= 5) || status === 'blacklisted' || status === 'blacklist';
+  }, [guard.performance_score, (guard as any)?.status]);
   const canViewDocs = useMemo(() => {
     try {
       const raw = localStorage.getItem('amini_user') || '';

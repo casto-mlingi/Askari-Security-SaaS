@@ -104,7 +104,12 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({ childr
   }>>([]);
 
   const showNotification = (type: NotificationType, message: string, duration = 5000) => {
-    const id = Date.now().toString();
+    let id: string;
+    try {
+      id = (crypto as any)?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    } catch {
+      id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
     setNotifications(prev => [...prev, { id, type, message, duration }]);
   };
 

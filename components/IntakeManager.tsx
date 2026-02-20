@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 // implying it's being treated as a named export.
 import { GuardWizard } from './GuardWizard';
 import BulkImport from './BulkImport';
-import { Guard, UserRole, ApplicationStatus, SecurityLevel, GuardEducationLevel, SecurityTraining } from '../types';
+import { Guard, UserRole, SecurityLevel, GuardEducationLevel, SecurityTraining } from '../types';
 import { api } from '../services/api';
 
 interface IntakeManagerProps {
@@ -28,10 +28,10 @@ const IntakeManager: React.FC<IntakeManagerProps> = ({ guards, userRole, onCompl
     : "Onboard New Guards via Manual or Bulk Entry";
 
   const canEdit = isApplicantFlow 
-    ? (applicantData?.application_status ? (applicantData?.application_status === ApplicationStatus.DRAFT || !!applicantData?.dossier_data?.allow_edit) : true) 
+    ? (String((applicantData as any)?.status || '').toLowerCase() === 'draft' || !!applicantData?.dossier_data?.allow_edit)
     : true;
 
-  const correctionMode = !!(isApplicantFlow && applicantData?.application_status === ApplicationStatus.DRAFT && applicantData?.dossier_data?.allow_edit);
+  const correctionMode = !!(isApplicantFlow && String((applicantData as any)?.status || '').toLowerCase() === 'draft' && applicantData?.dossier_data?.allow_edit);
   const latestPrivateNote = (() => {
     const notes = (applicantData?.dossier_data?.hr_private_notes || []) as any[];
     const last = Array.isArray(notes) && notes.length > 0 ? notes[notes.length - 1]?.note : '';

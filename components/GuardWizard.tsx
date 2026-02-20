@@ -66,7 +66,8 @@ const InputField: React.FC<{
     className?: string;
     rightElement?: React.ReactNode;
     disabled?: boolean;
-}> = ({ label, name, value, onChange, error, type = 'text', placeholder, className, rightElement, disabled }) => (
+    onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+}> = ({ label, name, value, onChange, error, type = 'text', placeholder, className, rightElement, disabled, onBlur }) => (
     <div className={`space-y-2 ${className}`}>
         <div className="flex justify-between items-end">
             <label htmlFor={name} className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{label}</label>
@@ -79,6 +80,7 @@ const InputField: React.FC<{
             placeholder={placeholder}
             value={value}
             onChange={onChange}
+            onBlur={onBlur}
             disabled={!!disabled}
             className={`w-full h-14 px-6 bg-slate-50 border-2 rounded-xl font-bold text-sm outline-none transition-all ${error ? 'border-red-300' : 'border-slate-100 focus:border-primary'} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         />
@@ -88,7 +90,7 @@ const InputField: React.FC<{
 
 const STORAGE_KEY_PREFIX = 'amini_guard_wizard_draft_';
 
-export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initialData?: Partial<Guard>, onComplete: (guard: Guard, isApplicantFlow?: boolean) => void, isApplicantFlow?: boolean, isReadOnly?: boolean }> = ({ initialData, onComplete, isApplicantFlow = false, isReadOnly: readOnlyProp }) => {
+export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initialData?: Partial<Guard>, onComplete: (guard: Guard, isApplicantFlow?: boolean) => void, isApplicantFlow?: boolean, isReadOnly?: boolean }> = ({ initialData, onComplete, isApplicantFlow = false, isReadOnly: readOnlyProp, userRole }) => {
   const STORAGE_KEY = initialData?.id ? `${STORAGE_KEY_PREFIX}${initialData.id}` : STORAGE_KEY_PREFIX + 'new';
   
   const mapGuardToWizardData = (g: Partial<Guard>): WizardData => {
@@ -171,7 +173,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       ? (initialData as any).dossier_data.security_training
       : (Array.isArray((initialData as any)?.security_training) ? (initialData as any).security_training : [])
   );
-  const [draftGuardId, setDraftGuardId] = useState<string | null>(initialData?.id ? String(initialData.id) : null);
+  
   
   
 
@@ -199,9 +201,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [profileScore, setProfileScore] = useState(0);
-  const [autoSavePaused, setAutoSavePaused] = useState(false);
-  const statusValue = ((initialData?.application_status as any) || '') as string;
-  const isLockedByStatus = !!statusValue && String(statusValue).toLowerCase() !== String(ApplicationStatus.DRAFT).toLowerCase();
+  
+  const statusValue = ((initialData as any)?.status || '') as string;
+  const isLockedByStatus = !!statusValue && String(statusValue).toLowerCase() !== 'draft';
   const isLocked = !!readOnlyProp || isLockedByStatus || hasSubmitted;
   const isReadOnly = isLocked;
 
@@ -229,6 +231,10 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     const lenOk = digits.length >= 10 && digits.length <= 12;
     return !!t && starts && lenOk;
   };
+
+  
+
+  // NIDA auto-fill removed: manual inputs only
 
   const fieldError = (name: string, value: string): string | undefined => {
     if (name === 'full_name' || name === 'dob' || name === 'gender' || name === 'next_of_kin_name') {
@@ -286,23 +292,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData?.id]);
 
-  // Auto-extract DOB from NIDA number
-  useEffect(() => {
-    const cleanNida = formData.nida_number.replace(/[^0-9]/g, '');
-    if (cleanNida.length >= 8) {
-      const yyyy = parseInt(cleanNida.substring(0, 4));
-      const mm = parseInt(cleanNida.substring(4, 6));
-      const dd = parseInt(cleanNida.substring(6, 8));
-
-      if (yyyy > 1900 && yyyy < new Date().getFullYear() && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-          const formattedDob = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-          if (formData.dob !== formattedDob) {
-              setFormData(prev => ({ ...prev, dob: formattedDob }));
-              setErrors(prev => { const newErrors = { ...prev }; delete newErrors.dob; return newErrors; });
-          }
-      }
-    }
-  }, [formData.nida_number]);
+  // DOB remains manual input; no auto-derivation from NIDA
 
   useEffect(() => {
     let s = 0;
@@ -326,26 +316,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     setProfileScore(Math.min(100, s));
   }, [formData]);
 
-  useEffect(() => {
-    if (isReadOnly) return;
-    const patchSkills = async () => {
-      try {
-        const guardId = await ensureGuardId();
-        if (!guardId) return;
-        if (autoSavePaused) return;
-        const res = await api.patch<Guard>(`/guards/${guardId}`, { security_training: securityTraining });
-        if (res?.error) {
-          setAutoSavePaused(true);
-          (window as any).showNotification?.('warning', 'Autosave paused (server error).');
-          return;
-        }
-        (window as any).showNotification?.('success', 'Skills updated.');
-      } catch {
-        (window as any).showNotification?.('warning', 'Offline: skills saved locally.');
-      }
-    };
-    if (Array.isArray(securityTraining)) patchSkills();
-  }, [securityTraining, isReadOnly, autoSavePaused]);
+  
   // Save draft on change
   useEffect(() => {
     if (!initialData) { 
@@ -400,26 +371,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     if (errors[field as string]) {
       setErrors(prev => { const newErrors = { ...prev }; delete newErrors[field as string]; return newErrors; });
     }
-    const patchDoc = async () => {
-      try {
-        const guardId = await ensureGuardId();
-        if (!guardId) return;
-        const payload: any = { [field]: url };
-        if (autoSavePaused) return;
-        const res = await api.patch<Guard>(`/guards/${guardId}`, payload);
-        if (res?.error) {
-          setAutoSavePaused(true);
-          (window as any).showNotification?.('warning', 'Autosave paused (server error).');
-          return;
-        }
-        if (res?.data) {
-          (window as any).showNotification?.('success', 'Document saved.');
-        }
-      } catch {
-        (window as any).showNotification?.('warning', 'Offline: document saved locally.');
-      }
-    };
-    if (!isReadOnly) patchDoc();
+    
   };
 
   const getStepErrors = (step: number): ValidationErrors => {
@@ -444,6 +396,17 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       if (!formData.police_clearance_url) newErrors.police_clearance_url = 'This field is required.';
       if (!formData.cv_url) newErrors.cv_url = 'This field is required.';
       if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
+    }
+    if (step === 3) {
+      formData.education_history.forEach((e, idx) => {
+        const s = (e as any)?.start_date;
+        const en = (e as any)?.end_date;
+        if (s && en) {
+          if (new Date(en).getTime() < new Date(s).getTime()) {
+            newErrors[`edu_end_${idx}`] = 'End date cannot be before start date.';
+          }
+        }
+      });
     }
     if (step === 4) {
       if (!formData.next_of_kin_name) newErrors.next_of_kin_name = 'This field is required.';
@@ -487,7 +450,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     const newErrors = getStepErrors(currentStep);
     setErrors(newErrors);
     if (Object.keys(newErrors).length === 0) {
-      autoSaveCurrentStep(true).then(() => proceed()).catch(() => proceed());
+      proceed();
     } else {
       const firstKey = Object.keys(newErrors)[0];
       const el = document.getElementById(firstKey);
@@ -559,7 +522,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           const emergency_contact_name = ecRaw ? ecRaw.replace(phoneMatch?.[1] || '', '').replace(/[,\-]$/, '').trim() : undefined;
           const guardPayload = {
               ...coreGuardData,
-              application_status: isApplicantFlow ? ApplicationStatus.SUBMITTED_APPLICATION : ApplicationStatus.INTERVIEWING,
+              status: isApplicantFlow ? 'submitted_application' : (userRole === UserRole.SUPER_ADMIN ? 'marketplace' : 'interviewing'),
               profile_score: profileScore,
               gender: coreGuardData.gender || undefined,
               physical_address: coreGuardData.physical_address || undefined,
@@ -585,33 +548,60 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                 boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
               },
               security_training: (securityTraining.length ? securityTraining : undefined),
-              ...(isApplicantFlow ? { company_id: null } : {}),
+              ...((isApplicantFlow || userRole === UserRole.SUPER_ADMIN) ? { company_id: null } : {}),
               // Ensure we don't accidentally send undefined for ID if it's new
           };
 
           let savedGuard: Guard | undefined;
+          let createdInOneShot = false;
           const hasTokenSubmit = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
           if (initialData?.id) {
             const patchUrl = hasTokenSubmit ? `/guards/${initialData.id}` : `/public/guards/${initialData.id}`;
-            const patchResult = await api.patch<Guard>(patchUrl, guardPayload);
+            const payload = guardPayload;
+            try { console.log("SENDING STATUS:", (payload as any)?.status); } catch {}
+            const patchResult = await api.patch<Guard>(patchUrl, payload);
             if (patchResult.error || !patchResult.data) {
               console.warn(patchResult.error || 'guard update warning');
             }
             savedGuard = patchResult.data as unknown as Guard;
           } else {
             const createUrl = hasTokenSubmit ? '/guards' : '/public/guards';
-            const createResult = await api.post<Guard>(createUrl, guardPayload);
+            const payload: any = {
+              ...guardPayload,
+              education_records: (education_history || []).map(e => ({
+                institution_name: (e as any).institution_name || null,
+                qualification: (e as any).qualification || null,
+                level: e.level,
+                year: (e as any).year || (e as any).graduation_year || null,
+                start_date: (e as any).start_date || null,
+                end_date: (e as any).end_date || null,
+                certificate_url: (e as any).certificate_url || null,
+                weapon_proficiency: (e as any).weapon_proficiency || null
+              })),
+              guarantors: (guarantors || []).map(g => ({
+                full_name: (g as any).name || (g as any).full_name || null,
+                occupation: (g as any).occupation || null,
+                phone: (g as any).phone || null,
+                relationship: (g as any).relationship || null,
+                id_copy_url: (g as any).id_copy_url || null,
+                guarantor_letter_url: (g as any).guarantor_letter_url || (g as any).intro_letter_url || null,
+                residence_letter_url: (g as any).residence_letter_url || null
+              }))
+            };
+            try { console.log("SENDING STATUS:", (payload as any)?.status); } catch {}
+            const createResult = await api.post<Guard>(createUrl, payload);
             if (createResult.error || !createResult.data) {
               console.warn(createResult.error || 'guard save warning');
             }
             savedGuard = createResult.data as unknown as Guard;
+            createdInOneShot = true;
           }
 
           let upsertsOk = true;
           try {
             const gid = String(savedGuard?.id || initialData?.id || '');
             if (gid) {
-              if (Array.isArray(formData.education_history)) {
+              if (!createdInOneShot && Array.isArray(formData.education_history)) {
                 const records = formData.education_history.filter(e => !!e.level || !!e.year || !!e.certificate_url);
                 if (records.length > 0) {
                   if (hasTokenSubmit) {
@@ -629,7 +619,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                   }
                 }
               }
-              if (Array.isArray(formData.guarantors)) {
+              if (!createdInOneShot && Array.isArray(formData.guarantors)) {
                 const guarantors = formData.guarantors.filter(g => !!g.name || !!g.phone || !!g.relationship || !!(g as any).intro_letter_url || !!(g as any).id_copy_url);
                 if (guarantors.length > 0) {
                   if (hasTokenSubmit) {
@@ -661,6 +651,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
             if (idToRefresh) {
               const res = await guardService.getGuardById(idToRefresh);
               if (res.data) {
+                try { console.log('AFTER SUBMIT STATUS:', (res.data as any)?.status); } catch {}
                 const wd = mapGuardToWizardData(res.data);
                 setFormData(prev => safeMergeWizardData(prev, wd));
                 setSecurityTraining(Array.isArray((res.data as any).security_training) ? (res.data as any).security_training : []);
@@ -702,7 +693,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           ...prev,
           education_history: [
               ...prev.education_history, 
-              { id: `temp-${Date.now()}`, guard_id: '', level: 'secondary', institution_name: '', year: '', certificate_url: '' }
+              { id: `temp-${Date.now()}`, guard_id: '', level: 'secondary', institution_name: '', year: '', start_date: '', end_date: '', certificate_url: '' } as any
           ]
       }));
   };
@@ -711,6 +702,21 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       const updated = [...formData.education_history];
       updated[index] = { ...updated[index], [field]: value };
       setFormData(prev => ({ ...prev, education_history: updated }));
+      if (field === 'start_date' || field === 'end_date') {
+        const s = (updated[index] as any)?.start_date || '';
+        const e = (updated[index] as any)?.end_date || '';
+        const hasBoth = !!s && !!e;
+        setErrors(prev => {
+          const next = { ...prev };
+          const key = `edu_end_${index}`;
+          if (hasBoth && new Date(e).getTime() < new Date(s).getTime()) {
+            next[key] = 'End date cannot be before start date.';
+          } else {
+            if (next[key]) delete next[key];
+          }
+          return next;
+        });
+      }
   };
   
   const removeEducation = (index: number) => {
@@ -719,162 +725,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       setFormData(prev => ({ ...prev, education_history: updated }));
   };
 
-  const ensureGuardId = async (): Promise<string | null> => {
-      if (initialData?.id) return String(initialData.id);
-      if (draftGuardId) return draftGuardId;
-      try {
-        const hasToken = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
-        const payload: Partial<Guard> = {
-          full_name: formData.full_name,
-          nida_number: formData.nida_number,
-          phone: formData.phone,
-          dob: formData.dob,
-          gender: formData.gender || undefined,
-          application_status: ApplicationStatus.DRAFT,
-          dossier_data: {
-            ...(initialData as any)?.dossier_data,
-            physical_address: formData.physical_address || '',
-            emergency_contact: formData.emergency_contact || '',
-            uniform_shirt_size: (formData as any).uniform_shirt_size || '',
-            uniform_boot_size: (formData as any).uniform_boot_size || ''
-          }
-        } as any;
-        const res = hasToken
-          ? await guardService.createGuard(payload)
-          : await api.post<Guard>('/public/guards', payload);
-        const g = res.data as Guard | undefined;
-        if (g?.id) {
-          setDraftGuardId(String(g.id));
-          return String(g.id);
-        }
-      } catch {}
-      return null;
-  };
+  
 
-  const autoSaveCurrentStep = async (force: boolean = false): Promise<void> => {
-      const guardId = await ensureGuardId();
-      if (!guardId) return;
-      try {
-        const hasToken = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
-        if (autoSavePaused && !force) return;
-        if (currentStep === 1) {
-          const payload: any = {
-            full_name: formData.full_name,
-            nida_number: formData.nida_number,
-            phone: formData.phone,
-            dob: formData.dob,
-            gender: formData.gender || undefined,
-            physical_address: formData.physical_address || undefined,
-            emergency_contact: formData.emergency_contact || undefined,
-            is_armed: formData.is_armed || false,
-            bank_account_number: formData.bank_account_number || undefined,
-            previous_experience: formData.previous_experience || false,
-            nssf_number: formData.nssf_number || undefined,
-            kin_name: formData.next_of_kin_name,
-            kin_phone: formData.next_of_kin_phone,
-            kin_relationship: formData.next_of_kin_relationship,
-            security_training: securityTraining.length ? securityTraining : undefined,
-            dossier_data: {
-              ...(initialData as any)?.dossier_data,
-              street: formData.street || (initialData as any)?.dossier_data?.street || '',
-              ward: formData.ward || (initialData as any)?.dossier_data?.ward || '',
-              district: formData.district || (initialData as any)?.dossier_data?.district || '',
-              uniform_shirt_size: (formData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.uniform_shirt_size || '',
-              uniform_boot_size: (formData as any).uniform_boot_size || (initialData as any)?.dossier_data?.uniform_boot_size || '',
-              shirt_size: (formData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.shirt_size || '',
-              boot_size: (formData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
-            }
-          };
-          const url1 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
-          const resPatch = await api.patch<Guard>(url1, payload);
-          if (resPatch.error && String(resPatch.error).toLowerCase().includes('forbidden')) {
-            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
-            return;
-          }
-          if (resPatch.error) {
-            setAutoSavePaused(true);
-            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
-            return;
-          }
-        } else if (currentStep === 2) {
-          const payload: any = {
-            nida_front_url: formData.nida_front_url || '',
-            birth_cert_url: formData.birth_cert_url || '',
-            application_letter_url: formData.application_letter_url || '',
-            residence_letter_url: formData.residence_letter_url || '',
-            medical_report_url: formData.medical_report_url || '',
-            police_clearance_url: formData.police_clearance_url || '',
-            cv_url: formData.cv_url || '',
-            passport_photo_url: formData.passport_photo_url || '',
-            previous_employer_letter_url: formData.previous_employer_letter_url || ''
-          };
-          const url2 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
-          const resPatch2 = await api.patch<Guard>(url2, payload);
-          if (resPatch2.error && String(resPatch2.error).toLowerCase().includes('forbidden')) {
-            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
-            return;
-          }
-          if (resPatch2.error) {
-            setAutoSavePaused(true);
-            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
-            return;
-          }
-        } else if (currentStep === 3) {
-          const url3 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
-          const resPatch3 = await api.patch<Guard>(url3, { profile_score: profileScore });
-          if (resPatch3.error && String(resPatch3.error).toLowerCase().includes('forbidden')) {
-            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
-            return;
-          }
-          if (resPatch3.error) {
-            setAutoSavePaused(true);
-            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
-            return;
-          }
-        } else if (currentStep === 4) {
-          const payload: any = {
-            kin_name: formData.next_of_kin_name,
-            kin_phone: formData.next_of_kin_phone,
-            kin_relationship: formData.next_of_kin_relationship
-          };
-          const url4 = hasToken ? `/guards/${guardId}` : `/public/guards/${guardId}`;
-          const resPatch4 = await api.patch<Guard>(url4, payload);
-          if (resPatch4.error && String(resPatch4.error).toLowerCase().includes('forbidden')) {
-            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to continue.');
-            return;
-          }
-          if (resPatch4.error) {
-            setAutoSavePaused(true);
-            (window as any).showNotification?.('warning', 'Autosave paused (server error).');
-            return;
-          }
-        }
-        try {
-          if (hasToken) {
-            const res = await guardService.getGuardById(guardId);
-            if (res.data) {
-              const wd = mapGuardToWizardData(res.data);
-              setFormData(prev => safeMergeWizardData(prev, wd));
-              setSecurityTraining(
-                Array.isArray((res.data as any)?.dossier_data?.security_training)
-                  ? (res.data as any).dossier_data.security_training
-                  : (Array.isArray((res.data as any)?.security_training) ? (res.data as any).security_training : [])
-              );
-            }
-          } else {
-            const res = await api.get<Guard>(`/public/guards/${guardId}`);
-            if (!res.error && res.data) {
-              const wd = mapGuardToWizardData(res.data as Guard);
-              setFormData(prev => safeMergeWizardData(prev, wd));
-              setSecurityTraining(Array.isArray((res.data as any).security_training) ? (res.data as any).security_training : []);
-            }
-          }
-        } catch {}
-        (window as any).showNotification?.('success', hasToken ? 'Auto-saved.' : 'Saved as draft (no login)');
-      } catch {
-        (window as any).showNotification?.('warning', 'Offline: autosave saved locally.');
-      }
-  };
+  
   const addGuarantor = () => {
       if (formData.guarantors.length >= 3) return;
       setFormData(prev => ({
@@ -935,7 +788,15 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <InputField label="Full Official Name" name="full_name" value={formData.full_name} onChange={handleChange} error={errors.full_name} placeholder="AS PER NIDA CARD" disabled={isReadOnly} />
-                        <InputField label="NIDA Number" name="nida_number" value={formData.nida_number} onChange={handleChange} error={errors.nida_number} placeholder="19900101-..." disabled={isReadOnly} />
+                        <InputField
+                          label="NIDA Number"
+                          name="nida_number"
+                          value={formData.nida_number}
+                          onChange={handleChange}
+                          error={errors.nida_number}
+                          placeholder="19900101-..."
+                          disabled={isReadOnly}
+                        />
                         <InputField label="Mobile Phone" name="phone" value={formData.phone} onChange={handleChange} error={errors.phone} placeholder="+255..." disabled={isReadOnly} />
                         <InputField label="Date of Birth" name="dob" type="date" value={formData.dob} onChange={handleChange} error={errors.dob} disabled={isReadOnly} />
                         <div className="space-y-2">
@@ -1090,7 +951,30 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                                         </select>
                                      </div>
                                      <InputField label="Institution/School Name" name={`edu_institution_${index}`} value={(edu as any).institution_name || ''} onChange={(e) => updateEducation(index, 'institution_name', e.target.value)} placeholder="Enter institution name" disabled={isReadOnly} />
-                                     <InputField label="Completion Year" name={`edu_year_${index}`} value={edu.year} onChange={(e) => updateEducation(index, 'year', e.target.value)} placeholder="YYYY" disabled={isReadOnly} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                     <InputField 
+                                        label="Start Date" 
+                                        name={`edu_start_${index}`} 
+                                        value={(edu as any).start_date || ''} 
+                                        onChange={(e) => updateEducation(index, 'start_date' as any, (e.target as HTMLInputElement).value)} 
+                                        type="date" 
+                                        placeholder="YYYY-MM-DD" 
+                                        disabled={isReadOnly} 
+                                     />
+                                     <InputField 
+                                        label="End Date" 
+                                        name={`edu_end_${index}`} 
+                                        value={(edu as any).end_date || ''} 
+                                        onChange={(e) => updateEducation(index, 'end_date' as any, (e.target as HTMLInputElement).value)} 
+                                        error={errors[`edu_end_${index}`]}
+                                        type="date" 
+                                        placeholder="YYYY-MM-DD" 
+                                        disabled={isReadOnly} 
+                                     />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                     <InputField label="Completion Year" name={`edu_year_${index}`} value={edu.year} onChange={(e) => updateEducation(index, 'year', e.target.value.replace(/[^0-9]/g, '').slice(0,4))} placeholder="YYYY" disabled={isReadOnly} />
                                 </div>
                                 <FileUploader label="Certificate Scan" fileUrl={edu.certificate_url} onUpload={(url) => updateEducation(index, 'certificate_url', url)} onRemove={() => updateEducation(index, 'certificate_url', '')} className="h-28" disabled={isReadOnly} />
                             </div>
@@ -1157,32 +1041,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
 
   const handleSave = async () => {
       try {
-          const { guarantors, education_history, ...coreGuardData } = formData;
-          const payload = {
-              ...coreGuardData,
-              gender: coreGuardData.gender || undefined,
-              previous_experience: coreGuardData.previous_experience || false,
-              previous_employer_letter_url: coreGuardData.previous_employer_letter_url || undefined,
-              kin_name: coreGuardData.next_of_kin_name || (initialData as any)?.kin_name || undefined,
-              kin_phone: coreGuardData.next_of_kin_phone || (initialData as any)?.kin_phone || undefined,
-              kin_relationship: coreGuardData.next_of_kin_relationship || (initialData as any)?.kin_relationship || undefined,
-              dossier_data: {
-                ...(initialData as any)?.dossier_data,
-                physical_address: coreGuardData.physical_address || (initialData as any)?.dossier_data?.physical_address || '',
-                street: coreGuardData.street || (initialData as any)?.dossier_data?.street || '',
-                ward: coreGuardData.ward || (initialData as any)?.dossier_data?.ward || '',
-                district: coreGuardData.district || (initialData as any)?.dossier_data?.district || '',
-                emergency_contact: coreGuardData.emergency_contact || (initialData as any)?.dossier_data?.emergency_contact || '',
-              uniform_shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.uniform_shirt_size || '',
-              uniform_boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.uniform_boot_size || '',
-              shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.shirt_size || '',
-              boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
-              }
-          };
-          if (initialData?.id) {
-            await api.patch<Guard>(`/guards/${initialData.id}`, payload);
-            (window as any).showNotification?.('success', 'Changes saved.');
-          }
+          const dataToSave = { ...formData };
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave)); } catch {}
+          (window as any).showNotification?.('success', 'Saved locally. Submit to create record.');
       } catch (e) {
           (window as any).showNotification?.('error', 'Failed to save changes.');
       }
@@ -1228,6 +1089,52 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
             )}
             <button
                 type="button"
+                onClick={() => {
+                  setFormData({
+                    full_name: '',
+                    nida_number: '',
+                    phone: '',
+                    dob: '',
+                    gender: '',
+                    application_letter_url: '',
+                    nida_front_url: '',
+                    birth_cert_url: '',
+                    medical_report_url: '',
+                    police_clearance_url: '',
+                    cv_url: '',
+                    passport_photo_url: '',
+                    guarantors: [],
+                    next_of_kin_name: '',
+                    next_of_kin_phone: '',
+                    next_of_kin_relationship: '',
+                    residence_letter_url: '',
+                    education_history: [],
+                    is_armed: false,
+                    residence_lat: undefined,
+                    residence_lng: undefined,
+                    bank_account_number: '',
+                    previous_experience: false,
+                    nssf_number: '',
+                    previous_employer_letter_url: '',
+                    physical_address: '',
+                    street: '',
+                    ward: '',
+                    district: '',
+                    emergency_contact: '',
+                    uniform_shirt_size: '',
+                    uniform_boot_size: ''
+                  } as any);
+                  setErrors({});
+                  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+                  (window as any).showNotification?.('success', 'Form cleared');
+                }}
+                className="px-8 py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all"
+                disabled={isLocked}
+            >
+                Clear
+            </button>
+            <button
+                type="button"
                 onClick={handleSave}
                 className="px-8 py-4 bg-white border border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 transition-all"
                 disabled={isLocked}
@@ -1242,7 +1149,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
               <button
                   type={currentStep === 4 ? "submit" : "button"}
                   onClick={currentStep === 4 ? handleSubmit : handleNext}
-                  disabled={isLocked || isSubmitting}
+                  disabled={isLocked || (currentStep === 4 ? isSubmitting : Object.keys(getStepErrors(currentStep)).length > 0)}
                   className="relative group flex-grow py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:from-primary hover:via-primary-dark hover:to-primary-light transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                   {isSubmitting ? (

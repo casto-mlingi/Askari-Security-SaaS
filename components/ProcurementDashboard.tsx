@@ -109,11 +109,15 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       let logsData: any[] = [];
       try {
         const TENANT_COMPANY_ID = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
-        let effectiveCompanyId = TENANT_COMPANY_ID;
-        try {
-          const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
-          effectiveCompanyId = parsed?.company_id || TENANT_COMPANY_ID;
-        } catch {}
+        let effectiveCompanyId = companyId || TENANT_COMPANY_ID;
+        if (!companyId) {
+          try {
+            const parsed = JSON.parse(localStorage.getItem('amini_user') || 'null');
+            effectiveCompanyId = parsed?.company_id || TENANT_COMPANY_ID;
+          } catch {
+            effectiveCompanyId = TENANT_COMPANY_ID;
+          }
+        }
         const itemsRes = await api.get('/inventory/items?company_id=' + effectiveCompanyId);
         itemsFinal = (itemsRes.data as any[]) || [];
         const custodyRes = await api.get('/inventory/custody?company_id=' + effectiveCompanyId);
@@ -212,7 +216,10 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
     }
   }, [tab, logs, guards, items]);
   const eligibleGuards = useMemo(() => {
-    return guards.filter(g => g.application_status === 'hired' || g.application_status === 'active_guard');
+    return guards.filter(g => {
+      const s = String((g as any)?.status || '').toLowerCase();
+      return s === 'interviewing' || s === 'active';
+    });
   }, [guards]);
   const hiredCount = useMemo(() => eligibleGuards.length, [eligibleGuards]);
   useEffect(() => {
@@ -310,8 +317,9 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
     }
     try {
       const selectedGuard = guards.find(g => g.id === issueGuardId);
-      if (selectedGuard?.application_status === 'hired') {
-        await api.patch('/guards/' + issueGuardId, { application_status: 'active_guard' });
+      const s = String((selectedGuard as any)?.status || '').toLowerCase();
+      if (s === 'interviewing') {
+        await api.patch('/guards/' + issueGuardId, { status: 'active' });
         (window as any).showNotification?.('success', 'Tools issued and guard activated.');
       } else {
         (window as any).showNotification?.('success', 'Tools issued.');
@@ -587,7 +595,8 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
               <select id="issue-guard" name="issueGuard" value={issueGuardId} onChange={e => setIssueGuardId(e.target.value)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl">
                 <option value="">Select Guard</option>
                 {eligibleGuards.map(g => {
-                  const statusLabel = g.application_status === 'hired' ? 'Hired' : (g.application_status === 'active_guard' ? 'Active' : g.application_status);
+                  const s = String((g as any)?.status || '').toLowerCase();
+                  const statusLabel = s === 'active' ? 'Active' : (s === 'interviewing' ? 'Interviewing' : s || 'unknown');
                   return <option key={g.id} value={g.id}>{g.full_name} ({statusLabel})</option>;
                 })}
               </select>

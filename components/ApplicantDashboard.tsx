@@ -140,29 +140,15 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
     const single = (guard?.dossier_data as any)?.private_note || '';
     return last || single || '';
   }, [guard?.dossier_data]);
-  // 1. Define the logical progression of your application workflow
-  const statusOrder = [
-    ApplicationStatus.DRAFT,
-    ApplicationStatus.SUBMITTED_APPLICATION,
-    ApplicationStatus.INTERVIEWING,
-    ApplicationStatus.MARKET_POOL
-  ];
+  const statusOrderStr = ['draft', 'submitted_application', 'interviewing', 'marketplace'];
 
   // 2. Helper to determine the visual state of each step
   const getStepStatus = (stepTargetStatus: ApplicationStatus) => {
-    // If rejected/blacklisted, show error state
-    if (guard?.application_status === ApplicationStatus.REJECTED || 
-        guard?.application_status === ApplicationStatus.BLACKLISTED || 
-        guard?.application_status === ApplicationStatus.DISQUALIFIED) {
-        return 'error'; 
-    }
-
-    const currentIdx = statusOrder.indexOf(guard?.application_status as ApplicationStatus);
-    const targetIdx = statusOrder.indexOf(stepTargetStatus);
-
-    // Safety: If status isn't in our list (e.g. 'ON_LEAVE'), default to pending
+    const currentStatus = String((freshGuard || guard)?.status || '').toLowerCase();
+    if (currentStatus === 'blacklist' || currentStatus === 'blacklisted') return 'error';
+    const currentIdx = statusOrderStr.indexOf(currentStatus);
+    const targetIdx = statusOrderStr.indexOf(String(stepTargetStatus));
     if (currentIdx === -1) return 'pending';
-
     if (currentIdx > targetIdx) return 'complete';
     if (currentIdx === targetIdx) return 'current';
     return 'pending';
@@ -187,22 +173,21 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
     {
       id: 'selected',
       label: 'Selected (Waiting Deployment)',
-      status: getStepStatus(ApplicationStatus.MARKET_POOL)
+      status: getStepStatus(ApplicationStatus.MARKETPLACE)
     },
   ];
 
   const statusColors: Record<string, string> = {
-    [ApplicationStatus.DRAFT]: 'bg-gray-100 text-gray-700 border-gray-200',
-    [ApplicationStatus.SUBMITTED_APPLICATION]: 'bg-blue-100 text-blue-700 border-blue-200',
-    [ApplicationStatus.MARKET_POOL]: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-    [ApplicationStatus.INTERVIEWING]: 'bg-amber-100 text-amber-700 border-amber-200',
-    [ApplicationStatus.REJECTED]: 'bg-red-100 text-red-700 border-red-200',
-    [ApplicationStatus.BLACKLISTED]: 'bg-slate-900 text-white border-slate-900',
-    [ApplicationStatus.DISQUALIFIED]: 'bg-red-50 text-red-600 border-red-100',
+    draft: 'bg-gray-100 text-gray-700 border-gray-200',
+    submitted_application: 'bg-blue-100 text-blue-700 border-blue-200',
+    marketplace: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    interviewing: 'bg-amber-100 text-amber-700 border-amber-200',
+    active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    blacklist: 'bg-slate-900 text-white border-slate-900',
   };
 
   const isSara = (guard?.email || '').toLowerCase() === 'sara@amini.co.tz';
-  const canContinue = (guard?.application_status !== ApplicationStatus.ACTIVE && guard?.application_status !== ApplicationStatus.ACTIVE_GUARD);
+  const canContinue = String((freshGuard || guard)?.status || '').toLowerCase() !== 'active';
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-500 pb-24">
@@ -215,7 +200,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
           {verifying ? 'Verifying…' : 'Debug Verify API'}
         </button>
       </div>
-      {guard?.application_status === ApplicationStatus.SUBMITTED_APPLICATION && (
+      {String((freshGuard || guard)?.status || '').toLowerCase() === 'submitted_application' && (
         <div className="bg-gradient-to-br from-primary to-slate-900 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl border border-white/10">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
@@ -258,8 +243,8 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
               <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Your Application</p>
               <h1 className="text-2xl md:text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">{guard?.full_name}</h1>
               <div className="flex items-center gap-3 mt-4">
-                <span className={`px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest border shadow-sm ${statusColors[guard?.application_status as any] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                  {guard?.application_status?.replace(/_/g, ' ') || 'UNKNOWN'}
+                <span className={`px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest border shadow-sm ${statusColors[String((freshGuard || guard)?.status || '').toLowerCase()] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                  {String((freshGuard || guard)?.status || 'UNKNOWN').replace(/_/g, ' ')}
                 </span>
                 <span className="text-xs font-mono font-bold text-slate-400 uppercase">ID: {guard?.id?.slice(0, 8)}</span>
               </div>
@@ -391,7 +376,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
       )}
       
       
-      {guard.application_status !== ApplicationStatus.DRAFT && (
+      {String((freshGuard || guard)?.status || '').toLowerCase() !== 'draft' && (
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 md:p-12 shadow-sm space-y-4">
           <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Request CV Edit</h3>
           <p className="text-xs text-slate-500">You cannot edit your application directly. Submit a request to HR for permission to resubmit.</p>

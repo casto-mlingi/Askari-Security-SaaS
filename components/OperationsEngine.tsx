@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Guard, ApplicationStatus, Site, DisciplinaryCode, IncidentReport, Profile, Company } from '../types';
+import { Guard, Site, DisciplinaryCode, IncidentReport, Profile, Company } from '../types';
 import FileUploader from './FileUploader';
 import { analyzeIncident } from '../services/ai';
 import { api } from '../services/api';
@@ -61,7 +61,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
 
   const activeGuards = useMemo(() => {
     const base = guards
-      .filter(g => g.application_status === ApplicationStatus.ACTIVE || g.application_status === ApplicationStatus.ACTIVE_GUARD)
+      .filter(g => String((g as any)?.status || '').toLowerCase() === 'active')
       .filter(g => (typeof g.performance_score === 'number' ? g.performance_score : 0) > 5);
     if (currentUser?.role === 'supervisor') {
       const allowedSiteIds = new Set(sites.filter(s => s.supervisor_id === currentUser.id).map(s => s.id));
