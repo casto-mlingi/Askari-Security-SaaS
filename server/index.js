@@ -15,6 +15,30 @@ try {
   if (fs.existsSync(p)) dotenv.config({ path: p });
 } catch {}
 
+// Auth config and middleware moved to top to avoid ReferenceErrors
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const requireAuth = (req, res, next) => {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'unauthorized' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    if (token && token.startsWith('ey-mock-token')) {
+      req.user = {
+        sub: 'moshi-dev',
+        role: 'supervisor',
+        email: 'moshi@anasel.co.tz',
+        company_id: 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b'
+      };
+      return next();
+    }
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+};
+
 const app = express();
 const allowedOrigins = new Set([
   'http://localhost:5173',
@@ -69,7 +93,6 @@ const pool = process.env.DATABASE_URL
         : undefined
     });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const ALERT_EMAIL = process.env.ALERT_EMAIL || 'moshi@anasul.co.tz';
 
 let mailTransport = null;
@@ -84,34 +107,7 @@ try {
   }
 } catch {}
 
-app.get('/api/settings/brela', requireAuth, async (req, res) => {
-  try {
-    const { rows } = await pool.query("SELECT value FROM system_settings WHERE key = 'brela_verification_enabled' LIMIT 1");
-    const val = String(rows?.[0]?.value || 'false').toLowerCase() === 'true';
-    res.status(200).json({ key: 'brela_verification_enabled', value: val });
-  } catch (e) {
-    res.status(200).json({ key: 'brela_verification_enabled', value: false });
-  }
-});
-
-app.post('/api/settings/brela', requireAuth, async (req, res) => {
-  try {
-    const actor = req.user || {};
-    const role = String(actor?.role || '').toLowerCase();
-    const allowed = role === 'super_admin' || role === 'company_admin' || role === 'system_hr';
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-    const b = req.body || {};
-    const raw = (b.enabled != null ? b.enabled : b.value);
-    const val = (String(raw) === 'true' || raw === true) ? 'true' : 'false';
-    await pool.query(
-      "INSERT INTO system_settings (key, value, updated_at) VALUES ('brela_verification_enabled', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
-      [val]
-    );
-    res.status(200).json({ key: 'brela_verification_enabled', value: val === 'true' });
-  } catch (e) {
-    res.status(500).json({ error: 'error' });
-  }
-});
+// Removed obsolete BRELA settings endpoints
 
 // --- File Uploads: ensure uploads directory and configure multer ---
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -300,28 +296,6 @@ Current Score: ${currentScore}`;
   }
 }
 
-const requireAuth = (req, res, next) => {
-  const header = req.headers['authorization'] || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'unauthorized' });
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch {
-    if (token && token.startsWith('ey-mock-token')) {
-      req.user = {
-        sub: 'moshi-dev',
-        role: 'supervisor',
-        email: 'moshi@anasel.co.tz',
-        company_id: 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b'
-      };
-      return next();
-    }
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-};
-
 app.use((req, _res, next) => {
   const p = req.path || '';
   const needsRewrite = !p.startsWith('/api') &&
@@ -350,34 +324,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   }
 });
 
-app.get('/api/settings/brela', requireAuth, async (req, res) => {
-  try {
-    const { rows } = await pool.query("SELECT value FROM system_settings WHERE key = 'brela_verification_enabled' LIMIT 1");
-    const val = String(rows?.[0]?.value || 'false').toLowerCase() === 'true';
-    res.status(200).json({ key: 'brela_verification_enabled', value: val });
-  } catch (e) {
-    res.status(200).json({ key: 'brela_verification_enabled', value: false });
-  }
-});
-
-app.post('/api/settings/brela', requireAuth, async (req, res) => {
-  try {
-    const actor = req.user || {};
-    const role = String(actor?.role || '').toLowerCase();
-    const allowed = role === 'super_admin' || role === 'company_admin' || role === 'system_hr';
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-    const b = req.body || {};
-    const raw = (b.enabled != null ? b.enabled : b.value);
-    const val = (String(raw) === 'true' || raw === true) ? 'true' : 'false';
-    await pool.query(
-      "INSERT INTO system_settings (key, value, updated_at) VALUES ('brela_verification_enabled', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
-      [val]
-    );
-    res.status(200).json({ key: 'brela_verification_enabled', value: val === 'true' });
-  } catch (e) {
-    res.status(500).json({ error: 'error' });
-  }
-});
+// BRELA endpoints removed
 
 // --- Education Records subresource ---
 app.get('/api/guards/:id/education_records', requireAuth, async (req, res) => {
