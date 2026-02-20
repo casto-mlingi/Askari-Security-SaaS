@@ -1,7 +1,7 @@
+import { getApiBase } from './api';
+
 export const uploadToAmini = async (file: File): Promise<string> => {
-  const env: any = (import.meta as any)?.env || {};
-  const apiBase = env?.VITE_API_BASE_URL || '/api';
-  const endpoint = env?.VITE_UPLOAD_URL || `${apiBase}/upload`;
+  const endpoint = `${getApiBase().replace(/\/+$/, '')}/upload`;
 
   const token = localStorage.getItem('amini_auth_token');
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
