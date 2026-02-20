@@ -1,6 +1,7 @@
 import { ApiResponse } from '../types';
 
-const API_BASE_URL: string = 'http://localhost:3001/api';
+const API_URL: string = (import.meta as any)?.env?.VITE_API_URL || 'http://45.88.188.129:3001';
+const API_BASE_URL: string = `${String(API_URL).replace(/\/+$/, '')}/api`;
 
 export const getApiBase = () => API_BASE_URL;
 
@@ -111,4 +112,3 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
-
