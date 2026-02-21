@@ -102,6 +102,8 @@ export interface EducationRecord {
   level: EducationLevel;
   institution_name?: string;
   year: string;
+  qualification_level?: EducationLevel;
+  completion_year?: string;
   start_date?: string;
   end_date?: string;
   certificate_url?: string;

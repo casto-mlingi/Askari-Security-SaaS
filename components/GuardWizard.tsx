@@ -24,7 +24,7 @@ interface WizardData {
   residence_lat?: number;
   residence_lng?: number;
   residence_letter_url: string;
-  education_history: EducationRecord[];
+  education_records: EducationRecord[];
   is_armed: boolean;
   bank_account_number?: string;
   previous_experience: boolean;
@@ -115,7 +115,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       next_of_kin_phone: (g as any)?.kin_phone || g.next_of_kin_phone || '',
       next_of_kin_relationship: (g as any)?.kin_relationship || g.next_of_kin_relationship || '',
       residence_letter_url: g.residence_letter_url || '',
-      education_history: edus as EducationRecord[],
+      education_records: edus as EducationRecord[],
       is_armed: !!g.is_armed,
       residence_lat: g.residence_lat,
       residence_lng: g.residence_lng,
@@ -151,7 +151,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     next_of_kin_phone: initialData?.next_of_kin_phone || '',
     next_of_kin_relationship: initialData?.next_of_kin_relationship || '',
     residence_letter_url: initialData?.residence_letter_url || '',
-    education_history: initialData?.education_history || [],
+    education_records: (initialData as any)?.education_records || initialData?.education_history || [],
     is_armed: initialData?.is_armed || false,
     residence_lat: initialData?.residence_lat,
     residence_lng: initialData?.residence_lng,
@@ -311,7 +311,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     s += formData.previous_experience ? 5 : 0;
     s += (formData.previous_experience && formData.nssf_number) ? 10 : 0;
     s += formData.bank_account_number ? 5 : 0;
-    s += formData.education_history.length ? 5 : 0;
+    s += formData.education_records.length ? 5 : 0;
     s += formData.guarantors.length ? 5 : 0;
     setProfileScore(Math.min(100, s));
   }, [formData]);
@@ -330,9 +330,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                 if (isHeavy(dataToSave.birth_cert_url)) dataToSave.birth_cert_url = '';
                 if (isHeavy(dataToSave.application_letter_url)) dataToSave.application_letter_url = '';
                 if (isHeavy(dataToSave.residence_letter_url)) dataToSave.residence_letter_url = '';
-                dataToSave.education_history = dataToSave.education_history.map(e => ({
+                dataToSave.education_records = (dataToSave as any).education_records?.map((e: any) => ({
                     ...e, certificate_url: isHeavy(e.certificate_url) ? '' : e.certificate_url
-                }));
+                })) || [];
                 dataToSave.guarantors = dataToSave.guarantors.map(g => ({
                     ...g,
                     intro_letter_url: isHeavy((g as any).intro_letter_url) ? '' : (g as any).intro_letter_url,
@@ -398,7 +398,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
     }
     if (step === 3) {
-      formData.education_history.forEach((e, idx) => {
+      formData.education_records.forEach((e, idx) => {
         const s = (e as any)?.start_date;
         const en = (e as any)?.end_date;
         if (s && en) {
@@ -475,7 +475,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       const allErrors: ValidationErrors = {
         ...getStepErrors(1),
         ...getStepErrors(2),
-        ...getStepErrors(4),
+        ...getStepErrors(3),
       };
       if (Object.keys(allErrors).length > 0) {
         setErrors(allErrors);
@@ -514,7 +514,10 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
 
           // 1. Separate core guard data from related arrays (guarantors, education)
           // We must strip these arrays because 'guards' table doesn't have these columns.
-          const { guarantors, education_history, ...coreGuardData } = formData;
+          const { guarantors, education_records, ...coreGuardData } = formData;
+          const eduForPayload = (Array.isArray(education_records) && education_records.length)
+            ? education_records
+            : (((formData as any).education_history || []) as any[]);
 
           const ecRaw = String(coreGuardData.emergency_contact || '').trim();
           const phoneMatch = ecRaw.match(/(\+?\d[\d\s\-]{6,})$/);
@@ -568,9 +571,10 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
             const createUrl = hasTokenSubmit ? '/guards' : '/public/guards';
             const payload: any = {
               ...guardPayload,
-              education_records: (education_history || []).map(e => ({
+              education_records: (eduForPayload || []).map(e => ({
                 institution_name: (e as any).institution_name || null,
-                qualification: (e as any).qualification || null,
+                qualification_level: (e as any).qualification_level || e.level || null,
+                completion_year: (e as any).completion_year || (e as any).year || (e as any).graduation_year || null,
                 level: e.level,
                 year: (e as any).year || (e as any).graduation_year || null,
                 start_date: (e as any).start_date || null,
@@ -601,8 +605,11 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           try {
             const gid = String(savedGuard?.id || initialData?.id || '');
             if (gid) {
-              if (!createdInOneShot && Array.isArray(formData.education_history)) {
-                const records = formData.education_history.filter(e => !!e.level || !!e.year || !!e.certificate_url);
+              if (!createdInOneShot) {
+                const eduLocal = (Array.isArray(formData.education_records) && formData.education_records.length)
+                  ? formData.education_records
+                  : (((formData as any).education_history || []) as any[]);
+                const records = eduLocal.filter((e: any) => !!e.level || !!e.completion_year || !!e.year || !!e.certificate_url);
                 if (records.length > 0) {
                   if (hasTokenSubmit) {
                     const res = await guardService.createEducationRecords(gid, records);
@@ -610,8 +617,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                   } else {
       const payload = records.map(e => ({
                       institution_name: (e as any).institution_name || null,
-                      level: e.level,
-                      graduation_year: e.year ? Number(e.year) : null,
+                      level: (e as any).qualification_level || e.level,
+                      graduation_year: (e as any).completion_year ? Number((e as any).completion_year) : (e as any).year ? Number((e as any).year) : null,
                       certificate_url: e.certificate_url || null
                     }));
                     const res = await api.post(`/guards/${gid}/education_records`, payload);
@@ -691,17 +698,17 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   const addEducation = () => {
       setFormData(prev => ({
           ...prev,
-          education_history: [
-              ...prev.education_history, 
+          education_records: [
+              ...prev.education_records, 
               { id: `temp-${Date.now()}`, guard_id: '', level: 'secondary', institution_name: '', year: '', start_date: '', end_date: '', certificate_url: '' } as any
           ]
       }));
   };
 
   const updateEducation = (index: number, field: keyof EducationRecord, value: any) => {
-      const updated = [...formData.education_history];
+      const updated = [...formData.education_records];
       updated[index] = { ...updated[index], [field]: value };
-      setFormData(prev => ({ ...prev, education_history: updated }));
+      setFormData(prev => ({ ...prev, education_records: updated }));
       if (field === 'start_date' || field === 'end_date') {
         const s = (updated[index] as any)?.start_date || '';
         const e = (updated[index] as any)?.end_date || '';
@@ -720,9 +727,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   };
   
   const removeEducation = (index: number) => {
-      const updated = [...formData.education_history];
+      const updated = [...formData.education_records];
       updated.splice(index, 1);
-      setFormData(prev => ({ ...prev, education_history: updated }));
+      setFormData(prev => ({ ...prev, education_records: updated }));
   };
 
   
@@ -924,9 +931,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           case 3:
               return (
                    <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-                      <SectionHeader number="03" title="Education History" />
+                      <SectionHeader number="03" title="Taarifa za Elimu, Wadhamini na Ndugu wa Karibu" />
                       <div className="space-y-6">
-                        {formData.education_history.map((edu, index) => (
+                        {formData.education_records.map((edu, index) => (
                             <div key={index} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative">
                                 <button type="button" onClick={() => removeEducation(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -981,6 +988,49 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                         ))}
                         <button type="button" onClick={addEducation} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all" disabled={isReadOnly}>
                             + Add Qualification
+                        </button>
+                      </div>
+
+                      <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100">
+                         <h4 className="text-xs font-black text-primary uppercase tracking-widest mb-4">Next of Kin (Emergency)</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                             <InputField label="Full Name" name="next_of_kin_name" value={formData.next_of_kin_name} onChange={handleChange} error={errors.next_of_kin_name} />
+                            <InputField label="Phone" name="next_of_kin_phone" value={formData.next_of_kin_phone} onChange={handleChange} error={errors.next_of_kin_phone} disabled={isReadOnly} />
+                            <InputField label="Relationship" name="next_of_kin_relationship" value={formData.next_of_kin_relationship} onChange={handleChange} error={errors.next_of_kin_relationship} disabled={isReadOnly} />
+                         </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h4 className="text-sm font-black uppercase tracking-tight text-slate-900">Guarantors ({formData.guarantors.length}/3)</h4>
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">MINIMUM 2 REQUIRED</span>
+                        </div>
+                        {errors.guarantors && <p className="text-xs font-bold text-red-500 bg-red-50 p-3 rounded-lg border border-red-100">{errors.guarantors}</p>}
+                        
+                        {formData.guarantors.map((g, index) => (
+                             <div key={index} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative">
+                                <button type="button" onClick={() => removeGuarantor(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors" disabled={isReadOnly}>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                </button>
+                                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Guarantor #{index + 1}</h4>
+                                {errors[`guarantor_${index}`] && <p className="text-[10px] font-bold text-red-500 mb-2">Incomplete Details</p>}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                    <InputField label="Full Name" name={`g_name_${index}`} value={g.name} onChange={(e) => updateGuarantor(index, 'name', e.target.value)} error={errors[`g_name_${index}`]} disabled={isReadOnly} />
+                                    <InputField label="Occupation / Kazi" name={`g_occ_${index}`} value={(g as any).occupation || ''} onChange={(e) => updateGuarantor(index, 'occupation', e.target.value)} disabled={isReadOnly} />
+                                    <InputField label="Phone" name={`g_phone_${index}`} value={g.phone} onChange={(e) => updateGuarantor(index, 'phone', e.target.value)} error={errors[`g_phone_${index}`]} disabled={isReadOnly} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <InputField label="Relationship" name={`g_rel_${index}`} value={g.relationship} onChange={(e) => updateGuarantor(index, 'relationship', e.target.value)} error={errors[`g_rel_${index}`]} disabled={isReadOnly} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <FileUploader label="Guarantor Letter" fileUrl={(g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'guarantor_letter_url', url)} onRemove={() => updateGuarantor(index, 'guarantor_letter_url', '')} className="h-24" disabled={isReadOnly} />
+                                    <FileUploader label="ID Copy" fileUrl={(g as any)?.id_copy_url || ''} onUpload={(url) => updateGuarantor(index, 'id_copy_url', url)} onRemove={() => updateGuarantor(index, 'id_copy_url', '')} className="h-24" disabled={isReadOnly} />
+                                    <FileUploader label="Residence Letter (Serikali ya Mtaa)" fileUrl={(g as any)?.residence_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'residence_letter_url', url)} onRemove={() => updateGuarantor(index, 'residence_letter_url', '')} className="h-24" disabled={isReadOnly} />
+                                </div>
+                            </div>
+                        ))}
+                         <button type="button" onClick={addGuarantor} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all" disabled={isReadOnly}>
+                            + Add Guarantor
                         </button>
                       </div>
                    </div>
@@ -1056,7 +1106,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       onSubmit={(e) => {
         e.preventDefault();
         if (isLocked) return;
-        if (currentStep === 4) {
+        if (currentStep === 3) {
           handleSubmit();
         } else {
           handleNext();
@@ -1065,16 +1115,16 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     >
         {/* Progress Bar */}
         <div className="absolute top-0 left-0 w-full h-2 bg-slate-100">
-            <div className="h-full bg-primary transition-all duration-500 ease-out" style={{ width: `${(currentStep / 4) * 100}%` }} />
+            <div className="h-full bg-primary transition-all duration-500 ease-out" style={{ width: `${(currentStep / 3) * 100}%` }} />
         </div>
 
         <div className="mb-10 flex justify-between items-end">
             <div>
-                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Step {currentStep} of 4</span>
+                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Step {currentStep} of 3</span>
                  <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mt-2 leading-none">
                      {currentStep === 1 ? 'Personal Info' : 
                       currentStep === 2 ? 'Documents' : 
-                      currentStep === 3 ? 'Education' : 'Guarantors'}
+                      'Taarifa za Elimu, Wadhamini na Ndugu wa Karibu'}
                  </h2>
             </div>
         </div>
@@ -1108,7 +1158,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                     next_of_kin_phone: '',
                     next_of_kin_relationship: '',
                     residence_letter_url: '',
-                    education_history: [],
+                    education_records: [],
                     is_armed: false,
                     residence_lat: undefined,
                     residence_lng: undefined,
@@ -1141,15 +1191,15 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
             >
                 Save
             </button>
-            {isLocked && currentStep === 4 ? (
+            {isLocked && currentStep === 3 ? (
               <div className="flex-grow py-4 bg-slate-50 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl border border-slate-200 text-center">
                 Maombi yako yameshatumwa na yanahakikiwa.
               </div>
             ) : (
               <button
-                  type={currentStep === 4 ? "submit" : "button"}
-                  onClick={currentStep === 4 ? handleSubmit : handleNext}
-                  disabled={isLocked || (currentStep === 4 ? isSubmitting : Object.keys(getStepErrors(currentStep)).length > 0)}
+                  type={currentStep === 3 ? "submit" : "button"}
+                  onClick={currentStep === 3 ? handleSubmit : handleNext}
+                  disabled={isLocked || (currentStep === 3 ? isSubmitting : Object.keys(getStepErrors(currentStep)).length > 0)}
                   className="relative group flex-grow py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:from-primary hover:via-primary-dark hover:to-primary-light transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                   {isSubmitting ? (
@@ -1162,7 +1212,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                       </>
                   ) : (
                       <>
-                          {currentStep === 4 ? 'Submit Application' : 'Next Step'}
+                          {currentStep === 3 ? 'Submit Application' : 'Next Step'}
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
                           </svg>

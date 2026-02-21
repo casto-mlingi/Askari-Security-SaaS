@@ -1099,13 +1099,13 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       for (const it of incomingEducation) {
         try {
           await client.query('SAVEPOINT edu_sp');
-          let level = it?.level ? String(it.level).toLowerCase() : null;
+          let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
           const allowedLevels = new Set(['primary','secondary','advanced','nta4_5','military']);
           if (level && !allowedLevels.has(level)) {
             if (level === 'college' || level === 'university') level = 'advanced';
             else level = 'advanced';
           }
-          const qualification = it?.qualification || level || null;
+          const qualification = it?.qualification || it?.qualification_level || level || null;
           const inst = it?.institution_name || null;
           const toYYYYMMDD = (val) => {
             const raw = String(val || '').slice(0, 10);
@@ -1113,7 +1113,9 @@ app.post('/api/guards', requireAuth, async (req, res) => {
           };
           const startDate = toYYYYMMDD(it?.start_date);
           const endDate = toYYYYMMDD(it?.end_date);
-          const yearRaw = it?.year != null ? String(it.year) : (it?.graduation_year != null ? String(it.graduation_year) : null);
+          const yearRaw = it?.year != null ? String(it.year) 
+                          : (it?.graduation_year != null ? String(it.graduation_year) 
+                          : (it?.completion_year != null ? String(it.completion_year) : null));
           const year = yearRaw ? String(yearRaw).replace(/[^0-9]/g, '').slice(0,4) : null;
           if (startDate && endDate) {
             if (new Date(endDate).getTime() < new Date(startDate).getTime()) {
