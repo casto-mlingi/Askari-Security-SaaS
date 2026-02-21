@@ -466,6 +466,20 @@ app.get('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
   }
 });
 
+// --- NIDA duplicate check ---
+app.get('/api/guards/check-nida/:nida', requireAuth, async (req, res) => {
+  try {
+    let raw = req.params.nida || '';
+    const nida = String(raw || '').trim();
+    if (!nida) return res.status(400).json({ error: 'bad_request', detail: 'missing_nida' });
+    const { rows } = await pool.query('SELECT id FROM guards WHERE nida_number = $1 LIMIT 1', [nida]);
+    const exists = !!rows[0];
+    res.status(200).json({ exists });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'error' });
+  }
+});
+
 app.post('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {

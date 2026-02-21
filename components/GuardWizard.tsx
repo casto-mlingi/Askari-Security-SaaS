@@ -566,6 +566,16 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
 
       setIsSubmitting(true);
       try {
+          // 0. NIDA duplicate check
+          const nida = String(formData.nida_number || '').trim();
+          if (nida) {
+            const check = await api.get<{ exists: boolean }>(`/guards/check-nida/${encodeURIComponent(nida)}`);
+            if (!check.error && check.data?.exists) {
+              (window as any).showNotification?.('warning', 'Mlinzi mwenye NIDA hii tayari amesajiliwa');
+              setIsSubmitting(false);
+              return;
+            }
+          }
 
           // 1. Separate core guard data from related arrays (guarantors, education)
           // We must strip these arrays because 'guards' table doesn't have these columns.
@@ -610,141 +620,48 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
               // Ensure we don't accidentally send undefined for ID if it's new
           };
 
-          let savedGuard: Guard | undefined;
-          let createdInOneShot = false;
           const hasTokenSubmit = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
-          if (initialData?.id) {
-            const patchUrl = hasTokenSubmit ? `/guards/${initialData.id}` : `/public/guards/${initialData.id}`;
-            const payload = guardPayload;
-            try { console.log("SENDING STATUS:", (payload as any)?.status); } catch {}
-            const patchResult = await api.patch<Guard>(patchUrl, payload);
-            if (patchResult.error || !patchResult.data) {
-              console.warn(patchResult.error || 'guard update warning');
-            }
-            savedGuard = patchResult.data as unknown as Guard;
-          } else {
-            const createUrl = hasTokenSubmit ? '/guards' : '/public/guards';
-            const payload: any = {
-              ...guardPayload,
-              education_records: (eduForPayload || []).map(e => ({
-                institution_name: (e as any).institution_name || null,
-                qualification_level: (e as any).qualification_level || e.level || null,
-                completion_year: (e as any).completion_year || (e as any).year || (e as any).graduation_year || null,
-                level: e.level,
-                year: (e as any).year || (e as any).graduation_year || null,
-                start_date: (e as any).start_date || null,
-                end_date: (e as any).end_date || null,
-                certificate_url: (e as any).certificate_url || null,
-                weapon_proficiency: (e as any).weapon_proficiency || null
-              })),
-              guarantors: (guarantors || []).map(g => ({
-                full_name: (g as any).name || (g as any).full_name || null,
-                occupation: (g as any).occupation || null,
-                phone: (g as any).phone || null,
-                relationship: (g as any).relationship || null,
-                id_copy_url: (g as any).id_copy_url || null,
-                guarantor_letter_url: (g as any).guarantor_letter_url || (g as any).intro_letter_url || null,
-                residence_letter_url: (g as any).residence_letter_url || null
-              }))
-            };
-            try { console.log("SENDING STATUS:", (payload as any)?.status); } catch {}
-            const createResult = await api.post<Guard>(createUrl, payload);
-            if (createResult.error || !createResult.data) {
-              console.warn(createResult.error || 'guard save warning');
-            }
-            savedGuard = createResult.data as unknown as Guard;
-            createdInOneShot = true;
+          const createUrl = hasTokenSubmit ? '/guards' : '/public/guards';
+          const payload: any = {
+            ...guardPayload,
+            education_records: (eduForPayload || []).map(e => ({
+              institution_name: (e as any).institution_name || null,
+              qualification_level: (e as any).qualification_level || e.level || null,
+              completion_year: (e as any).completion_year || (e as any).year || (e as any).graduation_year || null,
+              level: e.level,
+              year: (e as any).year || (e as any).graduation_year || null,
+              start_date: (e as any).start_date || null,
+              end_date: (e as any).end_date || null,
+              certificate_url: (e as any).certificate_url || null,
+              weapon_proficiency: (e as any).weapon_proficiency || null
+            })),
+            guarantors: (guarantors || []).map(g => ({
+              full_name: (g as any).name || (g as any).full_name || null,
+              occupation: (g as any).occupation || null,
+              phone: (g as any).phone || null,
+              relationship: (g as any).relationship || null,
+              id_copy_url: (g as any).id_copy_url || null,
+              guarantor_letter_url: (g as any).guarantor_letter_url || (g as any).intro_letter_url || null,
+              residence_letter_url: (g as any).residence_letter_url || null
+            }))
+          };
+          const createResult = await api.post<Guard>(createUrl, payload);
+          if (createResult.error || !createResult.data) {
+            (window as any).showNotification?.('error', String(createResult.error || 'Registration failed'));
+            setIsSubmitting(false);
+            return;
           }
 
-          let upsertsOk = true;
-          try {
-            const gid = String(savedGuard?.id || initialData?.id || '');
-            if (gid) {
-              if (!createdInOneShot) {
-                const eduLocal = (Array.isArray(formData.education_records) && formData.education_records.length)
-                  ? formData.education_records
-                  : (((formData as any).education_history || []) as any[]);
-                const records = eduLocal.filter((e: any) => !!e.level || !!e.completion_year || !!e.year || !!e.certificate_url);
-                if (records.length > 0) {
-                  if (hasTokenSubmit) {
-                    const res = await guardService.createEducationRecords(gid, records);
-                    if (res.error) throw new Error(res.error);
-                  } else {
-      const payload = records.map(e => ({
-                      institution_name: (e as any).institution_name || null,
-                      level: (e as any).qualification_level || e.level,
-                      graduation_year: (e as any).completion_year ? Number((e as any).completion_year) : (e as any).year ? Number((e as any).year) : null,
-                      certificate_url: e.certificate_url || null
-                    }));
-                    const res = await api.post(`/guards/${gid}/education_records`, payload);
-                    if (res.error) throw new Error(res.error as any);
-                  }
-                }
-              }
-              if (!createdInOneShot && Array.isArray(formData.guarantors)) {
-                const guarantors = formData.guarantors.filter(g => !!g.name || !!g.phone || !!g.relationship || !!(g as any).intro_letter_url || !!(g as any).id_copy_url);
-                if (guarantors.length > 0) {
-                  if (hasTokenSubmit) {
-                    const res = await guardService.createGuarantors(gid, guarantors);
-                    if (res.error) throw new Error(res.error);
-                  } else {
-                    const payload = guarantors.map(g => ({
-                      full_name: g.name,
-                      occupation: (g as any)?.occupation || null,
-                      phone: g.phone,
-                      relationship: g.relationship,
-                      id_copy_url: (g as any)?.id_copy_url || null,
-                      guarantor_letter_url: (g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || null,
-                      residence_letter_url: (g as any)?.residence_letter_url || null
-                    }));
-                    const res = await api.post(`/guards/${gid}/guarantors`, payload);
-                    if (res.error) throw new Error(res.error as any);
-                  }
-                }
-              }
-            }
-          } catch (e) {
-            upsertsOk = false;
-            (window as any).showNotification?.('error', 'Failed to save Education or Guarantors. Please try again.');
-          }
-
-          try {
-            const idToRefresh = String(savedGuard?.id || initialData?.id || '');
-            if (idToRefresh) {
-              const res = await guardService.getGuardById(idToRefresh);
-              if (res.data) {
-                try { console.log('AFTER SUBMIT STATUS:', (res.data as any)?.status); } catch {}
-                const wd = mapGuardToWizardData(res.data);
-                setFormData(prev => safeMergeWizardData(prev, wd));
-                setSecurityTraining(Array.isArray((res.data as any).security_training) ? (res.data as any).security_training : []);
-              }
-            }
-          } catch {}
-
-          // 5. Cleanup & Notify
-          localStorage.removeItem(STORAGE_KEY);
-          if (isApplicantFlow && upsertsOk) {
-            (window as any).showNotification?.(
-              'success',
-              'Hongera! Usajili wako umepokelewa na System HR. Utapata taarifa hapa hapa kwenye Dashboard yako pindi utakapohakikiwa na kuwekwa kwenye Marketplace kwa ajili ya kuajiriwa na kampuni za ulinzi. Kaa tayari!'
-            );
-          }
+          // No follow-up GET/PATCH; success flow only
+          (window as any).showNotification?.('success', 'Mlinzi amesajiliwa kikamilifu');
           setHasSubmitted(true);
-          
-          await Promise.resolve(onComplete(savedGuard, isApplicantFlow));
+          try { localStorage.removeItem(STORAGE_KEY); } catch {}
+          try { window.location.href = '/'; } catch {}
 
-          // Do not reset form; keep data visible for post-submit review
+          await Promise.resolve(onComplete(createResult.data as Guard, isApplicantFlow));
 
       } catch (error: any) {
-          const msg = String(error?.message || '').toLowerCase();
-          if (msg.includes('unauthorized')) {
-            (window as any).showNotification?.('warning', 'Please login to submit your application.');
-            alert('Login required to submit. Open the login screen and try again.');
-          } else if (msg.includes('forbidden')) {
-            (window as any).showNotification?.('warning', 'Editing locked. Request HR unlock to resubmit.');
-          } else {
-            (window as any).showNotification?.('error', `Failed to submit application: ${error?.message || 'Unknown error'}`);
-          }
+          (window as any).showNotification?.('error', String(error?.message || 'Registration failed'));
       } finally {
           setIsSubmitting(false);
       }
