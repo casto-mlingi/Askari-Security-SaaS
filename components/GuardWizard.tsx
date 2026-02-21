@@ -374,6 +374,65 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     
   };
 
+  const getAllErrors = (): ValidationErrors => {
+    if (isReadOnly) return {};
+    const newErrors: ValidationErrors = {};
+    if (!formData.full_name) newErrors.full_name = 'This field is required.';
+    const nidErr = fieldError('nida_number', formData.nida_number);
+    if (nidErr) newErrors.nida_number = nidErr;
+    const phErr = fieldError('phone', formData.phone);
+    if (phErr) newErrors.phone = phErr;
+    if (!formData.dob) newErrors.dob = 'This field is required.';
+    if (!formData.gender) newErrors.gender = 'This field is required.';
+    if (formData.nssf_number && fieldError('nssf_number', formData.nssf_number)) newErrors.nssf_number = 'NSSF Number must contain digits only.';
+    if (formData.bank_account_number && fieldError('bank_account_number', formData.bank_account_number)) newErrors.bank_account_number = 'Bank Account must be digits only.';
+    if (!formData.passport_photo_url) newErrors.passport_photo_url = 'This field is required.';
+    if (!formData.nida_front_url) newErrors.nida_front_url = 'This field is required.';
+    if (!formData.birth_cert_url) newErrors.birth_cert_url = 'This field is required.';
+    if (!formData.application_letter_url) newErrors.application_letter_url = 'This field is required.';
+    if (!formData.police_clearance_url) newErrors.police_clearance_url = 'This field is required.';
+    if (!formData.cv_url) newErrors.cv_url = 'This field is required.';
+    if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
+    formData.education_records.forEach((e, idx) => {
+      const s = (e as any)?.start_date;
+      const en = (e as any)?.end_date;
+      if (s && en) {
+        if (new Date(en).getTime() < new Date(s).getTime()) {
+          newErrors[`edu_end_${idx}`] = 'End date cannot be before start date.';
+        }
+      }
+    });
+    if (!formData.next_of_kin_name) newErrors.next_of_kin_name = 'This field is required.';
+    const kinPhErr = fieldError('next_of_kin_phone', formData.next_of_kin_phone);
+    if (kinPhErr) newErrors.next_of_kin_phone = kinPhErr;
+    if (!formData.next_of_kin_relationship) newErrors.next_of_kin_relationship = 'This field is required.';
+    if (!formData.physical_address) newErrors.physical_address = 'This field is required.';
+    if (!formData.emergency_contact) newErrors.emergency_contact = 'This field is required.';
+    if (formData.guarantors.length < 2) {
+      newErrors.guarantors = 'At least 2 guarantors are required';
+    } else {
+      formData.guarantors.forEach((g, idx) => {
+        if (!g.name) newErrors[`g_name_${idx}`] = 'This field is required.';
+        if (!g.relationship) newErrors[`g_rel_${idx}`] = 'This field is required.';
+        if (!(g as any)?.guarantor_letter_url && !(g as any)?.intro_letter_url) newErrors[`g_guarantor_letter_${idx}`] = 'This field is required.';
+        if (!(g as any)?.id_copy_url) newErrors[`g_id_copy_${idx}`] = 'This field is required.';
+        if (!(g as any)?.residence_letter_url) newErrors[`g_residence_letter_${idx}`] = 'This field is required.';
+        if (!g.phone || !isTZPhone(g.phone)) newErrors[`g_phone_${idx}`] = 'Please enter a valid Tanzanian phone number (e.g., 0755123456).';
+      });
+    }
+    return newErrors;
+  };
+
+  const handleSave = async () => {
+      try {
+          const dataToSave = { ...formData };
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave)); } catch {}
+          (window as any).showNotification?.('success', 'Saved locally. Submit to create record.');
+      } catch (e) {
+          (window as any).showNotification?.('error', 'Failed to save changes.');
+      }
+  };
+
   const getStepErrors = (step: number): ValidationErrors => {
     if (isReadOnly) return {};
     const newErrors: ValidationErrors = {};
@@ -472,15 +531,11 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         return;
       }
       if (isSubmitting) return;
-      const allErrors: ValidationErrors = {
-        ...getStepErrors(1),
-        ...getStepErrors(2),
-        ...getStepErrors(3),
-      };
+      const allErrors: ValidationErrors = getAllErrors();
       if (Object.keys(allErrors).length > 0) {
         setErrors(allErrors);
         const firstKey = Object.keys(allErrors)[0];
-        const el = document.getElementById(firstKey);
+        const el = document.getElementById(firstKey) || (document.querySelector(`[name="${firstKey}"]`) as HTMLElement | null);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         const friendly = (() => {
           // Map common keys to helpful Swahili messages
@@ -779,11 +834,17 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       setFormData(prev => ({ ...prev, guarantors: updated }));
   };
 
-  // Render Steps
-  const renderStep = () => {
-      switch (currentStep) {
-          case 1:
-              return (
+  return (
+    <form
+      id="intakeForm"
+      className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-500 relative overflow-hidden"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (isLocked) return;
+        handleSubmit();
+      }}
+    >
+        <div className="space-y-16">
                   <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
                       <SectionHeader number="01" title="Identity & Contact" />
                       {isApplicantFlow && (
@@ -896,21 +957,20 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                         </div>
                       )}
                   </div>
-              );
-          case 2:
-              const coreDocs = [
-                formData.nida_front_url,
-                formData.birth_cert_url,
-                formData.application_letter_url,
-                formData.residence_letter_url,
-                formData.medical_report_url,
-                formData.police_clearance_url,
-                formData.cv_url,
-                formData.passport_photo_url
-              ];
-              const docsProvided = coreDocs.reduce((acc, v) => acc + (v && String(v).trim() !== '' ? 1 : 0), 0);
-              const docsTotal = coreDocs.length;
-              return (
+                    {(() => {
+                      const coreDocs = [
+                        formData.nida_front_url,
+                        formData.birth_cert_url,
+                        formData.application_letter_url,
+                        formData.residence_letter_url,
+                        formData.medical_report_url,
+                        formData.police_clearance_url,
+                        formData.cv_url,
+                        formData.passport_photo_url
+                      ];
+                      const docsProvided = coreDocs.reduce((acc, v) => acc + (v && String(v).trim() !== '' ? 1 : 0), 0);
+                      const docsTotal = coreDocs.length;
+                      return (
                   <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
                       <SectionHeader number="02" title="Core Documentation" />
                       <div className="flex justify-end">
@@ -927,11 +987,10 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                           <FileUploader label="Passport Photo (Profile)" fileUrl={formData.passport_photo_url} onUpload={(url) => handleFileChange('passport_photo_url', url)} onRemove={() => handleFileChange('passport_photo_url', '')} disabled={isReadOnly} imagesOnly acceptTypes="image/jpeg,image/png" />
                       </div>
                   </div>
-              );
-          case 3:
-              return (
+                      );
+                    })()}
                    <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-                      <SectionHeader number="03" title="Taarifa za Elimu, Wadhamini na Ndugu wa Karibu" />
+                      <SectionHeader number="03" title="Education History" />
                       <div className="space-y-6">
                         {formData.education_records.map((edu, index) => (
                             <div key={index} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative">
@@ -991,6 +1050,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                         </button>
                       </div>
 
+                      <SectionHeader number="04" title="Next of Kin & Guarantors" />
                       <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100">
                          <h4 className="text-xs font-black text-primary uppercase tracking-widest mb-4">Next of Kin (Emergency)</h4>
                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1034,109 +1094,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                         </button>
                       </div>
                    </div>
-              );
-          case 4:
-               return (
-                   <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-                      <SectionHeader number="04" title="Guarantors & Next of Kin" />
-                      
-                      <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 mb-8">
-                         <h4 className="text-xs font-black text-primary uppercase tracking-widest mb-4">Next of Kin (Emergency)</h4>
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                             <InputField label="Full Name" name="next_of_kin_name" value={formData.next_of_kin_name} onChange={handleChange} error={errors.next_of_kin_name} />
-                            <InputField label="Phone" name="next_of_kin_phone" value={formData.next_of_kin_phone} onChange={handleChange} error={errors.next_of_kin_phone} disabled={isReadOnly} />
-                            <InputField label="Relationship" name="next_of_kin_relationship" value={formData.next_of_kin_relationship} onChange={handleChange} error={errors.next_of_kin_relationship} disabled={isReadOnly} />
-                         </div>
-                      </div>
-
-                      <div className="space-y-6">
-                        <div className="flex justify-between items-center">
-                            <h4 className="text-sm font-black uppercase tracking-tight text-slate-900">Guarantors ({formData.guarantors.length}/3)</h4>
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">MINIMUM 2 REQUIRED</span>
-                        </div>
-                        {errors.guarantors && <p className="text-xs font-bold text-red-500 bg-red-50 p-3 rounded-lg border border-red-100">{errors.guarantors}</p>}
-                        
-                        {formData.guarantors.map((g, index) => (
-                             <div key={index} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative">
-                                <button type="button" onClick={() => removeGuarantor(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors" disabled={isReadOnly}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                                </button>
-                                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Guarantor #{index + 1}</h4>
-                                {errors[`guarantor_${index}`] && <p className="text-[10px] font-bold text-red-500 mb-2">Incomplete Details</p>}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                    <InputField label="Full Name" name={`g_name_${index}`} value={g.name} onChange={(e) => updateGuarantor(index, 'name', e.target.value)} error={errors[`g_name_${index}`]} disabled={isReadOnly} />
-                                    <InputField label="Occupation / Kazi" name={`g_occ_${index}`} value={(g as any).occupation || ''} onChange={(e) => updateGuarantor(index, 'occupation', e.target.value)} disabled={isReadOnly} />
-                                    <InputField label="Phone" name={`g_phone_${index}`} value={g.phone} onChange={(e) => updateGuarantor(index, 'phone', e.target.value)} error={errors[`g_phone_${index}`]} disabled={isReadOnly} />
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <InputField label="Relationship" name={`g_rel_${index}`} value={g.relationship} onChange={(e) => updateGuarantor(index, 'relationship', e.target.value)} error={errors[`g_rel_${index}`]} disabled={isReadOnly} />
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <FileUploader label="Guarantor Letter" fileUrl={(g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'guarantor_letter_url', url)} onRemove={() => updateGuarantor(index, 'guarantor_letter_url', '')} className="h-24" disabled={isReadOnly} />
-                                    <FileUploader label="ID Copy" fileUrl={(g as any)?.id_copy_url || ''} onUpload={(url) => updateGuarantor(index, 'id_copy_url', url)} onRemove={() => updateGuarantor(index, 'id_copy_url', '')} className="h-24" disabled={isReadOnly} />
-                                    <FileUploader label="Residence Letter (Serikali ya Mtaa)" fileUrl={(g as any)?.residence_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'residence_letter_url', url)} onRemove={() => updateGuarantor(index, 'residence_letter_url', '')} className="h-24" disabled={isReadOnly} />
-                                </div>
-                            </div>
-                        ))}
-                         <button type="button" onClick={addGuarantor} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all" disabled={isReadOnly}>
-                            + Add Guarantor
-                        </button>
-                      </div>
-                   </div>
-               );
-          default:
-              return null;
-      }
-  };
-
-  const handleSave = async () => {
-      try {
-          const dataToSave = { ...formData };
-          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave)); } catch {}
-          (window as any).showNotification?.('success', 'Saved locally. Submit to create record.');
-      } catch (e) {
-          (window as any).showNotification?.('error', 'Failed to save changes.');
-      }
-  };
-
-  return (
-    <form
-      id="intakeForm"
-      className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-500 relative overflow-hidden"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (isLocked) return;
-        if (currentStep === 3) {
-          handleSubmit();
-        } else {
-          handleNext();
-        }
-      }}
-    >
-        {/* Progress Bar */}
-        <div className="absolute top-0 left-0 w-full h-2 bg-slate-100">
-            <div className="h-full bg-primary transition-all duration-500 ease-out" style={{ width: `${(currentStep / 3) * 100}%` }} />
         </div>
-
-        <div className="mb-10 flex justify-between items-end">
-            <div>
-                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Step {currentStep} of 3</span>
-                 <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mt-2 leading-none">
-                     {currentStep === 1 ? 'Personal Info' : 
-                      currentStep === 2 ? 'Documents' : 
-                      'Taarifa za Elimu, Wadhamini na Ndugu wa Karibu'}
-                 </h2>
-            </div>
-        </div>
-        
-        {renderStep()}
 
         <div className="flex gap-4 mt-12 pt-8 border-t border-slate-100">
-            {currentStep > 1 && (
-                <button type="button" onClick={handleBack} className="px-8 py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all" disabled={isLocked}>
-                    Back
-                </button>
-            )}
             <button
                 type="button"
                 onClick={() => {
@@ -1191,15 +1151,15 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
             >
                 Save
             </button>
-            {isLocked && currentStep === 3 ? (
+            {isLocked ? (
               <div className="flex-grow py-4 bg-slate-50 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl border border-slate-200 text-center">
                 Maombi yako yameshatumwa na yanahakikiwa.
               </div>
             ) : (
               <button
-                  type={currentStep === 3 ? "submit" : "button"}
-                  onClick={currentStep === 3 ? handleSubmit : handleNext}
-                  disabled={isLocked || (currentStep === 3 ? isSubmitting : Object.keys(getStepErrors(currentStep)).length > 0)}
+                  type="submit"
+                  onClick={handleSubmit}
+                  disabled={isLocked || isSubmitting}
                   className="relative group flex-grow py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:from-primary hover:via-primary-dark hover:to-primary-light transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                   {isSubmitting ? (
@@ -1212,7 +1172,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                       </>
                   ) : (
                       <>
-                          {currentStep === 3 ? 'Submit Application' : 'Next Step'}
+                          Submit Application
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
                           </svg>
@@ -1225,4 +1185,5 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
        
     </form>
   );
+
 };
