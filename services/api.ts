@@ -32,9 +32,6 @@ class ApiClient {
   }
 
   private async handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
-    if (response.status === 401 && typeof window !== 'undefined') {
-      try { localStorage.removeItem('amini_auth_token'); } catch {}
-    }
     let result: any = null;
     try {
       result = await response.json();

@@ -621,7 +621,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           };
 
           const hasTokenSubmit = !!(localStorage.getItem('amini_auth_token') || localStorage.getItem('token'));
-          const createUrl = hasTokenSubmit ? '/guards' : '/public/guards';
+          const createUrl = '/guards';
           const payload: any = {
             ...guardPayload,
             education_records: (eduForPayload || []).map(e => ({
