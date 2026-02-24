@@ -68,16 +68,7 @@ const IntakeManager: React.FC<IntakeManagerProps> = ({ guards, userRole, onCompl
   };
 
   const handleIntakeComplete = async (guard: Guard, isAppFlow?: boolean) => {
-    try {
-      const payload: Partial<Guard> = {
-        education_level: (educationLevel || guard.education_level) as GuardEducationLevel | undefined,
-        security_level: (securityLevel || guard.security_level) as SecurityLevel | undefined,
-        security_training: (securityTraining.length ? securityTraining : guard.security_training) as SecurityTraining[] | undefined
-      };
-      const score = computeReadinessScore({ ...guard, ...payload } as Guard);
-      payload.readiness_score = score;
-      await api.patch(`/guards/${guard.id}`, payload);
-    } catch {}
+    // Single-POST flow: do not PATCH after create. Any scoring is handled server-side.
     onComplete(guard, isAppFlow);
   };
   class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {

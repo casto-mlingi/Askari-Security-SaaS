@@ -10,20 +10,11 @@ export function validateEducationRecords(records) {
     const cert = (rec && rec.certificate_url) ? String(rec.certificate_url).trim() : '';
     const touched = !!(level || inst || year || start || end || cert);
     if (!touched) return;
-    if (!level) {
-      errors[`edu_level_${idx}`] = 'This field is required.';
-    }
-    if (!inst) {
-      errors[`edu_institution_${idx}`] = 'This field is required.';
-    }
-    const hasYear = !!year;
-    const hasRange = !!(start && end);
-    if (!hasYear && !hasRange) {
-      errors[`edu_year_${idx}`] = 'Provide completion year or start/end dates.';
-    }
-    if (hasYear) {
+    // Relaxed rules: education is optional. Only enforce sane date ordering if both dates present.
+    // Partial records are allowed; backend will ignore empty inserts safely.
+    if (year) {
       const y = year.replace(/[^0-9]/g, '');
-      if (y.length !== 4) {
+      if (y.length && y.length !== 4) {
         errors[`edu_year_${idx}`] = 'Enter a valid 4-digit year.';
       }
     }

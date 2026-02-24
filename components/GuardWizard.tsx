@@ -669,8 +669,43 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           } as any));
           (window as any).showNotification?.('success', 'Mlinzi amesajiliwa kikamilifu');
           setHasSubmitted(true);
+          // Hard reset full form state to avoid ghost IDs and carryover
           try { localStorage.removeItem(STORAGE_KEY); } catch {}
-          // Emergency: stop automatic redirects to ensure any latent errors stay visible
+          setFormData({
+            full_name: '',
+            nida_number: '',
+            phone: '',
+            dob: '',
+            gender: '',
+            application_letter_url: '',
+            nida_front_url: '',
+            birth_cert_url: '',
+            medical_report_url: '',
+            police_clearance_url: '',
+            cv_url: '',
+            passport_photo_url: '',
+            guarantors: [],
+            next_of_kin_name: '',
+            next_of_kin_phone: '',
+            next_of_kin_relationship: '',
+            residence_letter_url: '',
+            education_records: [],
+            is_armed: false,
+            residence_lat: undefined,
+            residence_lng: undefined,
+            bank_account_number: '',
+            previous_experience: false,
+            nssf_number: '',
+            previous_employer_letter_url: '',
+            physical_address: '',
+            street: '',
+            ward: '',
+            district: '',
+            emergency_contact: '',
+            uniform_shirt_size: '',
+            uniform_boot_size: ''
+          } as any);
+          // Optional: navigate back to dashboard after reset (uncomment when triage complete)
           // try { window.location.href = '/'; } catch {}
 
           await Promise.resolve(onComplete(createResult.data as Guard, isApplicantFlow));
