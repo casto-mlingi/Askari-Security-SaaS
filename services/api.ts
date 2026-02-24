@@ -1,6 +1,6 @@
 import { ApiResponse } from '../types';
 
-const API_URL: string = (import.meta as any)?.env?.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://api.amini.co.tz');
+const API_URL: string = (import.meta as any)?.env?.VITE_API_URL || 'https://api.amini.co.tz';
 const API_BASE_URL: string = `${String(API_URL).replace(/\/+$/, '')}/api`;
 
 export const getApiBase = () => API_BASE_URL;
