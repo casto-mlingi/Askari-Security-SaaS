@@ -4,6 +4,7 @@ import { Guard, Site, Profile, IncidentReport, DisciplinaryCode, UserRole, Resub
 import { analyzeGuardDossier } from '../services/ai';
 import FileUploader from './FileUploader';
 import { api } from '../services/api';
+import AvatarImage from './AvatarImage';
 
 interface VettingWorkflowProps {
   guards: Guard[];
@@ -313,25 +314,40 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     }
     const guardId = String(selectedGuard.id);
     const companyId = String(currentUser?.company_id || '');
+    const token = (typeof window !== 'undefined') ? (localStorage.getItem('amini_auth_token') || localStorage.getItem('token')) : null;
+    if (!token) {
+      (window as any).showNotification?.('warning', 'Session not found. Please log in again.');
+      return;
+    }
     try {
-      await api.post('/interview-logs', {
+      const logRes = await api.post('/interview-logs', {
         guard_id: guardId,
         company_id: companyId,
         outcome: blacklist ? 'blacklisted' : 'failed',
         rejection_reason: rejectionReason,
         created_at: new Date().toISOString()
       });
+      if (logRes.error) {
+        console.warn('Interview log failed:', logRes.error);
+        (window as any).showNotification?.('warning', 'Failed to log action. Please retry.');
+        return;
+      }
       if (!blacklist) {
-        await api.patch(`/guards/${guardId}`, {
+        const updRes = await api.patch(`/guards/${guardId}`, {
           company_id: null,
           status: 'marketplace'
         });
+        if (updRes.error) {
+          console.warn('Guard update failed:', updRes.error);
+          (window as any).showNotification?.('warning', 'Failed to update guard. Please retry.');
+          return;
+        }
         setLocallyRejectedIds(prev => [...prev, guardId]);
       }
       (window as any).showNotification?.('success', blacklist ? 'Guard blacklisted.' : 'Guard released to pool.');
     } catch (e) {
       console.error('Reject error', e);
-      (window as any).showNotification?.('warning', 'Action logged locally.');
+      (window as any).showNotification?.('warning', 'Network issue. Please try again.');
     }
     setSelectedGuard(null);
     resetForm();
@@ -731,13 +747,11 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                onClick={() => setDetailGuard(guard)}
                className="cursor-pointer text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row gap-8 items-start w-full hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20"
              >
-                {guard.passport_photo_url ? (
-                  <img src={guard.passport_photo_url} alt={guard.full_name} className="w-16 h-16 rounded-full object-cover border border-slate-200 shrink-0" />
-                ) : (
-                  <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center font-black text-2xl shrink-0">
-                     {guard.full_name?.[0] || 'G'}
-                  </div>
-                )}
+                <span className="w-16 h-16 rounded-full border border-slate-200 overflow-hidden shrink-0">
+                  {guard.passport_photo_url
+                    ? <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} className="w-16 h-16 object-cover" fallbackLetter={guard.full_name?.[0] || 'G'} />
+                    : <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center font-black text-2xl">{guard.full_name?.[0] || 'G'}</div>}
+                </span>
                 <div className="flex-grow">
                    <div className="flex items-center gap-4 mb-2">
                       <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{guard.full_name}</h3>

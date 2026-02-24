@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Guard } from '../types';
+import AvatarImage from './AvatarImage';
 
 interface GuardProfileProps {
   guard: Guard;
@@ -70,13 +71,11 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
       <div className="bg-slate-900 rounded-[2.5rem] p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full -mr-32 -mt-32 blur-3xl" />
         <div className="relative z-10 flex items-center gap-6">
-          {guard.passport_photo_url ? (
-            <img src={guard.passport_photo_url} alt={guard.full_name} className="w-20 h-20 rounded-2xl object-cover border border-white/20 shadow-xl" />
-          ) : (
-            <div className="w-20 h-20 rounded-[2rem] bg-white text-primary flex items-center justify-center text-3xl font-black shadow-xl">
-              {guard.full_name?.[0] || 'G'}
-            </div>
-          )}
+          <span className="w-20 h-20 rounded-2xl overflow-hidden border border-white/20 shadow-xl">
+            {guard.passport_photo_url
+              ? <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} className="w-20 h-20 object-cover" fallbackLetter={guard.full_name?.[0] || 'G'} />
+              : <div className="w-20 h-20 rounded-[2rem] bg-white text-primary flex items-center justify-center text-3xl font-black shadow-xl">{guard.full_name?.[0] || 'G'}</div>}
+          </span>
           <div>
             <h2 className="text-2xl font-black uppercase tracking-tighter leading-none">{guard.full_name}</h2>
             <div className="flex items-center gap-3 mt-3">

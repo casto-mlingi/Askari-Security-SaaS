@@ -3,6 +3,7 @@ import { EducationRecord, Guard, ApplicationStatus, UserRole, Guarantor, Securit
 import FileUploader from './FileUploader';
 import { guardService } from '../services/guardService';
 import { api } from '../services/api';
+import { validateEducationRecords } from '../utils/validation';
 
 interface WizardData {
   full_name: string;
@@ -393,15 +394,13 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     if (!formData.police_clearance_url) newErrors.police_clearance_url = 'This field is required.';
     if (!formData.cv_url) newErrors.cv_url = 'This field is required.';
     if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
-    formData.education_records.forEach((e, idx) => {
-      const s = (e as any)?.start_date;
-      const en = (e as any)?.end_date;
-      if (s && en) {
-        if (new Date(en).getTime() < new Date(s).getTime()) {
-          newErrors[`edu_end_${idx}`] = 'End date cannot be before start date.';
-        }
-      }
-    });
+    try {
+      const eduErrors = validateEducationRecords(formData.education_records || []);
+      Object.assign(newErrors, eduErrors);
+      console.warn('EDU_VALIDATE', { records: formData.education_records, errors: eduErrors });
+    } catch (e) {
+      console.warn('EDU_VALIDATE_ERROR', e);
+    }
     if (!formData.next_of_kin_name) newErrors.next_of_kin_name = 'This field is required.';
     const kinPhErr = fieldError('next_of_kin_phone', formData.next_of_kin_phone);
     if (kinPhErr) newErrors.next_of_kin_phone = kinPhErr;
@@ -645,6 +644,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
               residence_letter_url: (g as any).residence_letter_url || null
             }))
           };
+          try { console.log('FORM DATA:', JSON.parse(JSON.stringify(formData))); } catch { console.log('FORM DATA (stringify failed)'); }
+          try { console.log('FINAL PAYLOAD:', JSON.parse(JSON.stringify(payload))); } catch { console.log('FINAL PAYLOAD (stringify failed)'); }
           const createResult = await api.post<Guard>(createUrl, payload);
           if (createResult.error || !createResult.data) {
             (window as any).showNotification?.('error', String(createResult.error || 'Registration failed'));
@@ -653,14 +654,30 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           }
 
           // No follow-up GET/PATCH; success flow only
+          // Clear preview-related fields before redirect to avoid rendering broken links during transition
+          setFormData(prev => ({
+            ...prev,
+            passport_photo_url: '',
+            nida_front_url: '',
+            birth_cert_url: '',
+            application_letter_url: '',
+            residence_letter_url: '',
+            medical_report_url: '',
+            police_clearance_url: '',
+            cv_url: '',
+            previous_employer_letter_url: ''
+          } as any));
           (window as any).showNotification?.('success', 'Mlinzi amesajiliwa kikamilifu');
           setHasSubmitted(true);
           try { localStorage.removeItem(STORAGE_KEY); } catch {}
-          try { window.location.href = '/'; } catch {}
+          // Emergency: stop automatic redirects to ensure any latent errors stay visible
+          // try { window.location.href = '/'; } catch {}
 
           await Promise.resolve(onComplete(createResult.data as Guard, isApplicantFlow));
 
       } catch (error: any) {
+          try { console.error('CRITICAL SUBMIT CRASH:', error); } catch {}
+          try { if (typeof window !== 'undefined') window.alert('SUBMISSION ERROR: ' + (error?.message || 'Unknown error occurred')); } catch {}
           (window as any).showNotification?.('error', String(error?.message || 'Registration failed'));
       } finally {
           setIsSubmitting(false);
@@ -693,6 +710,24 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           } else {
             if (next[key]) delete next[key];
           }
+          return next;
+        });
+      } else if (field === 'institution_name') {
+        setErrors(prev => {
+          const next = { ...prev };
+          delete next[`edu_institution_${index}`];
+          return next;
+        });
+      } else if (field === 'year') {
+        setErrors(prev => {
+          const next = { ...prev };
+          delete next[`edu_year_${index}`];
+          return next;
+        });
+      } else if (field === 'level') {
+        setErrors(prev => {
+          const next = { ...prev };
+          delete next[`edu_level_${index}`];
           return next;
         });
       }
@@ -917,11 +952,13 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Record #{index + 1}</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                      <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Level</label>
+                                        <label htmlFor={`edu_level_${index}`} className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Level</label>
                                         <select 
+                                            id={`edu_level_${index}`}
+                                            name={`edu_level_${index}`}
                                             value={edu.level} 
                                             onChange={(e) => updateEducation(index, 'level', e.target.value)}
-                                            className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl font-bold text-xs uppercase outline-none"
+                                            className={`w-full h-12 px-4 bg-white border rounded-xl font-bold text-xs uppercase outline-none ${errors[`edu_level_${index}`] ? 'border-red-300' : 'border-slate-200'}`}
                                             disabled={isReadOnly}
                                         >
                                             <option value="primary">Primary School</option>
@@ -932,8 +969,9 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                                             <option value="university">University</option>
                                             <option value="military">Military/JKT</option>
                                         </select>
+                                        {errors[`edu_level_${index}`] && <p className="text-xs font-medium text-red-500 mt-1 ml-2">{errors[`edu_level_${index}`]}</p>}
                                      </div>
-                                     <InputField label="Institution/School Name" name={`edu_institution_${index}`} value={(edu as any).institution_name || ''} onChange={(e) => updateEducation(index, 'institution_name', e.target.value)} placeholder="Enter institution name" disabled={isReadOnly} />
+                                     <InputField label="Institution/School Name" name={`edu_institution_${index}`} value={(edu as any).institution_name || ''} onChange={(e) => updateEducation(index, 'institution_name', e.target.value)} placeholder="Enter institution name" disabled={isReadOnly} error={errors[`edu_institution_${index}`]} />
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                      <InputField 
@@ -957,7 +995,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                                      />
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                     <InputField label="Completion Year" name={`edu_year_${index}`} value={edu.year} onChange={(e) => updateEducation(index, 'year', e.target.value.replace(/[^0-9]/g, '').slice(0,4))} placeholder="YYYY" disabled={isReadOnly} />
+                                     <InputField label="Completion Year" name={`edu_year_${index}`} value={edu.year} onChange={(e) => updateEducation(index, 'year', e.target.value.replace(/[^0-9]/g, '').slice(0,4))} placeholder="YYYY" disabled={isReadOnly} error={errors[`edu_year_${index}`]} />
                                 </div>
                                 <FileUploader label="Certificate Scan" fileUrl={edu.certificate_url} onUpload={(url) => updateEducation(index, 'certificate_url', url)} onRemove={() => updateEducation(index, 'certificate_url', '')} className="h-28" disabled={isReadOnly} />
                             </div>

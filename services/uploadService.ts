@@ -29,7 +29,10 @@ export const uploadToAmini = async (file: File): Promise<string> => {
     throw new Error(message);
   }
   const data = await resp.json().catch(() => ({}));
+  const serverKey: string = data?.key || '';
+  if (serverKey) return serverKey;
   const url: string = data?.url || data?.file_url || '';
   if (!url) throw new Error('Upload response missing URL');
-  return url;
+  const last = url.split('/').pop() || url;
+  return last;
 };

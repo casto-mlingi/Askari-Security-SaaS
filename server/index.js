@@ -75,6 +75,31 @@ app.get('/api', (_req, res) => {
   });
 });
 
+// Token refresh: issues a new JWT for authenticated callers without altering session state
+app.post('/api/auth/refresh', requireAuth, async (req, res) => {
+  try {
+    const u = req.user || {};
+    const token = jwt.sign(
+      { sub: u.sub, role: u.role, email: u.email, company_id: u.company_id ?? null },
+      JWT_SECRET,
+      { expiresIn: '12h' }
+    );
+    return res.status(200).json({
+      token,
+      user: {
+        id: u.sub,
+        role: u.role,
+        email: u.email,
+        company_id: u.company_id ?? null,
+        is_active: true
+      },
+      expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+    });
+  } catch (e) {
+    return res.status(400).json({ error: 'refresh_failed', message: e?.message || 'unable_to_refresh' });
+  }
+});
+
 // External BRELA/NIDA proxy endpoint removed intentionally
 
 const pool = process.env.DATABASE_URL
@@ -431,6 +456,34 @@ app.patch('/api/guards/:id/education_records', requireAuth, async (req, res) => 
     res.status(200).json(updated);
   } catch (e) {
     res.status(500).json({ error: 'error' });
+  }
+});
+
+app.delete('/api/guards/:id/education_records/:recordId', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const id = req.params.id;
+    const recordId = req.params.recordId;
+    const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
+    const guard = gRows[0];
+    if (!guard) return res.status(404).json({ error: 'not_found' });
+    const { allowed } = await canViewGuardFull(actor, guard);
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
+    await client.query('BEGIN');
+    const delRes = await client.query('DELETE FROM education_records WHERE id = $1 AND guard_id = $2', [recordId, id]);
+    if (delRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'not_found' });
+    }
+    await recomputeReadiness(id);
+    await client.query('COMMIT');
+    res.status(204).send();
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    res.status(400).json({ error: 'delete_failed', message: e?.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -1039,8 +1092,12 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     // Company association: if HR user, force company_id to their company
     let myCompanyId = actor.company_id || null;
     if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {
+        myCompanyId = null;
+      }
     }
     if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId) {
       payload['company_id'] = myCompanyId;
