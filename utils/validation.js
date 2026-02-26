@@ -1,36 +1,27 @@
 export function validateEducationRecords(records) {
   const errors = {};
   const arr = Array.isArray(records) ? records : [];
+  const allowedLevels = new Set(['primary','secondary','advanced','nta4_5','military','college','university']);
+  const currentYear = new Date().getFullYear() + 1;
   arr.forEach((rec, idx) => {
     const level = (rec && rec.level) ? String(rec.level).trim() : '';
     const inst = (rec && rec.institution_name) ? String(rec.institution_name).trim() : '';
-    const year = (rec && rec.year) != null ? String(rec.year).trim() : '';
-    const start = (rec && rec.start_date) ? String(rec.start_date).trim() : '';
-    const end = (rec && rec.end_date) ? String(rec.end_date).trim() : '';
-    const cert = (rec && rec.certificate_url) ? String(rec.certificate_url).trim() : '';
-    const touched = !!(level || inst || year || start || end || cert);
-    if (!touched) return;
-    // Relaxed rules: education is optional. Only enforce sane date ordering if both dates present.
-    // Partial records are allowed; backend will ignore empty inserts safely.
-    if (year) {
-      const y = year.replace(/[^0-9]/g, '');
-      if (y.length && y.length !== 4) {
-        errors[`edu_year_${idx}`] = 'Enter a valid 4-digit year.';
-      }
+    const yearRaw = rec?.graduation_year != null ? String(rec.graduation_year) : (rec?.year != null ? String(rec.year) : '');
+    const yearDigits = yearRaw.replace(/[^0-9]/g, '').slice(0,4);
+    if (!level || !allowedLevels.has(level.toLowerCase())) {
+      errors[`edu_level_${idx}`] = 'Select a valid education level.';
     }
-    if (start && end) {
-      try {
-        const s = new Date(start).getTime();
-        const e = new Date(end).getTime();
-        if (!Number.isNaN(s) && !Number.isNaN(e) && e < s) {
-          errors[`edu_end_${idx}`] = 'End date cannot be before start date.';
-        }
-      } catch {}
+    if (!inst || inst.length < 2 || inst.length > 100) {
+      errors[`edu_institution_${idx}`] = 'Institution must be 2-100 characters.';
+    }
+    const yr = parseInt(yearDigits || '0', 10);
+    if (!/^\d{4}$/.test(yearDigits) || yr < 1900 || yr > currentYear) {
+      errors[`edu_year_${idx}`] = 'Enter a 4-digit year between 1900 and next year.';
     }
   });
   try {
     console.warn('EDU_VALIDATION_DETAIL', {
-      total: arr.length,
+      total: Object.keys(errors).length ? 1 : 0,
       errors
     });
   } catch {}

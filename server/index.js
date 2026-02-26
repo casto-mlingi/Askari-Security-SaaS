@@ -13,7 +13,7 @@ dotenv.config();
 try {
   const p = path.join(process.cwd(), '.env.local');
   if (fs.existsSync(p)) dotenv.config({ path: p });
-} catch {}
+} catch { }
 
 // Auth config and middleware moved to top to avoid ReferenceErrors
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
@@ -75,6 +75,50 @@ app.get('/api', (_req, res) => {
   });
 });
 
+// --- Monitoring & Alerting (401/500 real-time detection) ---
+function sendAlert(subject, text) {
+  try {
+    if (mailTransport && ALERT_EMAIL) {
+      mailTransport.sendMail({
+        to: ALERT_EMAIL,
+        from: process.env.EMAIL_USER || 'noreply@amini.co.tz',
+        subject,
+        text
+      }).catch(() => { });
+    }
+  } catch { }
+}
+
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const code = res.statusCode;
+    if (code === 401 || code === 500) {
+      const info = {
+        ts: new Date().toISOString(),
+        code,
+        ms: Date.now() - startedAt,
+        method: req.method,
+        path: req.originalUrl,
+        user: (req.user && req.user.sub) || null,
+      };
+      try { console.warn('[ALERT_HTTP]', JSON.stringify({ ...info, body: req.body }, null, 2)); } catch { console.warn('[ALERT_HTTP]', info); }
+      try {
+        sendAlert(`[ALERT] ${code} on ${req.method} ${req.originalUrl}`, JSON.stringify({ ...info, body: req.body }, null, 2));
+      } catch { }
+    }
+  });
+  next();
+});
+
+app.use((err, req, res, _next) => {
+  try { console.error('UNHANDLED_ERROR', { message: err?.message, stack: err?.stack, path: req?.originalUrl }); } catch { }
+  try { sendAlert('[CRASH] Unhandled error', `${req?.method || ''} ${req?.originalUrl || ''}\n${err?.stack || err?.message || String(err)}`); } catch { }
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'internal_error', message: err?.message || 'internal_error' });
+  }
+});
+
 // Token refresh: issues a new JWT for authenticated callers without altering session state
 app.post('/api/auth/refresh', requireAuth, async (req, res) => {
   try {
@@ -104,21 +148,21 @@ app.post('/api/auth/refresh', requireAuth, async (req, res) => {
 
 const pool = process.env.DATABASE_URL
   ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: String(process.env.PGSSL || '').toLowerCase() === 'require'
-        ? { rejectUnauthorized: false }
-        : undefined
-    })
+    connectionString: process.env.DATABASE_URL,
+    ssl: String(process.env.PGSSL || '').toLowerCase() === 'require'
+      ? { rejectUnauthorized: false }
+      : undefined
+  })
   : new Pool({
-      host: process.env.PGHOST || 'localhost',
-      port: Number(process.env.PGPORT) || 5432,
-      user: process.env.PGUSER || 'postgres',
-      password: process.env.PGPASSWORD || '',
-      database: process.env.PGDATABASE || 'amini_db',
-      ssl: String(process.env.PGSSL || '').toLowerCase() === 'require'
-        ? { rejectUnauthorized: false }
-        : undefined
-    });
+    host: process.env.PGHOST || 'localhost',
+    port: Number(process.env.PGPORT) || 5432,
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || '',
+    database: process.env.PGDATABASE || 'amini_db',
+    ssl: String(process.env.PGSSL || '').toLowerCase() === 'require'
+      ? { rejectUnauthorized: false }
+      : undefined
+  });
 
 const ALERT_EMAIL = process.env.ALERT_EMAIL || 'moshi@anasul.co.tz';
 
@@ -132,13 +176,13 @@ try {
       auth: process.env.EMAIL_USER ? { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } : undefined
     });
   }
-} catch {}
+} catch { }
 
 // Removed obsolete BRELA settings endpoints
 
 // --- File Uploads: ensure uploads directory and configure multer ---
 const uploadsDir = path.join(process.cwd(), 'uploads');
-try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch {}
+try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch { }
 const sanitize = (name) => String(name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
@@ -264,7 +308,7 @@ async function ensureSchema() {
     console.warn('[schema] interview_logs ensure failed:', e?.message || e);
   }
 }
-ensureSchema().catch(() => {});
+ensureSchema().catch(() => { });
 
 async function recomputeReadiness(guardId) {
   try {
@@ -286,7 +330,7 @@ async function recomputeReadiness(guardId) {
     const total = parts.reduce((a, b) => a + b, 0);
     const score = Math.max(total, 1);
     await pool.query('UPDATE guards SET readiness_score = $1, updated_at = now() WHERE id = $2', [score, guardId]);
-  } catch {}
+  } catch { }
 }
 
 async function processInterviewTimeouts() {
@@ -294,7 +338,7 @@ async function processInterviewTimeouts() {
     await pool.query(
       "UPDATE guards SET status = 'marketplace', company_id = NULL, updated_at = now() WHERE status = 'interviewing' AND updated_at < now() - interval '3 days'"
     );
-  } catch {}
+  } catch { }
 }
 
 async function sendAlertEmail(guardName, narrative, currentScore) {
@@ -389,23 +433,18 @@ app.post('/api/guards/:id/education_records', requireAuth, async (req, res) => {
     const inserted = [];
     for (const it of items) {
       let level = it.level ? String(it.level).toLowerCase() : null;
-      const allowedLevels = new Set(['primary','secondary','advanced','nta4_5','military']);
+      const allowedLevels = new Set(['primary', 'secondary', 'advanced', 'nta4_5', 'military', 'college', 'university']);
       if (level && !allowedLevels.has(level)) {
-        if (level === 'college' || level === 'university') level = 'advanced';
-        else level = 'advanced';
+        level = 'advanced';
       }
-      const qualification = it.qualification || level || null;
       const inst = it.institution_name || null;
-      const startDate = it.start_date != null ? String(it.start_date) : null;
-      const endDate = it.end_date != null ? String(it.end_date) : null;
-      const year = it.year != null ? String(it.year) : (it.graduation_year != null ? String(it.graduation_year) : null);
-      if (!qualification && !level && !inst && !year && !startDate && !endDate && !it?.certificate_url) continue;
-      const cert = it.certificate_url || null;
-      const wp = it.weapon_proficiency || null;
+      const year = it.year != null ? String(it.year) : (it.graduation_year != null ? String(it.graduation_year) : (it.graduation_year != null ? String(it.graduation_year) : null));
+      if (!level && !inst && !year && !it?.certificate_scan && !it?.certificate_url) continue;
+      const cert = it.certificate_scan || it.certificate_url || null;
       const { rows } = await client.query(
-        `INSERT INTO education_records (guard_id, institution_name, qualification, level, year, start_date, end_date, certificate_url, weapon_proficiency, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), now()) RETURNING *`,
-        [id, inst, qualification, level, year, startDate, endDate, cert, wp]
+        `INSERT INTO education_records (guard_id, institution_name, level, graduation_year, certificate_url, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5, now(), now()) RETURNING *`,
+        [id, inst, level, year, cert]
       );
       inserted.push(rows[0]);
     }
@@ -414,7 +453,7 @@ app.post('/api/guards/:id/education_records', requireAuth, async (req, res) => {
     await client.query('COMMIT');
     res.status(200).json(inserted);
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(500).json({ error: 'error' });
   } finally {
     client.release();
@@ -438,14 +477,13 @@ app.patch('/api/guards/:id/education_records', requireAuth, async (req, res) => 
       const values = [];
       let idx = 1;
       if (it.level != null) { fields.push(`level = $${idx++}`); values.push(String(it.level).toLowerCase()); }
-    if (it.year != null) { fields.push(`year = $${idx++}`); values.push(String(it.year)); }
-    else if (it.graduation_year != null) { fields.push(`year = $${idx++}`); values.push(String(it.graduation_year)); }
-    if (it.institution_name !== undefined) { fields.push(`institution_name = $${idx++}`); values.push(it.institution_name); }
-    if (it.qualification !== undefined) { fields.push(`qualification = $${idx++}`); values.push(it.qualification); }
-    if (it.start_date !== undefined) { fields.push(`start_date = $${idx++}`); values.push(it.start_date); }
-    if (it.end_date !== undefined) { fields.push(`end_date = $${idx++}`); values.push(it.end_date); }
-      if (it.certificate_url !== undefined) { fields.push(`certificate_url = $${idx++}`); values.push(it.certificate_url); }
-      if (it.weapon_proficiency !== undefined) { fields.push(`weapon_proficiency = $${idx++}`); values.push(it.weapon_proficiency); }
+      if (it.year != null) { fields.push(`year = $${idx++}`); values.push(String(it.year)); }
+      else if (it.graduation_year != null) { fields.push(`year = $${idx++}`); values.push(String(it.graduation_year)); }
+      if (it.institution_name !== undefined) { fields.push(`institution_name = $${idx++}`); values.push(it.institution_name); }
+      if (it.qualification !== undefined) { fields.push(`qualification = $${idx++}`); values.push(it.qualification); }
+
+      if (it.certificate_scan !== undefined) { fields.push(`certificate_url = $${idx++}`); values.push(it.certificate_scan); }
+      else if (it.certificate_url !== undefined) { fields.push(`certificate_url = $${idx++}`); values.push(it.certificate_url); }
       if (!fields.length) continue;
       fields.push(`updated_at = now()`);
       values.push(it.id, id);
@@ -480,7 +518,7 @@ app.delete('/api/guards/:id/education_records/:recordId', requireAuth, async (re
     await client.query('COMMIT');
     res.status(204).send();
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(400).json({ error: 'delete_failed', message: e?.message });
   } finally {
     client.release();
@@ -581,7 +619,7 @@ app.post('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
     await client.query('COMMIT');
     res.status(200).json(inserted);
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(500).json({ error: 'error' });
   } finally {
     client.release();
@@ -663,7 +701,7 @@ app.post('/api/resubmit-requests', requireAuth, (req, res) => {
       `INSERT INTO resubmit_requests (guard_id, company_id, reason, status, created_at, updated_at)
        VALUES ($1,$2,$3,$4, now(), now())`,
       [guardId, companyId, reason, status]
-    ).catch(() => {});
+    ).catch(() => { });
   } catch {
     // Ignore
   }
@@ -775,7 +813,7 @@ app.post('/api/auth/login', async (req, res) => {
           "UPDATE guards SET dossier_data = COALESCE(dossier_data, '{}'::jsonb) || jsonb_build_object('password_hash', $1) WHERE id = $2",
           [newHash, guard.id]
         );
-      } catch {}
+      } catch { }
       passOk = true;
     }
     if (!passOk) return res.status(401).json({ error: 'invalid_credentials' });
@@ -791,7 +829,7 @@ app.post('/api/auth/login', async (req, res) => {
           "UPDATE guards SET status = 'draft', updated_at = now() WHERE id = $1 AND company_id IS NULL AND status <> 'draft'",
           [guard.id]
         );
-      } catch {}
+      } catch { }
     }
     const token = jwt.sign({ sub: guard.id, role, email: guard.email, company_id: guard.company_id || null }, JWT_SECRET, { expiresIn: '12h' });
     return res.status(200).json({
@@ -843,14 +881,14 @@ app.post('/api/public/signup', async (req, res) => {
           finalDob = maybe;
         }
       }
-    } catch {}
+    } catch { }
     if (!finalDob) finalDob = '2000-01-01';
     // Hash computed for security; persist into guards if supported
     const { rows } = await pool.query(
       `INSERT INTO guards (full_name, nida_number, phone, dob, email, status, performance_score, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now())
        RETURNING id, full_name, nida_number, phone, dob, email, status, performance_score, created_at, updated_at`,
-      [ full_name, nida_number, phone, finalDob, emailNorm, 'draft', 100 ]
+      [full_name, nida_number, phone, finalDob, emailNorm, 'draft', 100]
     );
     const guard = rows[0];
     try {
@@ -859,7 +897,7 @@ app.post('/api/public/signup', async (req, res) => {
         "UPDATE guards SET dossier_data = COALESCE(dossier_data, '{}'::jsonb) || jsonb_build_object('password_hash', $1, 'signup_method', 'public') WHERE id = $2",
         [hash, guard.id]
       );
-    } catch {}
+    } catch { }
     return res.status(200).json({ ok: true, guard });
   } catch (e) {
     // Log and surface DB errors precisely (e.g., NOT NULL violations, unique violations)
@@ -1018,7 +1056,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
     });
     res.status(200).json(out);
   } catch (e) {
-    try { console.error('GET /api/guards error', e); } catch {}
+    try { console.error('GET /api/guards error', e); } catch { }
     res.status(500).json({
       error: 'Database Transaction Failed',
       message: e?.message,
@@ -1034,7 +1072,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const rawBody = req.body || {};
-    try { console.log('--- INCOMING REQUEST BODY ---', JSON.stringify(rawBody, null, 2)); } catch {}
+    try { console.log('--- INCOMING REQUEST BODY ---', JSON.stringify(rawBody, null, 2)); } catch { }
     const firstNamePre = rawBody.firstName || rawBody.first_name || '';
     const middleNamePre = rawBody.middleName || rawBody.middle_name || '';
     const surnamePre = rawBody.surname || rawBody.last_name || '';
@@ -1042,9 +1080,9 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     let nida_number_pre = rawBody?.nida_number ?? rawBody?.nidaNumber ?? null;
     nida_number_pre = nida_number_pre != null ? String(nida_number_pre).trim() : null;
     if (nida_number_pre === '') nida_number_pre = null;
-    try { console.log('--- PROCESSED DATA ---', { full_name: full_name_pre, nida_number: nida_number_pre }); } catch {}
+    try { console.log('--- PROCESSED DATA ---', { full_name: full_name_pre, nida_number: nida_number_pre }); } catch { }
     const body = { ...rawBody, full_name: full_name_pre, nida_number: nida_number_pre };
-    try { console.log('INTAKE PAYLOAD:', body); } catch {}
+    try { console.log('INTAKE PAYLOAD:', body); } catch { }
     const allowed = new Set([
       'full_name', 'phone', 'nida_number',
       'status',
@@ -1120,20 +1158,20 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         ...asArr(body?.guarantor_records),
         ...asArr(body?.references),
       ];
-      try { console.log('POST /api/guards begin', { hasEducation: incomingEducation.length, hasGuarantors: incomingGuarantors.length }); } catch {}
+      try { console.log('POST /api/guards begin', { hasEducation: incomingEducation.length, hasGuarantors: incomingGuarantors.length }); } catch { }
       const needsTx = true;
       await client.query('BEGIN');
       // Sanitize: remove any leading-underscore fields before insert
       const guardData = Object.fromEntries(
         Object.entries(payload).filter(([k]) => !k.startsWith('_'))
       );
-      try { console.log('FINAL PAYLOAD:', { full_name: guardData.full_name, nida_number: guardData.nida_number }); } catch {}
+      try { console.log('FINAL PAYLOAD:', { full_name: guardData.full_name, nida_number: guardData.nida_number }); } catch { }
       // Use UPSERT to avoid conflicts when a partial record already exists
       const hasNida = guardData.nida_number != null && String(guardData.nida_number).trim() !== '';
       if (!hasNida) {
-        try { console.log('Skipping UPSERT: nida_number is null/empty'); } catch {}
+        try { console.log('Skipping UPSERT: nida_number is null/empty'); } catch { }
       }
-      try { console.log('FINAL SQL PAYLOAD:', { full_name: guardData.full_name, nida: guardData.nida_number, addr: guardData.physical_address }); } catch {}
+      try { console.log('FINAL SQL PAYLOAD:', { full_name: guardData.full_name, nida: guardData.nida_number, addr: guardData.physical_address }); } catch { }
       const fields = Object.keys(guardData);
       const vals = fields.map((k, i) => `$${i + 1}`);
       const sql = `
@@ -1146,7 +1184,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       `;
       const { rows } = await client.query(sql, fields.map(k => guardData[k]));
       const guard = rows[0];
-      try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch {}
+      try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch { }
       // Upsert Next of Kin into dedicated table if provided
       try {
         const nokName = body?.next_of_kin_name || null;
@@ -1164,104 +1202,76 @@ app.post('/api/guards', requireAuth, async (req, res) => {
           `, [guard.id, nokName, nokPhone, nokRel]);
         }
       } catch (nokErr) {
-        try { console.error('next_of_kin upsert failed; continuing without blocking registration', { message: nokErr?.message, detail: nokErr?.detail }); } catch {}
+        try { console.error('next_of_kin upsert failed; continuing without blocking registration', { message: nokErr?.message, detail: nokErr?.detail }); } catch { }
       }
-      // Insert education records if provided (use SAVEPOINT per record to avoid aborting whole tx)
+      // Insert education records if provided: strict mapping to graduation_year and single-transaction failure on invalid mapping
       for (const it of incomingEducation) {
-        try {
-          await client.query('SAVEPOINT edu_sp');
-          let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
-          const allowedLevels = new Set(['primary','secondary','advanced','nta4_5','military']);
-          if (level && !allowedLevels.has(level)) {
-            if (level === 'college' || level === 'university') level = 'advanced';
-            else level = 'advanced';
-          }
-          const qualification = it?.qualification || it?.qualification_level || level || null;
-          const inst = it?.institution_name || null;
-          const toYYYYMMDD = (val) => {
-            const raw = String(val || '').slice(0, 10);
-            return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
-          };
-          const startDate = toYYYYMMDD(it?.start_date);
-          const endDate = toYYYYMMDD(it?.end_date);
-          const yearRaw = it?.year != null ? String(it.year) 
-                          : (it?.graduation_year != null ? String(it.graduation_year) 
-                          : (it?.completion_year != null ? String(it.completion_year) : null));
-          const year = yearRaw ? String(yearRaw).replace(/[^0-9]/g, '').slice(0,4) : null;
-          if (startDate && endDate) {
-            if (new Date(endDate).getTime() < new Date(startDate).getTime()) {
-              const err = new Error('education_date_range_invalid');
-              err.code = 'EDU_DATE_RANGE';
-              throw err;
-            }
-          }
-          if (!qualification && !level && !inst && !year && !startDate && !endDate && !it?.certificate_url) continue;
-          const cert = it?.certificate_url || null;
-          const wp = it?.weapon_proficiency || null;
-          // graduation_year must be integer; convert "" to null
-          const graduationYearInt = year != null && String(year).trim() !== '' ? parseInt(String(year), 10) : null;
-          try {
-            await client.query(
-              `INSERT INTO education_records (guard_id, institution_name, qualification, level, graduation_year, start_date, end_date, created_at, updated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now())`,
-              [guard.id, inst, qualification, level, graduationYearInt, startDate, endDate]
-            );
-          } catch (colErr) {
-            const yearStr = graduationYearInt != null ? String(graduationYearInt) : null;
-            try {
-              await client.query('ROLLBACK TO SAVEPOINT edu_sp');
-            } catch {}
-            try {
-              await client.query(
-                `INSERT INTO education_records (guard_id, institution_name, qualification, level, year, start_date, end_date, created_at, updated_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now())`,
-                [guard.id, inst, qualification, level, yearStr, startDate, endDate]
-              );
-            } catch (finalErr) {
-              try { await client.query('ROLLBACK TO SAVEPOINT edu_sp'); } catch {}
-              try { console.error('education_records insert failed; skipped record', { message: finalErr?.message, detail: finalErr?.detail }); } catch {}
-            }
-          }
-        } catch (err) {
-          // Already handled via savepoint rollback; continue to next record
-          try { console.error('POST /api/guards education insert error', err); } catch {}
+        let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
+        const allowedLevels = new Set(['primary', 'secondary', 'advanced', 'nta4_5', 'military', 'college', 'university']);
+        if (level && !allowedLevels.has(level)) {
+          level = 'advanced';
         }
+        const inst = it?.institution_name || null;
+        const yearRaw = it?.graduation_year != null ? String(it.graduation_year)
+          : (it?.completion_year != null ? String(it.completion_year)
+            : (it?.year != null ? String(it.year) : null));
+        const gradYearDigits = yearRaw ? String(yearRaw).replace(/[^0-9]/g, '').slice(0, 4) : '';
+        const graduationYearInt = gradYearDigits ? parseInt(gradYearDigits, 10) : null;
+
+        const cert = it?.certificate_scan || it?.certificate_url || null;
+        const touched = !!(level || inst || graduationYearInt != null || cert);
+        if (!touched) continue;
+
+        if (yearRaw && (!/^\d{4}$/.test(gradYearDigits))) {
+          const err = new Error('education_graduation_year_invalid');
+          err.code = 'EDU_YEAR_INVALID';
+          err.field = 'graduation_year';
+          throw err;
+        }
+
+        await client.query(
+          `INSERT INTO education_records (guard_id, institution_name, level, graduation_year, certificate_url, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5, now(), now())`,
+          [guard.id, inst, level, graduationYearInt, cert]
+        );
       }
-      // Insert guarantors if provided (schema-aligned: use full_name). Use SAVEPOINT per record to isolate failures.
+      // Insert guarantors if provided: enforce full_name not null and basic phone validation; fail tx on error
+      const phoneOk = (p) => {
+        if (!p) return true;
+        const s = String(p).trim();
+        return /^\+?\d[\d\- ]{7,}$/.test(s);
+      };
       for (const gt of incomingGuarantors) {
-        try {
-          await client.query('SAVEPOINT gt_sp');
-          const full_name = gt?.full_name || gt?.name || null;
-          const occupation = gt?.occupation || null;
-          const relationship = gt?.relationship || null;
-          const phone = gt?.phone || null;
-          const idCopy = gt?.id_copy_url || gt?.id_copy || null;
-          const letter = gt?.guarantor_letter_url || gt?.letter_url || null;
-          const residence = gt?.residence_letter_url || null;
-          if (!full_name && !relationship && !phone && !letter && !residence) continue;
-          try {
-            await client.query(
-              `INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(), now())`,
-              [guard.id, full_name, occupation, relationship, phone, idCopy, letter, residence]
-            );
-          } catch (gtErr) {
-            try { await client.query('ROLLBACK TO SAVEPOINT gt_sp'); } catch {}
-            try {
-              await client.query(
-                `INSERT INTO guarantors (guard_id, name, relationship, phone, id_copy_url, letter_url, created_at)
-                 VALUES ($1,$2,$3,$4,$5,$6, now())`,
-                [guard.id, full_name, relationship, phone, idCopy, letter]
-              );
-            } catch (finalGtErr) {
-              try { await client.query('ROLLBACK TO SAVEPOINT gt_sp'); } catch {}
-              try { console.error('guarantors insert failed; skipped record', { message: finalGtErr?.message, detail: finalGtErr?.detail }); } catch {}
-            }
-          }
-        } catch (err) {
-          // Already handled via savepoint rollback; continue to next record
-          try { console.error('POST /api/guards guarantor insert error', err); } catch {}
+        const full_name = (gt?.full_name || gt?.name || '').trim();
+        const occupation = gt?.occupation || null;
+        const relationship = gt?.relationship || null;
+        const phone = gt?.phone || null;
+        const idCopy = gt?.id_copy_url || null;
+        const letter = gt?.guarantor_letter_url || null;
+        const residence = gt?.residence_letter_url || null;
+        const touched = !!(full_name || relationship || phone || letter || residence || occupation);
+        if (!touched) continue;
+        if (!full_name) {
+          const err = new Error('guarantor_full_name_required');
+          // @ts-ignore
+          err.code = 'GUA_NAME_REQUIRED';
+          // @ts-ignore
+          err.field = 'full_name';
+          throw err;
         }
+        if (!phoneOk(phone)) {
+          const err = new Error('guarantor_phone_invalid');
+          // @ts-ignore
+          err.code = 'GUA_PHONE_INVALID';
+          // @ts-ignore
+          err.field = 'phone';
+          throw err;
+        }
+        await client.query(
+          `INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(), now())`,
+          [guard.id, full_name, occupation, relationship, phone, idCopy, letter, residence]
+        );
       }
       if (incomingEducation.length > 0 || incomingGuarantors.length > 0) {
         await recomputeReadiness(guard.id);
@@ -1290,20 +1300,29 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         return res.status(200).json(guard || null);
       }
     } catch (e) {
-      try { await client.query('ROLLBACK'); } catch {}
+      try { await client.query('ROLLBACK'); } catch { }
       throw e;
     } finally {
       client.release();
     }
   } catch (e) {
-    try { console.error('FULL INTAKE ERROR:', e); } catch {}
-    try { console.error('POST /api/guards error', e, { detail: e?.detail, constraint: e?.constraint, table: e?.table, hint: e?.hint, column: e?.column }); } catch {}
+    try { console.error('FULL INTAKE ERROR:', e); } catch { }
+    try { console.error('POST /api/guards error', e, { detail: e?.detail, constraint: e?.constraint, table: e?.table, hint: e?.hint, column: e?.column }); } catch { }
     const isUnique = String(e?.code) === '23505';
     const isNida = [String(e?.constraint || ''), String(e?.detail || ''), String(e?.message || '')]
       .some(s => s.toLowerCase().includes('nida'));
     const msgStr = String(e?.message || '');
     if (msgStr.includes('education_date_range_invalid') || String(e?.code) === 'EDU_DATE_RANGE') {
       return res.status(400).json({ error: 'validation_error', field: 'education_dates', message: 'End date cannot be before start date.' });
+    }
+    if (String(e?.code) === 'EDU_YEAR_INVALID') {
+      return res.status(400).json({ error: 'validation_error', field: e?.field || 'graduation_year', message: 'Graduation year must be a 4-digit year.' });
+    }
+    if (String(e?.code) === 'GUA_NAME_REQUIRED') {
+      return res.status(400).json({ error: 'validation_error', field: 'guarantor_full_name', message: 'Guarantor full name is required.' });
+    }
+    if (String(e?.code) === 'GUA_PHONE_INVALID') {
+      return res.status(400).json({ error: 'validation_error', field: 'guarantor_phone', message: 'Guarantor phone format is invalid.' });
     }
     if (isUnique && isNida) {
       return res.status(409).json({ error: 'conflict', message: 'Mlinzi mwenye NIDA hii tayari amesajiliwa.' });
@@ -1405,7 +1424,7 @@ app.post('/api/interview-logs', requireAuth, async (req, res) => {
     );
     res.status(200).json({ id: uuid, ok: true });
   } catch (e) {
-    try { console.error('POST /api/interview-logs error', e); } catch {}
+    try { console.error('POST /api/interview-logs error', e); } catch { }
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
@@ -1447,7 +1466,7 @@ app.post('/interview-logs', requireAuth, async (req, res) => {
     );
     res.status(200).json({ id: uuid, ok: true });
   } catch (e) {
-    try { console.error('POST /interview-logs error', e); } catch {}
+    try { console.error('POST /interview-logs error', e); } catch { }
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
@@ -1479,7 +1498,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       gts = gRows || [];
     } catch (err) {
       gts = [];
-      try { console.warn('guarantors fetch failed, returning []:', (err && err.message) || String(err)); } catch {}
+      try { console.warn('guarantors fetch failed, returning []:', (err && err.message) || String(err)); } catch { }
     }
     let eds = [];
     try {
@@ -1487,7 +1506,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       eds = eRows || [];
     } catch (err) {
       eds = [];
-      try { console.warn('education_records fetch failed, returning []:', (err && err.message) || String(err)); } catch {}
+      try { console.warn('education_records fetch failed, returning []:', (err && err.message) || String(err)); } catch { }
     }
     let docsRows = [];
     try {
@@ -1575,16 +1594,16 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
     const incoming = req.body || {};
     const { performance_score: _ps_ignored, score: _score_ignored, ...payload } = incoming;
     const actor = req.user || {};
-      // Resolve actor's company for HR roles
-      let myCompanyId = actor.company_id || null;
-      if (!myCompanyId && actor?.sub) {
-        try {
-          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-          myCompanyId = meRows[0]?.company_id || null;
-        } catch {
-          myCompanyId = null;
-        }
+    // Resolve actor's company for HR roles
+    let myCompanyId = actor.company_id || null;
+    if (!myCompanyId && actor?.sub) {
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch {
+        myCompanyId = null;
       }
+    }
     let current = null;
     if (isValidUuid(id)) {
       const { rows: currentRows } = await pool.query(
@@ -1617,10 +1636,10 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
       payload.physical_address = payload.address;
       delete payload.address;
     }
-      // Ensure HR updates preserve company_id association if not explicitly provided
-      if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId && !Object.prototype.hasOwnProperty.call(payload, 'company_id')) {
-        payload.company_id = current?.company_id || myCompanyId;
-      }
+    // Ensure HR updates preserve company_id association if not explicitly provided
+    if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId && !Object.prototype.hasOwnProperty.call(payload, 'company_id')) {
+      payload.company_id = current?.company_id || myCompanyId;
+    }
     // Auto-set active when both site and supervisor are provided in this request
     const providedSiteNow = Object.prototype.hasOwnProperty.call(payload, 'current_site_id') && payload.current_site_id;
     const providedSupNow = Object.prototype.hasOwnProperty.call(payload, 'assigned_supervisor_id') && payload.assigned_supervisor_id;
@@ -1658,7 +1677,7 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
         payload.status = 'marketplace';
         payload.company_id = null;
       }
-    } catch {}
+    } catch { }
 
     const allowed = new Set([
       'full_name', 'phone', 'nida_number',
@@ -1701,7 +1720,7 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
           await client.query(sql, [...values, id]);
           await client.query('COMMIT');
         } catch (err) {
-          try { await client.query('ROLLBACK'); } catch {}
+          try { await client.query('ROLLBACK'); } catch { }
           throw err;
         } finally {
           client.release();
@@ -1719,7 +1738,7 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
     try {
       const safeKeys = Object.keys(req?.body || {});
       console.error('PATCH /api/guards/:id error', { id: req?.params?.id, keys: safeKeys, message: e?.message }, e);
-    } catch {}
+    } catch { }
     res.status(400).json({ error: e?.message || String(e) });
   }
 });
@@ -1804,7 +1823,7 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
         }
       }
       const formal_report = action_taken ? `${incident_type}: ${description} | Action: ${action_taken}` : `${incident_type}: ${description}`;
-      const cols = ['guard_id','company_id','formal_report','penalty_points','incident_code','created_at'];
+      const cols = ['guard_id', 'company_id', 'formal_report', 'penalty_points', 'incident_code', 'created_at'];
       const vals = [guard_id, company_id, formal_report, Math.abs(penalty_points || 0), incident_type];
       let sql = 'INSERT INTO disciplinary_records (guard_id, company_id, formal_report, penalty_points, incident_code, created_at';
       let placeholders = '$1,$2,$3,$4,$5, now()';
@@ -1818,16 +1837,16 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
       await client.query('COMMIT');
       try {
         await sendAlertEmail(g.full_name || 'Unknown Guard', String(formal_report || ''), undefined);
-      } catch {}
+      } catch { }
       res.status(200).json({ ok: true, guard_id });
     } catch (e) {
-      try { await client.query('ROLLBACK'); } catch {}
+      try { await client.query('ROLLBACK'); } catch { }
       throw e;
     } finally {
       client.release();
     }
   } catch (e) {
-    try { console.error('POST /api/disciplinary/records error', e); } catch {}
+    try { console.error('POST /api/disciplinary/records error', e); } catch { }
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
@@ -1836,13 +1855,13 @@ app.get('/api/verify-nida-unique', requireAuth, async (req, res) => {
   try {
     const nidaRaw = req.query?.nida_number ?? req.query?.nida ?? '';
     const nida = String(nidaRaw || '').trim();
-    try { console.log('VERIFY NIDA UNIQUE', nida); } catch {}
+    try { console.log('VERIFY NIDA UNIQUE', nida); } catch { }
     if (!nida) return res.status(400).json({ error: 'bad_request', message: 'nida_number required' });
     const { rows } = await pool.query('SELECT 1 FROM guards WHERE nida_number = $1 LIMIT 1', [nida]);
     const exists = Array.isArray(rows) && rows.length > 0;
     return res.status(200).json({ unique: !exists });
   } catch (e) {
-    try { console.error('GET /api/verify-nida-unique error', e); } catch {}
+    try { console.error('GET /api/verify-nida-unique error', e); } catch { }
     return res.status(500).json({ error: 'error' });
   }
 });
@@ -1890,7 +1909,7 @@ app.post('/api/admin/data-cleanup', requireAuth, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'unknown_action' });
     } catch (e) {
-      try { await client.query('ROLLBACK'); } catch {}
+      try { await client.query('ROLLBACK'); } catch { }
       throw e;
     } finally {
       client.release();
@@ -1927,7 +1946,7 @@ app.get('/api/sites', requireAuth, async (req, res) => {
     try {
       const safeKeys = Object.keys(req?.body || {});
       console.error('PATCH /api/guards/:id error', { id: req?.params?.id, keys: safeKeys, message: e?.message }, e);
-    } catch {}
+    } catch { }
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
@@ -2250,7 +2269,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
       try {
         const { rows: meRows } = await pool.query('SELECT company_id, current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         myCompanyId = meRows[0]?.company_id || null;
-      } catch {}
+      } catch { }
     }
     const qSiteId = String(req.query?.site_id || '').trim() || null;
     const qStart = String(req.query?.start || '').trim() || null;
@@ -2266,7 +2285,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
         const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         const sid = sRows[0]?.current_site_id || null;
         if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch {}
+      } catch { }
     }
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
@@ -2305,7 +2324,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
     await client.query('COMMIT');
     res.status(200).json(rows);
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
   } finally {
     client.release();
@@ -2337,19 +2356,19 @@ app.post('/api/rosters', requireAuth, async (req, res) => {
         const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         const sid = sRows[0]?.current_site_id || null;
         if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch {}
+      } catch { }
     }
     let existing = null;
     if (site_id) {
       try {
         const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND site_id = $2 AND shift_date = $3 LIMIT 1', [guard_id, site_id, shift_date]);
         existing = rows[0] || null;
-      } catch {}
+      } catch { }
     } else {
       try {
         const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND shift_date = $2 LIMIT 1', [guard_id, shift_date]);
         existing = rows[0] || null;
-      } catch {}
+      } catch { }
     }
     if (existing && existing.id) {
       const { rows } = await client.query(
@@ -2359,16 +2378,16 @@ app.post('/api/rosters', requireAuth, async (req, res) => {
       await client.query('COMMIT');
       return res.status(200).json(rows[0] || null);
     } else {
-      const cols = ['company_id','site_id','guard_id','shift_date','shift_type','status','created_at','updated_at'];
+      const cols = ['company_id', 'site_id', 'guard_id', 'shift_date', 'shift_type', 'status', 'created_at', 'updated_at'];
       const vals = [company_id, site_id, guard_id, shift_date, shift_type, status];
-      const placeholders = ['$1','$2','$3','$4','$5','$6','now()','now()'];
+      const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', 'now()', 'now()'];
       const sql = `INSERT INTO rosters (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
       const { rows } = await client.query(sql, vals);
       await client.query('COMMIT');
       return res.status(200).json(rows[0] || null);
     }
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
   } finally {
     client.release();
@@ -2384,7 +2403,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
       try {
         const { rows: meRows } = await pool.query('SELECT company_id, current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         myCompanyId = meRows[0]?.company_id || null;
-      } catch {}
+      } catch { }
     }
     const qSiteId = String(req.query?.site_id || '').trim() || null;
     const qStart = String(req.query?.start || '').trim() || null;
@@ -2400,7 +2419,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
         const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         const sid = sRows[0]?.current_site_id || null;
         if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch {}
+      } catch { }
     }
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
@@ -2439,7 +2458,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
     await client.query('COMMIT');
     res.status(200).json(rows);
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
   } finally {
     client.release();
@@ -2471,19 +2490,19 @@ app.post('/api/rosters', requireAuth, async (req, res) => {
         const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         const sid = sRows[0]?.current_site_id || null;
         if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch {}
+      } catch { }
     }
     let existing = null;
     if (site_id) {
       try {
         const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND site_id = $2 AND shift_date = $3 LIMIT 1', [guard_id, site_id, shift_date]);
         existing = rows[0] || null;
-      } catch {}
+      } catch { }
     } else {
       try {
         const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND shift_date = $2 LIMIT 1', [guard_id, shift_date]);
         existing = rows[0] || null;
-      } catch {}
+      } catch { }
     }
     if (existing && existing.id) {
       const { rows } = await client.query(
@@ -2493,16 +2512,16 @@ app.post('/api/rosters', requireAuth, async (req, res) => {
       await client.query('COMMIT');
       return res.status(200).json(rows[0] || null);
     } else {
-      const cols = ['company_id','site_id','guard_id','shift_date','shift_type','status','created_at','updated_at'];
+      const cols = ['company_id', 'site_id', 'guard_id', 'shift_date', 'shift_type', 'status', 'created_at', 'updated_at'];
       const vals = [company_id, site_id, guard_id, shift_date, shift_type, status];
-      const placeholders = ['$1','$2','$3','$4','$5','$6', 'now()', 'now()'];
+      const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', 'now()', 'now()'];
       const sql = `INSERT INTO rosters (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
       const { rows } = await client.query(sql, vals);
       await client.query('COMMIT');
       return res.status(200).json(rows[0] || null);
     }
   } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
   } finally {
     client.release();
