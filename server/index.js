@@ -733,7 +733,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // 0) Try platform users table (super admin and other staff)
     try {
-      const { rows: uRows } = await pool.query('SELECT id, full_name, email, role, password FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
+      const { rows: uRows } = await pool.query('SELECT id, email, role, password FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
       const user = uRows[0];
       if (user) {
         let ok = false;
@@ -1097,10 +1097,27 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       'agreed_salary', 'contract_start_date', 'contract_end_date', 'has_signed_contract',
       'gender', 'bank_account_number', 'nssf_number'
     ]);
+    const GUARD_COLUMNS = new Set([
+      'company_id', 'nida_number', 'full_name', 'dob', 'phone', 'profile_score', 'performance_score',
+      'current_site_id', 'assigned_supervisor_id', 'agreed_salary', 'contract_start_date', 'contract_end_date',
+      'has_signed_contract', 'employment_contract_url', 'current_shift', 'leave_return_date', 'consecutive_absences',
+      'residence_lat', 'residence_lng', 'is_armed', 'weapon_qualification', 'next_of_kin_name', 'next_of_kin_phone',
+      'next_of_kin_relationship', 'bank_account_number', 'nssf_number', 'previous_experience', 'nida_front_url',
+      'birth_cert_url', 'application_letter_url', 'residence_letter_url', 'police_clearance_url', 'cv_url',
+      'passport_photo_url', 'previous_employer_letter_url', 'email', 'password_hash', 'system_verification_status',
+      'hired_at', 'supervisor_id', 'assigned_site_id', 'readiness_score', 'medical_report_url', 'hr_feedback_note',
+      'kin_name', 'kin_phone', 'kin_relationship', 'gender', 'physical_address', 'emergency_contact', 'status',
+      'emergency_contact_name', 'emergency_contact_phone', 'username'
+    ]);
+
     const payload = {};
     for (const k of Object.keys(body || {})) {
-      if (allowed.has(k)) payload[k] = body[k];
+      if (GUARD_COLUMNS.has(k)) payload[k] = body[k];
     }
+
+    // CRITICAL: Sanitize Guard Payload (remove non-column fields as requested)
+    const fieldsToExclude = ['education_records', 'guarantors', 'dossier_data'];
+    fieldsToExclude.forEach(f => delete payload[f]);
     // Align frontend field names to DB columns
     if (Object.prototype.hasOwnProperty.call(body, 'site_id')) {
       payload['current_site_id'] = body.site_id || null;
@@ -1204,7 +1221,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       } catch (nokErr) {
         try { console.error('next_of_kin upsert failed; continuing without blocking registration', { message: nokErr?.message, detail: nokErr?.detail }); } catch { }
       }
-      // Insert education records if provided: strict mapping to graduation_year and single-transaction failure on invalid mapping
+      // Insert education records if provided: map certificate_scan -> certificate_url and ensure integer graduation_year
       for (const it of incomingEducation) {
         let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
         const allowedLevels = new Set(['primary', 'secondary', 'advanced', 'nta4_5', 'military', 'college', 'university']);
@@ -1218,6 +1235,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         const gradYearDigits = yearRaw ? String(yearRaw).replace(/[^0-9]/g, '').slice(0, 4) : '';
         const graduationYearInt = gradYearDigits ? parseInt(gradYearDigits, 10) : null;
 
+        // Correct field mapping: certificate_scan -> certificate_url
         const cert = it?.certificate_scan || it?.certificate_url || null;
         const touched = !!(level || inst || graduationYearInt != null || cert);
         if (!touched) continue;
@@ -1229,13 +1247,23 @@ app.post('/api/guards', requireAuth, async (req, res) => {
           throw err;
         }
 
-        await client.query(
-          `INSERT INTO education_records (guard_id, institution_name, level, graduation_year, certificate_url, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5, now(), now())`,
-          [guard.id, inst, level, graduationYearInt, cert]
-        );
+        try {
+          await client.query(
+            `INSERT INTO education_records (guard_id, institution_name, level, graduation_year, certificate_url, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5, now(), now())`,
+            [guard.id, inst, level, graduationYearInt, cert]
+          );
+        } catch (eduErr) {
+          console.error('DATABASE ERROR: education_records insert failed', {
+            message: eduErr.message,
+            guard_id: guard.id,
+            data: { inst, level, graduationYearInt }
+          });
+          throw eduErr;
+        }
       }
-      // Insert guarantors if provided: enforce full_name not null and basic phone validation; fail tx on error
+
+      // Insert guarantors: strictly use full_name and guarantor_letter_url mapping
       const phoneOk = (p) => {
         if (!p) return true;
         const s = String(p).trim();
@@ -1247,32 +1275,66 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         const relationship = gt?.relationship || null;
         const phone = gt?.phone || null;
         const idCopy = gt?.id_copy_url || null;
-        const letter = gt?.guarantor_letter_url || null;
+        const letter = gt?.guarantor_letter_url || gt?.letter_url || null;
         const residence = gt?.residence_letter_url || null;
         const touched = !!(full_name || relationship || phone || letter || residence || occupation);
         if (!touched) continue;
         if (!full_name) {
           const err = new Error('guarantor_full_name_required');
-          // @ts-ignore
           err.code = 'GUA_NAME_REQUIRED';
-          // @ts-ignore
           err.field = 'full_name';
           throw err;
         }
         if (!phoneOk(phone)) {
           const err = new Error('guarantor_phone_invalid');
-          // @ts-ignore
           err.code = 'GUA_PHONE_INVALID';
-          // @ts-ignore
           err.field = 'phone';
           throw err;
         }
-        await client.query(
-          `INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(), now())`,
-          [guard.id, full_name, occupation, relationship, phone, idCopy, letter, residence]
-        );
+        try {
+          await client.query(
+            `INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(), now())`,
+            [guard.id, full_name, occupation, relationship, phone, idCopy, letter, residence]
+          );
+        } catch (guaErr) {
+          console.error('DATABASE ERROR: guarantors insert failed', {
+            message: guaErr.message,
+            guard_id: guard.id,
+            full_name
+          });
+          throw guaErr;
+        }
       }
+
+      // Insert Next of Kin using correct schema mapping: full_name, phone_number, relationship
+      try {
+        const nokName = body?.kin_name || body?.next_of_kin_name || null;
+        const nokPhone = body?.kin_phone || body?.next_of_kin_phone || null;
+        const nokRel = body?.kin_relationship || body?.next_of_kin_relationship || null;
+        const nokAddr = body?.kin_address || body?.next_of_kin_address || null;
+
+        if (nokName || nokPhone || nokRel) {
+          await client.query(`
+            INSERT INTO next_of_kin (guard_id, full_name, phone_number, relationship, physical_address, created_at)
+            VALUES ($1, $2, $3, $4, $5, now())
+            ON CONFLICT (guard_id) DO UPDATE
+              SET full_name = EXCLUDED.full_name,
+                  phone_number = EXCLUDED.phone_number,
+                  relationship = EXCLUDED.relationship,
+                  physical_address = EXCLUDED.physical_address
+          `, [guard.id, nokName, nokPhone, nokRel, nokAddr]);
+        }
+      } catch (nokErr) {
+        console.error('DATABASE ERROR: next_of_kin insert failed', {
+          message: nokErr.message,
+          guard_id: guard.id,
+          detail: nokErr.detail
+        });
+        // We throw here too to ensure atomic failure as requested
+        throw nokErr;
+      }
+
       if (incomingEducation.length > 0 || incomingGuarantors.length > 0) {
         await recomputeReadiness(guard.id);
       }
@@ -1306,15 +1368,20 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       client.release();
     }
   } catch (e) {
-    try { console.error('FULL INTAKE ERROR:', e); } catch { }
-    try { console.error('POST /api/guards error', e, { detail: e?.detail, constraint: e?.constraint, table: e?.table, hint: e?.hint, column: e?.column }); } catch { }
+    console.error('CRITICAL BACKEND ERROR:', {
+      message: e.message,
+      code: e.code,
+      detail: e.detail,
+      constraint: e.constraint,
+      table: e.table,
+      column: e.column,
+      hint: e.hint,
+      stack: e.stack
+    });
+
     const isUnique = String(e?.code) === '23505';
-    const isNida = [String(e?.constraint || ''), String(e?.detail || ''), String(e?.message || '')]
-      .some(s => s.toLowerCase().includes('nida'));
     const msgStr = String(e?.message || '');
-    if (msgStr.includes('education_date_range_invalid') || String(e?.code) === 'EDU_DATE_RANGE') {
-      return res.status(400).json({ error: 'validation_error', field: 'education_dates', message: 'End date cannot be before start date.' });
-    }
+
     if (String(e?.code) === 'EDU_YEAR_INVALID') {
       return res.status(400).json({ error: 'validation_error', field: e?.field || 'graduation_year', message: 'Graduation year must be a 4-digit year.' });
     }
@@ -1324,16 +1391,19 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     if (String(e?.code) === 'GUA_PHONE_INVALID') {
       return res.status(400).json({ error: 'validation_error', field: 'guarantor_phone', message: 'Guarantor phone format is invalid.' });
     }
-    if (isUnique && isNida) {
-      return res.status(409).json({ error: 'conflict', message: 'Mlinzi mwenye NIDA hii tayari amesajiliwa.' });
+    if (isUnique) {
+      return res.status(409).json({ error: 'conflict', message: 'Mlinzi mwenye data hizi (kama NIDA) tayari amesajiliwa.', detail: e.detail });
     }
+
     res.status(500).json({
-      error: 'Database Transaction Failed',
-      message: e?.message,
-      detail: e?.detail,
-      hint: e?.hint,
-      table: e?.table,
-      column: e?.column
+      error: 'DATABASE_ERROR',
+      message: e.message,
+      details: {
+        table: e.table,
+        column: e.column,
+        constraint: e.constraint,
+        code: e.code
+      }
     });
   }
 });
