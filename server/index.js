@@ -1230,7 +1230,10 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch { }
       // NOTE: next_of_kin insertion moved to line ~1310 for unified schema alignment
       // Insert education records if provided: map certificate_scan -> certificate_url and ensure integer graduation_year
-      for (const it of incomingEducation) {
+      // PRODUCTION HOTFIX: Ensure education_records is handled even if null/undefined
+      const safeEdu = Array.isArray(incomingEducation) ? incomingEducation : [];
+      for (const it of safeEdu) {
+        if (!it) continue;
         let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
         const allowedLevels = new Set(['primary', 'secondary', 'advanced', 'nta4_5', 'military', 'college', 'university']);
         if (level && !allowedLevels.has(level)) {
@@ -1241,7 +1244,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         // Strict graduation_year Type Enforcement
         const yearRaw = it?.year ?? it?.graduation_year ?? it?.completion_year;
         let graduationYearInt = null;
-        if (yearRaw !== undefined && yearRaw !== null) {
+        if (yearRaw !== undefined && yearRaw !== null && String(yearRaw).trim() !== '') {
           graduationYearInt = parseInt(String(yearRaw), 10);
           if (isNaN(graduationYearInt)) {
             const err = new Error('education_graduation_year_invalid');
@@ -1251,8 +1254,8 @@ app.post('/api/guards', requireAuth, async (req, res) => {
           }
         }
 
-        // Correct field mapping: certificate_scan -> certificate_url (exactly once)
-        const cert = it?.certificate_scan || null;
+        // Correct field mapping: prefers direct certificate_url, falls back to certificate_scan
+        const cert = it?.certificate_url || it?.certificate_scan || null;
 
         const touched = !!(level || inst || graduationYearInt != null || cert);
         if (!touched) continue;

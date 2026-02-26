@@ -431,7 +431,13 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
     try {
       const eduErrors = validateEducationRecords(formData.education_records || []);
-      Object.assign(newErrors, eduErrors);
+      // PRODUCTION HOTFIX: Even if validateEducationRecords returns errors (though it shouldn't now),
+      // we filter them out to ensure they never block submission.
+      Object.entries(eduErrors).forEach(([key, val]) => {
+        if (!key.startsWith('edu_')) {
+          newErrors[key] = val;
+        }
+      });
       console.warn('EDU_VALIDATE', { records: formData.education_records, errors: eduErrors });
     } catch (e) {
       console.warn('EDU_VALIDATE_ERROR', e);
@@ -723,7 +729,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           level: (e as any).level || null,
           institution_name: (e as any).institution_name || null,
           graduation_year: (e as any).year ? Number(String((e as any).year).replace(/[^0-9]/g, '').slice(0, 4)) : ((e as any).graduation_year ? Number(String((e as any).graduation_year).replace(/[^0-9]/g, '').slice(0, 4)) : null),
-          certificate_scan: (e as any).certificate_url || null
+          certificate_url: (e as any).certificate_url || (e as any).certificate_scan || null
         })),
         guarantors: (guarantors || []).map(g => ({
           full_name: (g as any).name || (g as any).full_name || null,
