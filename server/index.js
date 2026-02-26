@@ -203,6 +203,32 @@ const upload = multer({
 app.use('/uploads', express.static(uploadsDir));
 app.use('/api/uploads', express.static(uploadsDir));
 
+// --- Standardized Database Error Handling ---
+function sendDbError(res, e, customMessage) {
+  const code = e?.code || 'UNKNOWN_ERROR';
+  const detail = e?.detail || null;
+  const table = e?.table || null;
+  const column = e?.column || null;
+
+  console.error('DATABASE ERROR:', { message: e.message, code, detail, table, column });
+
+  if (code === '23505') {
+    return res.status(409).json({ error: 'conflict', message: 'Data tayari ipo kwenye mfumo (Unique Constraint)', detail });
+  }
+  if (code === '23502') {
+    return res.status(400).json({ error: 'bad_request', message: `Uwanja unahitajika: ${column}`, field: column });
+  }
+  if (code === '23503') {
+    return res.status(400).json({ error: 'bad_request', message: 'Id ya kampuni au tovuti haipo (Foreign Key Error)', table });
+  }
+
+  return res.status(500).json({
+    error: 'DATABASE_ERROR',
+    message: customMessage || e.message,
+    details: { code, table, column, detail }
+  });
+}
+
 // --- Minimal schema guardrails (idempotent) ---
 async function ensureSchema() {
   try {
@@ -255,7 +281,7 @@ async function ensureSchema() {
     console.warn('[schema] education_records.end_date ensure failed:', e?.message || e);
   }
   try {
-    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS graduation_year TEXT');
+    await pool.query('ALTER TABLE IF EXISTS education_records ADD COLUMN IF NOT EXISTS graduation_year INTEGER');
   } catch (e) {
     console.warn('[schema] education_records.graduation_year ensure failed:', e?.message || e);
   }
@@ -1202,25 +1228,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       const { rows } = await client.query(sql, fields.map(k => guardData[k]));
       const guard = rows[0];
       try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch { }
-      // Upsert Next of Kin into dedicated table if provided
-      try {
-        const nokName = body?.next_of_kin_name || null;
-        const nokPhone = body?.next_of_kin_phone || null;
-        const nokRel = body?.next_of_kin_relationship || null;
-        if (nokName || nokPhone || nokRel) {
-          await client.query(`
-            INSERT INTO next_of_kin (guard_id, name, phone, relationship, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, now(), now())
-            ON CONFLICT (guard_id) DO UPDATE
-              SET name = EXCLUDED.name,
-                  phone = EXCLUDED.phone,
-                  relationship = EXCLUDED.relationship,
-                  updated_at = now()
-          `, [guard.id, nokName, nokPhone, nokRel]);
-        }
-      } catch (nokErr) {
-        try { console.error('next_of_kin upsert failed; continuing without blocking registration', { message: nokErr?.message, detail: nokErr?.detail }); } catch { }
-      }
+      // NOTE: next_of_kin insertion moved to line ~1310 for unified schema alignment
       // Insert education records if provided: map certificate_scan -> certificate_url and ensure integer graduation_year
       for (const it of incomingEducation) {
         let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
@@ -1368,20 +1376,6 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       client.release();
     }
   } catch (e) {
-    console.error('CRITICAL BACKEND ERROR:', {
-      message: e.message,
-      code: e.code,
-      detail: e.detail,
-      constraint: e.constraint,
-      table: e.table,
-      column: e.column,
-      hint: e.hint,
-      stack: e.stack
-    });
-
-    const isUnique = String(e?.code) === '23505';
-    const msgStr = String(e?.message || '');
-
     if (String(e?.code) === 'EDU_YEAR_INVALID') {
       return res.status(400).json({ error: 'validation_error', field: e?.field || 'graduation_year', message: 'Graduation year must be a 4-digit year.' });
     }
@@ -1391,20 +1385,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     if (String(e?.code) === 'GUA_PHONE_INVALID') {
       return res.status(400).json({ error: 'validation_error', field: 'guarantor_phone', message: 'Guarantor phone format is invalid.' });
     }
-    if (isUnique) {
-      return res.status(409).json({ error: 'conflict', message: 'Mlinzi mwenye data hizi (kama NIDA) tayari amesajiliwa.', detail: e.detail });
-    }
-
-    res.status(500).json({
-      error: 'DATABASE_ERROR',
-      message: e.message,
-      details: {
-        table: e.table,
-        column: e.column,
-        constraint: e.constraint,
-        code: e.code
-      }
-    });
+    return sendDbError(res, e, 'Usajili wa mlinzi umeshindikana');
   }
 });
 
@@ -1585,6 +1566,11 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
     } catch {
       docsRows = [];
     }
+    let kinship = null;
+    try {
+      const { rows: nRows } = await pool.query('SELECT * FROM next_of_kin WHERE guard_id = $1 LIMIT 1', [id]);
+      kinship = nRows[0] || null;
+    } catch { }
     const normGuarantors = (gts || []).map(gt => ({ ...gt, name: gt.name ?? gt.full_name, occupation: gt.occupation ?? null }));
     const normEdu = (eds || []).map(er => ({ ...er, year: er.year ?? (er.graduation_year != null ? String(er.graduation_year) : null) }));
     const canSeeDocs =
@@ -1608,7 +1594,14 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
     };
     const normalizedTop = {
       ...scrubbedTopLevel,
-      physical_address: scrubbedTopLevel.physical_address ?? scrubbedTopLevel.address ?? ((scrubbedTopLevel?.dossier_data || {})['physical_address'] ?? null)
+      physical_address: scrubbedTopLevel.physical_address ?? scrubbedTopLevel.address ?? ((scrubbedTopLevel?.dossier_data || {})['physical_address'] ?? null),
+      // Schema normalization: merge kinship data from next_of_kin table
+      next_of_kin_name: kinship?.full_name || scrubbedTopLevel.next_of_kin_name || scrubbedTopLevel.kin_name || null,
+      next_of_kin_phone: kinship?.phone_number || scrubbedTopLevel.next_of_kin_phone || scrubbedTopLevel.kin_phone || null,
+      next_of_kin_relationship: kinship?.relationship || scrubbedTopLevel.next_of_kin_relationship || scrubbedTopLevel.kin_relationship || null,
+      kin_name: kinship?.full_name || scrubbedTopLevel.kin_name || scrubbedTopLevel.next_of_kin_name || null,
+      kin_phone: kinship?.phone_number || scrubbedTopLevel.kin_phone || scrubbedTopLevel.next_of_kin_phone || null,
+      kin_relationship: kinship?.relationship || scrubbedTopLevel.kin_relationship || scrubbedTopLevel.next_of_kin_relationship || null
     };
     const fixUrl = (u) => {
       if (!u) return u;
@@ -1781,22 +1774,36 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
       const setClauses = keys.map((k, i) => `"${k}" = $${i + 1}`);
       const values = keys.map(k => payload[k]);
       const sql = `UPDATE guards SET ${setClauses.join(', ')}, updated_at = now() WHERE id = $${keys.length + 1}`;
-      const involvesActivation = String(payload?.status || '').toLowerCase() === 'active' || (providedSiteNow && providedSupNow);
-      const touchesCritical = keys.some(k => k === 'status' || k === 'current_site_id' || k === 'assigned_supervisor_id' || k === 'company_id');
-      if (involvesActivation && touchesCritical) {
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          await client.query(sql, [...values, id]);
-          await client.query('COMMIT');
-        } catch (err) {
-          try { await client.query('ROLLBACK'); } catch { }
-          throw err;
-        } finally {
-          client.release();
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(sql, [...values, id]);
+
+        // Holistic fix: Sync next_of_kin table if kinship fields provided
+        const nokName = payload.kin_name || payload.next_of_kin_name;
+        const nokPhone = payload.kin_phone || payload.next_of_kin_phone;
+        const nokRel = payload.kin_relationship || payload.next_of_kin_relationship;
+        const nokAddr = payload.kin_address || payload.next_of_kin_address;
+
+        if (nokName || nokPhone || nokRel) {
+          await client.query(`
+            INSERT INTO next_of_kin (guard_id, full_name, phone_number, relationship, physical_address, created_at)
+            VALUES ($1, $2, $3, $4, $5, now())
+            ON CONFLICT (guard_id) DO UPDATE
+              SET full_name = COALESCE(EXCLUDED.full_name, next_of_kin.full_name),
+                  phone_number = COALESCE(EXCLUDED.phone_number, next_of_kin.phone_number),
+                  relationship = COALESCE(EXCLUDED.relationship, next_of_kin.relationship),
+                  physical_address = COALESCE(EXCLUDED.physical_address, next_of_kin.physical_address)
+          `, [id, nokName || null, nokPhone || null, nokRel || null, nokAddr || null]);
         }
-      } else {
-        await pool.query(sql, [...values, id]);
+
+        await client.query('COMMIT');
+      } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { }
+        throw err;
+      } finally {
+        client.release();
       }
     }
 
@@ -1805,11 +1812,7 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
     const { rows: after } = await pool.query('SELECT * FROM guards WHERE id = $1 LIMIT 1', [id]);
     res.status(200).json(after[0] || null);
   } catch (e) {
-    try {
-      const safeKeys = Object.keys(req?.body || {});
-      console.error('PATCH /api/guards/:id error', { id: req?.params?.id, keys: safeKeys, message: e?.message }, e);
-    } catch { }
-    res.status(400).json({ error: e?.message || String(e) });
+    return sendDbError(res, e, 'Kusasisha taarifa za mlinzi kumeshindikana');
   }
 });
 
