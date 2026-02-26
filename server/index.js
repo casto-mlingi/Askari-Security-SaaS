@@ -1237,23 +1237,25 @@ app.post('/api/guards', requireAuth, async (req, res) => {
           level = 'advanced';
         }
         const inst = it?.institution_name || null;
-        const yearRaw = it?.graduation_year != null ? String(it.graduation_year)
-          : (it?.completion_year != null ? String(it.completion_year)
-            : (it?.year != null ? String(it.year) : null));
-        const gradYearDigits = yearRaw ? String(yearRaw).replace(/[^0-9]/g, '').slice(0, 4) : '';
-        const graduationYearInt = gradYearDigits ? parseInt(gradYearDigits, 10) : null;
 
-        // Correct field mapping: certificate_scan -> certificate_url
-        const cert = it?.certificate_scan || it?.certificate_url || null;
+        // Strict graduation_year Type Enforcement
+        const yearRaw = it?.year ?? it?.graduation_year ?? it?.completion_year;
+        let graduationYearInt = null;
+        if (yearRaw !== undefined && yearRaw !== null) {
+          graduationYearInt = parseInt(String(yearRaw), 10);
+          if (isNaN(graduationYearInt)) {
+            const err = new Error('education_graduation_year_invalid');
+            err.code = 'EDU_YEAR_INVALID';
+            err.field = 'graduation_year';
+            throw err;
+          }
+        }
+
+        // Correct field mapping: certificate_scan -> certificate_url (exactly once)
+        const cert = it?.certificate_scan || null;
+
         const touched = !!(level || inst || graduationYearInt != null || cert);
         if (!touched) continue;
-
-        if (yearRaw && (!/^\d{4}$/.test(gradYearDigits))) {
-          const err = new Error('education_graduation_year_invalid');
-          err.code = 'EDU_YEAR_INVALID';
-          err.field = 'graduation_year';
-          throw err;
-        }
 
         try {
           await client.query(
@@ -1326,11 +1328,6 @@ app.post('/api/guards', requireAuth, async (req, res) => {
           await client.query(`
             INSERT INTO next_of_kin (guard_id, full_name, phone_number, relationship, physical_address, created_at)
             VALUES ($1, $2, $3, $4, $5, now())
-            ON CONFLICT (guard_id) DO UPDATE
-              SET full_name = EXCLUDED.full_name,
-                  phone_number = EXCLUDED.phone_number,
-                  relationship = EXCLUDED.relationship,
-                  physical_address = EXCLUDED.physical_address
           `, [guard.id, nokName, nokPhone, nokRel, nokAddr]);
         }
       } catch (nokErr) {
