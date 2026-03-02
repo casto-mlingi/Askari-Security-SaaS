@@ -78,43 +78,32 @@ const App: React.FC = () => {
     isFetchingRef.current = true;
     let isMounted = true;
     try {
-      const [guardsRes, sitesRes, profilesRes, companiesRes, recordsRes] = await Promise.all([
+      const [guardsRes, sitesRes, profilesRes, companiesRes, incRes] = await Promise.all([
         guardService.getGuards(),
         api.get<Site[]>('/sites'),
         api.get<Profile[]>('/profiles'),
         api.get<Company[]>('/companies'),
-        api.get<DisciplinaryRecord[]>('/disciplinary/records')
+        api.get<IncidentReport[]>('/ops/incidents').catch(() => ({ data: [] }))
       ]);
       if (isMounted) {
         if (guardsRes.data) setGuards(guardsRes.data);
         if (sitesRes.data) setSites(sitesRes.data as Site[]);
         if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
         if (companiesRes.data) setCompanies(companiesRes.data as Company[]);
-        if (recordsRes.data) {
-          const rawRecords = recordsRes.data as DisciplinaryRecord[];
-          setDisciplinaryRecords(rawRecords);
-          const mappedIncidents: IncidentReport[] = rawRecords.map(r => {
-            const pts = r.penalty_points || 0;
-            let sev: 'low' | 'medium' | 'high' | 'critical' = 'low';
-            if (pts >= 20) sev = 'critical';
-            else if (pts >= 15) sev = 'high';
-            else if (pts >= 10) sev = 'medium';
-            else if (pts >= 5) sev = 'low';
-
-            return {
-              id: r.id,
-              guard_id: r.guard_id,
-              site_id: undefined,
-              code: r.incident_code || 'OTHER_REPORT',
-              notes: r.formal_report || '',
-              evidence_url: r.evidence_url || '',
-              points_deducted: pts,
-              severity: sev,
-              reported_by: 'System',
-              created_at: r.created_at
-            };
-          });
-          setIncidents(mappedIncidents);
+        if (incRes.data) {
+          const rawRecords = (incRes.data as any[]).map(r => ({
+            id: r.id,
+            guard_id: r.guard_id,
+            site_id: r.site_id || undefined,
+            code: 'OTHER_REPORT',
+            notes: (r.title ? `[${r.title}] ` : '') + (r.notes || ''),
+            evidence_url: r.evidence_url || '',
+            points_deducted: r.points_deducted || r.penalty_points || 0,
+            severity: r.severity || 'low',
+            reported_by: r.reported_by || 'System',
+            created_at: r.created_at
+          }));
+          setIncidents(rawRecords);
         }
         setLoading(false);
       }
@@ -275,24 +264,10 @@ const App: React.FC = () => {
     const companyGuardIds = (guards || [])
       .filter(g => g && g.company_id === userCompanyId)
       .map(g => g.id);
-    const mapRecordToIncident = (r: DisciplinaryRecord): IncidentReport => ({
-      id: r.id,
-      guard_id: r.guard_id,
-      title: r.incident_code,
-      code: r.incident_code,
-      notes: r.formal_report,
-      evidence_url: '',
-      reported_by: 'HR System',
-      created_at: r.created_at
-    });
-    const combined = [
-      ...incidents,
-      ...disciplinaryRecords.map(mapRecordToIncident)
-    ];
-    return combined
+    return incidents
       .filter(Boolean)
       .filter(i => companyGuardIds.includes(i?.guard_id));
-  }, [incidents, disciplinaryRecords, userRole, userCompanyId, guards]);
+  }, [incidents, userRole, userCompanyId, guards]);
 
   const unreadAlertsCount = useMemo(() => {
     const highOrCritical = (i: IncidentReport) => {
