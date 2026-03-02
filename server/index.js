@@ -17,10 +17,12 @@ try {
 
 // Auth config and middleware moved to top to avoid ReferenceErrors
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const tokenBlacklist = new Set();
 const requireAuth = (req, res, next) => {
   const header = req.headers['authorization'] || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'unauthorized' });
+  if (tokenBlacklist.has(token)) return res.status(401).json({ error: 'unauthorized', message: 'Token blacklisted' });
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
@@ -36,6 +38,27 @@ const requireAuth = (req, res, next) => {
       return next();
     }
     return res.status(401).json({ error: 'unauthorized' });
+  }
+};
+
+const requireRefreshAuth = (req, res, next) => {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'unauthorized' });
+  if (tokenBlacklist.has(token)) return res.status(401).json({ error: 'unauthorized', message: 'Token blacklisted' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    const now = Math.floor(Date.now() / 1000);
+    if (decoded.exp && decoded.exp < now) {
+      if ((now - decoded.exp) > 5 * 60) {
+        return res.status(401).json({ error: 'refresh_expired', message: 'Refresh grace period exceeded' });
+      }
+    }
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'unauthorized', message: 'Invalid token' });
   }
 };
 
@@ -119,14 +142,23 @@ app.use((err, req, res, _next) => {
   }
 });
 
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) tokenBlacklist.add(token);
+  return res.status(200).json({ success: true, message: 'Logged out successfully' });
+});
+
 // Token refresh: issues a new JWT for authenticated callers without altering session state
-app.post('/api/auth/refresh', requireAuth, async (req, res) => {
+app.post('/api/auth/refresh', requireRefreshAuth, async (req, res) => {
   try {
     const u = req.user || {};
+    const isSuperAdmin = u.role === 'super_admin';
+    const expiresIn = isSuperAdmin ? '24h' : '12h';
     const token = jwt.sign(
       { sub: u.sub, role: u.role, email: u.email, company_id: u.company_id ?? null },
       JWT_SECRET,
-      { expiresIn: '12h' }
+      { expiresIn }
     );
     return res.status(200).json({
       token,
@@ -137,7 +169,7 @@ app.post('/api/auth/refresh', requireAuth, async (req, res) => {
         company_id: u.company_id ?? null,
         is_active: true
       },
-      expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+      expires_at: new Date(Date.now() + (isSuperAdmin ? 24 : 12) * 60 * 60 * 1000).toISOString()
     });
   } catch (e) {
     return res.status(400).json({ error: 'refresh_failed', message: e?.message || 'unable_to_refresh' });
@@ -742,7 +774,8 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Immediate super admin fallback for bootstrap
     if (emailNorm === 'admin@amini.co.tz' && (password === masterPass || password === 'Admin@2027')) {
-      const token = jwt.sign({ sub: 'superadmin-bootstrap', role: 'super_admin', email: 'admin@amini.co.tz', company_id: null }, JWT_SECRET, { expiresIn: '12h' });
+      console.log(`[AUDIT] Super Admin session generated for admin@amini.co.tz, duration: 24h`);
+      const token = jwt.sign({ sub: 'superadmin-bootstrap', role: 'super_admin', email: 'admin@amini.co.tz', company_id: null }, JWT_SECRET, { expiresIn: '24h' });
       return res.status(200).json({
         token,
         user: {
@@ -753,7 +786,7 @@ app.post('/api/auth/login', async (req, res) => {
           company_id: null,
           is_active: true
         },
-        expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       });
     }
 
@@ -775,7 +808,12 @@ app.post('/api/auth/login', async (req, res) => {
         }
         if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
         const role = String(user.role || '').toLowerCase() || 'company_admin';
-        const token = jwt.sign({ sub: user.id, role, email: user.email, company_id: null }, JWT_SECRET, { expiresIn: '12h' });
+        const isSuperAdmin = role === 'super_admin';
+        if (isSuperAdmin) {
+          console.log(`[AUDIT] Super Admin session generated for ${user.email}, duration: 24h`);
+        }
+        const expiresIn = isSuperAdmin ? '24h' : '12h';
+        const token = jwt.sign({ sub: user.id, role, email: user.email, company_id: null }, JWT_SECRET, { expiresIn });
         return res.status(200).json({
           token,
           user: {
@@ -786,7 +824,7 @@ app.post('/api/auth/login', async (req, res) => {
             company_id: null,
             is_active: true
           },
-          expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+          expires_at: new Date(Date.now() + (isSuperAdmin ? 24 : 12) * 60 * 60 * 1000).toISOString()
         });
       }
     } catch (e) {
@@ -801,7 +839,12 @@ app.post('/api/auth/login', async (req, res) => {
       if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
       let role = profile.role;
       if (emailNorm === 'resettarget@example.com') role = 'system_hr';
-      const token = jwt.sign({ sub: profile.id, role, email: profile.email, company_id: profile.company_id || null }, JWT_SECRET, { expiresIn: '12h' });
+      const isSuperAdmin = role === 'super_admin';
+      if (isSuperAdmin) {
+        console.log(`[AUDIT] Super Admin session generated for ${profile.email}, duration: 24h`);
+      }
+      const expiresIn = isSuperAdmin ? '24h' : '12h';
+      const token = jwt.sign({ sub: profile.id, role, email: profile.email, company_id: profile.company_id || null }, JWT_SECRET, { expiresIn });
       return res.status(200).json({
         token,
         user: {
@@ -812,7 +855,7 @@ app.post('/api/auth/login', async (req, res) => {
           company_id: profile.company_id,
           is_active: profile.is_active
         },
-        expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+        expires_at: new Date(Date.now() + (isSuperAdmin ? 24 : 12) * 60 * 60 * 1000).toISOString()
       });
     }
 

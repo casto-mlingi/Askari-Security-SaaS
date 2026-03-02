@@ -52,6 +52,16 @@ class TokenManager {
     const t = this.getToken();
     return t ? { Authorization: `Bearer ${t}` } : {};
   }
+  logout() {
+    this.setToken(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('amini_auth_token');
+      localStorage.removeItem('token');
+      sessionStorage.clear();
+      window.location.href = '/login';
+    }
+  }
+
   async refresh(): Promise<string | null> {
     if (this.refreshing) return this.refreshing;
     this.refreshing = (async () => {
@@ -67,14 +77,23 @@ class TokenManager {
             const json: any = await res.json().catch(() => ({}));
             const t = json?.token || null;
             if (t) { this.setToken(t); return t; }
+          } else if (res.status >= 400 && res.status < 500) {
+            // Verified refresh failure - break immediately and logout
+            this.logout();
+            return null;
           }
-        } catch {}
+        } catch { }
         await new Promise(r => setTimeout(r, backoff));
       }
+      // If we reach here, we failed 3 network retries
+      this.logout();
       return null;
     })();
-    const out = await this.refreshing.finally(() => { this.refreshing = null; });
-    return out;
+    try {
+      return await this.refreshing;
+    } finally {
+      this.refreshing = null;
+    }
   }
 }
 
@@ -108,14 +127,8 @@ class ApiClient {
               body: ctx.body != null ? JSON.stringify(ctx.body) : undefined
             });
             return this.handleResponse<T>(res2, { ...ctx, retried: true });
-          } catch {}
+          } catch { }
         }
-        try {
-          if (typeof window !== 'undefined') {
-            const msg = result || { error: 'unauthorized' };
-            window.alert('AUTH ERROR: ' + JSON.stringify(msg));
-          }
-        } catch {}
       }
       const msg = result?.detail || result?.message || result?.error || 'Request failed';
       return { error: msg };
@@ -123,7 +136,7 @@ class ApiClient {
     return { data: result };
   }
 
-  private async request<T>(method: 'GET'|'POST'|'PATCH'|'DELETE', path: string, body?: any, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>> {
+  private async request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: any, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>> {
     try {
       const url = buildUrl(path);
       const response = await fetch(url, {
