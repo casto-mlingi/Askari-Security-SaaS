@@ -8,12 +8,10 @@ const SITE_NAME = 'Askari Security SaaS';
 // 🔄 "INDIE" FREE MODEL LIST (Low Traffic & Stable)
 // These models are less likely to be busy (429) than Google/Meta models.
 const MODELS = [
-  "google/gemma-3-27b-it:free",       // 1. Google (Try first, might be busy)
-  "gryphe/mythomax-l2-13b:free",      // 2. VERY STABLE (Good fallback)
-  "openchat/openchat-7b:free",        // 3. Fast & Reliable
-  "undi95/toppy-m-7b:free",           // 4. Good for JSON
-  "huggingfaceh4/zephyr-7b-beta:free",// 5. Old faithful
-  "liquid/lfm-2.5-1.2b-instruct:free" // 6. Ultra-fast lightweight
+  "google/gemini-2.0-flash-lite-001:free", // Core Requested Model
+  "google/gemini-2.0-pro-exp-02-05:free",  // Fallback High-Quality
+  "huggingfaceh4/zephyr-7b-beta:free",     // Old faithful
+  "liquid/lfm-2.5-1.2b-instruct:free"      // Ultra-fast lightweight
 ];
 
 // ==========================================
@@ -43,10 +41,10 @@ export const generateAIResponse = async (prompt: string): Promise<string> => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          "model": model, 
+          "model": model,
           "messages": [{ "role": "user", "content": prompt }],
-          "temperature": 0.7, 
-          "max_tokens": 1000 
+          "temperature": 0.7,
+          "max_tokens": 1000
         })
       });
 
@@ -63,7 +61,7 @@ export const generateAIResponse = async (prompt: string): Promise<string> => {
 
       // If Busy (429), wait 2 seconds before next try
       if (response.status === 429) {
-        await delay(2000); 
+        await delay(2000);
       }
 
     } catch (error) {
@@ -79,8 +77,8 @@ export const generateAIResponse = async (prompt: string): Promise<string> => {
 // ==========================================
 
 export const analyzeGuardDossier = async (guard: Guard, incidents: IncidentReport[] = []) => {
-  const incidentText = incidents.length > 0 
-    ? incidents.map(i => `- ${i.code}: ${i.notes}`).join('\n') 
+  const incidentText = incidents.length > 0
+    ? incidents.map(i => `- ${i.code}: ${i.notes}`).join('\n')
     : "No prior incidents.";
 
   const prompt = `
@@ -94,11 +92,11 @@ export const analyzeGuardDossier = async (guard: Guard, incidents: IncidentRepor
   `;
 
   const responseText = await generateAIResponse(prompt);
-  
-  return parseJSON(responseText, { 
-    reliability_score: 50, 
-    risk_flags: ["AI Busy"], 
-    reasoning: "Manual Review Required (AI Unreachable)" 
+
+  return parseJSON(responseText, {
+    reliability_score: 50,
+    risk_flags: ["AI Busy"],
+    reasoning: "Manual Review Required (AI Unreachable)"
   });
 };
 
@@ -127,7 +125,7 @@ export const analyzeIncident = async (description: string, matrix: any) => {
   `;
 
   const responseText = await generateAIResponse(prompt);
-  
+
   return parseJSON(responseText, {
     severity: "MEDIUM",
     recommended_action: "Investigate immediately.",
@@ -178,12 +176,12 @@ export const generateFormalDisciplinaryRecord = async (notes: string, matrix: Di
   `;
   const responseText = await generateAIResponse(prompt);
   return parseJSON(responseText, {
-    date: new Date().toISOString().slice(0,10),
+    date: new Date().toISOString().slice(0, 10),
     incident_description: notes,
     action_taken: "Verbal warning issued.",
     incident_code: (matrix[0]?.code || 'OTHER_REPORT'),
     penalty_points: -Math.abs(matrix[0]?.points || 0),
-    formal_report: `Date: ${new Date().toISOString().slice(0,10)}\nIncident: ${notes}\nAction Taken: Verbal warning issued.`
+    formal_report: `Date: ${new Date().toISOString().slice(0, 10)}\nIncident: ${notes}\nAction Taken: Verbal warning issued.`
   });
 };
 
