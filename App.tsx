@@ -93,16 +93,27 @@ const App: React.FC = () => {
         if (recordsRes.data) {
           const rawRecords = recordsRes.data as DisciplinaryRecord[];
           setDisciplinaryRecords(rawRecords);
-          const mappedIncidents: IncidentReport[] = rawRecords.map(r => ({
-            id: r.id,
-            guard_id: r.guard_id,
-            site_id: undefined,
-            code: r.incident_code || 'OTHER_REPORT',
-            notes: r.formal_report || '',
-            evidence_url: r.evidence_url,
-            reported_by: undefined,
-            created_at: r.created_at
-          }));
+          const mappedIncidents: IncidentReport[] = rawRecords.map(r => {
+            const pts = r.penalty_points || 0;
+            let sev: 'low' | 'medium' | 'high' | 'critical' = 'low';
+            if (pts >= 20) sev = 'critical';
+            else if (pts >= 15) sev = 'high';
+            else if (pts >= 10) sev = 'medium';
+            else if (pts >= 5) sev = 'low';
+
+            return {
+              id: r.id,
+              guard_id: r.guard_id,
+              site_id: undefined,
+              code: r.incident_code || 'OTHER_REPORT',
+              notes: r.formal_report || '',
+              evidence_url: r.evidence_url || '',
+              points_deducted: pts,
+              severity: sev,
+              reported_by: 'System',
+              created_at: r.created_at
+            };
+          });
           setIncidents(mappedIncidents);
         }
         setLoading(false);

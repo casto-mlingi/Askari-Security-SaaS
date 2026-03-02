@@ -83,17 +83,15 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('forensic')}
-            className={`px-4 py-3 text-[11px] font-black uppercase tracking-widest flex-1 sm:flex-none text-center rounded-xl ${
-              activeTab === 'forensic' ? 'text-white border-b-2 border-white' : 'text-white/70'
-            }`}
+            className={`px-4 py-3 text-[11px] font-black uppercase tracking-widest flex-1 sm:flex-none text-center rounded-xl ${activeTab === 'forensic' ? 'text-white border-b-2 border-white' : 'text-white/70'
+              }`}
           >
             FORENSIC DISCLOSURE
           </button>
           <button
             onClick={() => setActiveTab('incident')}
-            className={`px-4 py-3 text-[11px] font-black uppercase tracking-widest flex-1 sm:flex-none text-center rounded-xl ${
-              activeTab === 'incident' ? 'text-white border-b-2 border-white' : 'text-white/70'
-            }`}
+            className={`px-4 py-3 text-[11px] font-black uppercase tracking-widest flex-1 sm:flex-none text-center rounded-xl ${activeTab === 'incident' ? 'text-white border-b-2 border-white' : 'text-white/70'
+              }`}
           >
             INCIDENT REPORT
           </button>
@@ -114,25 +112,25 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
             const countFromIncidentCount = typeof (guard as any)?.incident_count === 'number' ? (guard as any).incident_count : 0;
             const incidentCount = Math.max(countFromGuardArr, countFromProp, countFromIncidentCount);
             return (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-5 bg-blue-700 rounded-2xl border border-blue-600">
-              <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">PERFORMANCE</p>
-              <p className="text-3xl font-black font-hud text-white">{guard.performance_score ?? 0}%</p>
-              <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">{perf.label}</p>
-            </div>
-            <div className="p-5 bg-blue-700 rounded-2xl border border-blue-600">
-              <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">INCIDENTS</p>
-              <p className="text-2xl font-black text-white font-hud">{incidentCount} Incidents</p>
-              <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Total Reported</p>
-            </div>
-            <div className={`p-5 rounded-2xl border ${isBlacklisted ? 'bg-red-700 border-red-600 force-blacklisted' : 'bg-blue-700 border-blue-600'}`}>
-              <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">CURRENT SYSTEM STATUS</p>
-              <p className="text-xl font-black text-white uppercase">
-                {isBlacklisted ? 'BLACKLISTED' : (!guard.company_id ? 'APPLICANT' : 'ACTIVE GUARD')}
-              </p>
-              <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Current</p>
-            </div>
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="p-5 bg-blue-700 rounded-2xl border border-blue-600">
+                  <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">PERFORMANCE</p>
+                  <p className="text-3xl font-black font-hud text-white">{guard.performance_score ?? 0}%</p>
+                  <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">{perf.label}</p>
+                </div>
+                <div className="p-5 bg-blue-700 rounded-2xl border border-blue-600">
+                  <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">INCIDENTS</p>
+                  <p className="text-2xl font-black text-white font-hud">{incidentCount} Incidents</p>
+                  <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Total Reported</p>
+                </div>
+                <div className={`p-5 rounded-2xl border ${isBlacklisted ? 'bg-red-700 border-red-600 force-blacklisted' : 'bg-blue-700 border-blue-600'}`}>
+                  <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">CURRENT SYSTEM STATUS</p>
+                  <p className="text-xl font-black text-white uppercase">
+                    {isBlacklisted ? 'BLACKLISTED' : (!guard.company_id ? 'APPLICANT' : 'ACTIVE GUARD')}
+                  </p>
+                  <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Current</p>
+                </div>
+              </div>
             );
           })()}
 
@@ -454,7 +452,7 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                     <p className="text-[11px] font-medium text-white/90 mt-1">{i.notes || i.title || 'No narrative provided.'}</p>
                     <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-2">{new Date(i.created_at).toLocaleString()}</p>
                   </div>
-                  <span className="text-[10px] font-black text-red-300 font-hud whitespace-nowrap">-{code?.points || 0}</span>
+                  <span className="text-[10px] font-black text-red-300 font-hud whitespace-nowrap">-{i.points_deducted || 0}</span>
                 </div>
               </div>
             );
