@@ -31,15 +31,15 @@ import RosterManager from './components/RosterManager';
 import { NotificationManager } from './components/Notification';
 import { AMINI_SQL_SCHEMA } from './constants/sql';
 import { api } from './services/api';
-import { 
-  MOCK_COMPANIES, MOCK_PROFILES, MOCK_SITES, MOCK_GUARDS, 
+import {
+  MOCK_COMPANIES, MOCK_PROFILES, MOCK_SITES, MOCK_GUARDS,
   MOCK_INCIDENTS, MOCK_EQUIPMENT, MOCK_DISCIPLINARY_CODES,
-  MOCK_LEAVE_REQUESTS, MOCK_ATTENDANCE, MOCK_ANNOUNCEMENTS 
+  MOCK_LEAVE_REQUESTS, MOCK_ATTENDANCE, MOCK_ANNOUNCEMENTS
 } from './constants/mock';
 import { Guard, Profile, UserRole, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement, DisciplinaryRecord } from './types';
 
 const App: React.FC = () => {
-  
+
   // --- Global State ---
   const [user, setUser] = useState<Profile | Guard | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
@@ -138,7 +138,7 @@ const App: React.FC = () => {
 
   // (Removed debug logs and local blacklist filter in favor of server /guards/blacklisted)
 
-  
+
 
   // --- Derived State Helpers ---
   const isGuard = user && !('role' in user);
@@ -167,18 +167,18 @@ const App: React.FC = () => {
       const desiredSlug = mockCompany?.slug;
       const desiredName = mockCompany?.name;
       const desiredEmail = mockCompany?.contact_email || 'ops@company.local';
-      
+
       if (!desiredSlug || !desiredName) {
         setDbCompanyId(undefined);
         return;
       }
-      
+
       const match = companies.find(c => c.slug === desiredSlug || c.name === desiredName);
       if (match) {
         setDbCompanyId(match.id);
         return;
       }
-      
+
       // Auto-create company if missing (Mock Logic Support)
       try {
         const result = await api.post('/companies', {
@@ -207,7 +207,7 @@ const App: React.FC = () => {
         if (res && res.data) {
           setDisciplinaryRecords(res.data as DisciplinaryRecord[]);
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     fetchDisciplinaryRecords();
   }, [userCompanyId]);
@@ -223,7 +223,7 @@ const App: React.FC = () => {
         if (arr.length > 0) {
           (window as any).showNotification?.('error', `🚨 Red Alerts: ${arr.length} high-risk guard(s)`);
         }
-      } catch {}
+      } catch { }
     };
     loadRedAlerts();
   }, [user?.id, userRole]);
@@ -241,11 +241,11 @@ const App: React.FC = () => {
       return list;
     }
     if (userRole === UserRole.SUPER_ADMIN) return (guards || []);
-    if (isGuard) return [user as Guard]; 
+    if (isGuard) return [user as Guard];
     // Company HR visibility: only guards hired by their company
     return guards
       .filter(Boolean)
-      .filter(g => g?.company_id === userCompanyId); 
+      .filter(g => g?.company_id === userCompanyId);
   }, [guards, userRole, userCompanyId, isGuard, user, roleText]);
 
   const filteredSites = useMemo(() => {
@@ -317,20 +317,20 @@ const App: React.FC = () => {
   }, []);
 
   const filteredLeaveRequests = useMemo(() => {
-      if (userRole === UserRole.SUPER_ADMIN) return (leaveRequests || []);
-      const companyGuardIds = guards
-        .filter(Boolean)
-        .filter(g => g?.company_id === userCompanyId)
-        .map(g => g?.id)
-        .filter(Boolean);
-      return leaveRequests
-        .filter(Boolean)
-        .filter(r => companyGuardIds.includes(r?.guard_id));
+    if (userRole === UserRole.SUPER_ADMIN) return (leaveRequests || []);
+    const companyGuardIds = guards
+      .filter(Boolean)
+      .filter(g => g?.company_id === userCompanyId)
+      .map(g => g?.id)
+      .filter(Boolean);
+    return leaveRequests
+      .filter(Boolean)
+      .filter(r => companyGuardIds.includes(r?.guard_id));
   }, [leaveRequests, userRole, userCompanyId, guards]);
 
   const filteredDisciplinaryCodes = useMemo(() => {
-      if (userRole === UserRole.SUPER_ADMIN) return disciplinaryCodes;
-      return disciplinaryCodes.filter(c => !c.company_id || c.company_id === userCompanyId);
+    if (userRole === UserRole.SUPER_ADMIN) return disciplinaryCodes;
+    return disciplinaryCodes.filter(c => !c.company_id || c.company_id === userCompanyId);
   }, [disciplinaryCodes, userCompanyId, userRole]);
 
   const [selectedGuardForIntake, setSelectedGuardForIntake] = useState<Guard | null>(null);
@@ -346,7 +346,7 @@ const App: React.FC = () => {
       const g = finalUser as Guard;
       if (String((g as any)?.status || '').toLowerCase() === 'blacklisted') {
         (window as any).showNotification?.('error', 'Your account has been blacklisted. Please contact the deployment office.');
-        try { localStorage.removeItem('amini_auth_token'); } catch {}
+        try { localStorage.removeItem('amini_auth_token'); } catch { }
         return;
       }
     }
@@ -361,7 +361,7 @@ const App: React.FC = () => {
         if (matchByNida || matchByName) {
           needsIntake = true;
         }
-      } catch {}
+      } catch { }
     }
 
     if (pendingAccount && loggedInUser && !('role' in loggedInUser)) {
@@ -386,7 +386,7 @@ const App: React.FC = () => {
 
     setUser(finalUser);
 
-    if (finalUser && !('role' in finalUser)) { 
+    if (finalUser && !('role' in finalUser)) {
       const g = finalUser as Guard;
       const saraEmail = String((g as any)?.email || '').toLowerCase();
       if (saraEmail === 'sara@amini.co.tz') {
@@ -416,11 +416,11 @@ const App: React.FC = () => {
         setActiveTab('profile-update');
       } else {
         setActiveTab('vetting');
-        try { 
-          if (typeof window !== 'undefined') { 
-            window.location.hash = '#vetting'; 
-          } 
-        } catch {}
+        try {
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#vetting';
+          }
+        } catch { }
       }
     }
   };
@@ -444,7 +444,7 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       localStorage.removeItem('amini_auth_token');
-    } catch {}
+    } catch { }
     setUser(null);
     setActiveTab('overview');
   };
@@ -514,7 +514,7 @@ const App: React.FC = () => {
         (window as any).showNotification?.('error', 'Blocked: Guard is blacklisted (score < 5).');
         return;
       }
-    } catch {}
+    } catch { }
     try {
       const result = await api.patch(`/guards/${guardId}`, {
         status: 'interviewing',
@@ -564,7 +564,7 @@ const App: React.FC = () => {
           (window as any).showNotification?.('error', 'Blocked: Guard is blacklisted (score < 5).');
           return;
         }
-      } catch {}
+      } catch { }
       if (result === 'pass' && terms) {
         const supervisorId = terms.supervisorId || null;
         const siteId = terms.siteId || null;
@@ -604,15 +604,16 @@ const App: React.FC = () => {
             company_id: (user as Profile)?.company_id || null,
             outcome: 'passed',
             interview_date: terms.interviewDate || null,
-            interview_notes: terms.interviewNotes || null,
+            comments: { interview_notes: terms.interviewNotes || null },
+            score: null,
             deployment_contract_url: terms.contractUrl || null,
             created_at: new Date().toISOString()
           });
-        } catch {}
+        } catch { }
         (window as any).showNotification?.('success', 'Guard hired and activated.');
         try {
           setSelectedGuardForAudit(null);
-        } catch {}
+        } catch { }
       } else if (result === 'blacklisted') {
         const updatePayload = {
           status: 'blacklisted',
@@ -659,69 +660,69 @@ const App: React.FC = () => {
   const handleRequestEditFromHR = (guardId: string, note: string) => {
     setGuards(prev => prev.map(g => {
       if (g.id !== guardId) return g;
-      const notes = [ ...(g.dossier_data?.hr_private_notes || []), { id: `hrn-${Date.now()}`, author_id: (user as Profile)?.id, note, created_at: new Date().toISOString() } ];
+      const notes = [...(g.dossier_data?.hr_private_notes || []), { id: `hrn-${Date.now()}`, author_id: (user as Profile)?.id, note, created_at: new Date().toISOString() }];
       return { ...g, status: 'draft', dossier_data: { ...(g.dossier_data || {}), allow_edit: true, hr_private_notes: notes } };
     }));
   };
 
   const handleIssueKit = (guardId: string, items: any, sig: string) => {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...(g as any), status: 'active', performance_score: 100 } : g));
+    setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...(g as any), status: 'active', performance_score: 100 } : g));
   };
 
   const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
-      const now = new Date().toISOString();
-      const newIncident: IncidentReport = {
-          id: `inc-${Date.now()}`,
-          guard_id: guardId,
-          title: report.title,
-          code: report.code || 'OTHER_REPORT',
-          notes: report.notes || '',
-          evidence_url: report.evidence_url || '',
-          evidence_image_url: report.evidence_image_url || report.evidence_url || '',
-          severity: report.severity || 'low',
-          reported_by: report.reported_by || 'Unknown',
-          site_id: report.site_id,
-          site_name: report.site_name,
-          created_at: now
-      };
-      setIncidents(prev => [newIncident, ...prev]);
+    const now = new Date().toISOString();
+    const newIncident: IncidentReport = {
+      id: `inc-${Date.now()}`,
+      guard_id: guardId,
+      title: report.title,
+      code: report.code || 'OTHER_REPORT',
+      notes: report.notes || '',
+      evidence_url: report.evidence_url || '',
+      evidence_image_url: report.evidence_image_url || report.evidence_url || '',
+      severity: report.severity || 'low',
+      reported_by: report.reported_by || 'Unknown',
+      site_id: report.site_id,
+      site_name: report.site_name,
+      created_at: now
+    };
+    setIncidents(prev => [newIncident, ...prev]);
+    try {
+      await api.post('/ops/incidents', {
+        guard_id: newIncident.guard_id,
+        title: newIncident.title,
+        notes: newIncident.notes,
+        severity: newIncident.severity,
+        evidence_image_url: newIncident.evidence_image_url,
+        site_id: newIncident.site_id,
+        created_at: newIncident.created_at
+      });
+    } catch (e) { }
+
+    const codeMeta = disciplinaryCodes.find(c => c.code === (report.code || 'OTHER_REPORT'));
+    if (codeMeta) {
+      setGuards(prev => prev.map(g => {
+        if (g.id === guardId && typeof g.performance_score === 'number') {
+          const newScore = Math.max(0, (g.performance_score || 100) - codeMeta.points);
+          return { ...g, performance_score: newScore };
+        }
+        return g;
+      }));
+    }
+
+    const current = guards.find(g => g.id === guardId);
+    const scoreAfter = (typeof current?.performance_score === 'number')
+      ? Math.max(0, (current.performance_score || 100) - (codeMeta?.points || 0))
+      : undefined;
+    if (typeof scoreAfter === 'number' && scoreAfter <= 5) {
+      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'blacklisted', performance_score: scoreAfter } : g));
       try {
-        await api.post('/ops/incidents', {
-          guard_id: newIncident.guard_id,
-          title: newIncident.title,
-          notes: newIncident.notes,
-          severity: newIncident.severity,
-          evidence_image_url: newIncident.evidence_image_url,
-          site_id: newIncident.site_id,
-          created_at: newIncident.created_at
-        });
-      } catch (e) {}
-      
-      const codeMeta = disciplinaryCodes.find(c => c.code === (report.code || 'OTHER_REPORT'));
-      if (codeMeta) {
-          setGuards(prev => prev.map(g => {
-              if (g.id === guardId && typeof g.performance_score === 'number') {
-                  const newScore = Math.max(0, (g.performance_score || 100) - codeMeta.points);
-                  return { ...g, performance_score: newScore };
-              }
-              return g;
-          }));
-      }
+        await api.patch('/guards/' + guardId, { status: 'blacklisted', performance_score: scoreAfter });
+      } catch (e) { }
+    }
 
-      const current = guards.find(g => g.id === guardId);
-      const scoreAfter = (typeof current?.performance_score === 'number')
-        ? Math.max(0, (current.performance_score || 100) - (codeMeta?.points || 0))
-        : undefined;
-      if (typeof scoreAfter === 'number' && scoreAfter <= 5) {
-        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'blacklisted', performance_score: scoreAfter } : g));
-        try {
-          await api.patch('/guards/' + guardId, { status: 'blacklisted', performance_score: scoreAfter });
-        } catch (e) {}
-      }
-
-      if (newIncident.severity === 'high' || newIncident.severity === 'critical') {
-        (window as any).showNotification?.('error', 'High severity incident reported.');
-      }
+    if (newIncident.severity === 'high' || newIncident.severity === 'critical') {
+      (window as any).showNotification?.('error', 'High severity incident reported.');
+    }
   };
 
   const handleClockIn = async (guardId: string, siteId?: string) => {
@@ -737,104 +738,104 @@ const App: React.FC = () => {
     setAttendanceLogs(prev => [log, ...prev]);
     try {
       await api.post('/ops/attendance', log);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleReinstate = (guardId: string) => {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'marketplace', company_id: undefined, performance_score: 100 } : g));
+    setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'marketplace', company_id: undefined, performance_score: 100 } : g));
   };
 
   const handleShiftPersonnel = (personId: string, targetSiteId: string, type: 'guard' | 'supervisor') => {
-      if (type === 'guard') {
-          setGuards(prev => prev.map(g => g.id === personId ? { ...g, current_site_id: targetSiteId || undefined } : g));
-      } else {
-          setSites(prev => {
-              const cleanedSites = prev.map(site => site.supervisor_id === personId ? { ...site, supervisor_id: undefined } : site);
-              if (targetSiteId) {
-                  return cleanedSites.map(site => site.id === targetSiteId ? { ...site, supervisor_id: personId } : site);
-              }
-              return cleanedSites;
-          });
-          setProfiles(prev => prev.map(p => p.id === personId ? { ...p, current_site_id: targetSiteId || undefined } : p));
-      }
+    if (type === 'guard') {
+      setGuards(prev => prev.map(g => g.id === personId ? { ...g, current_site_id: targetSiteId || undefined } : g));
+    } else {
+      setSites(prev => {
+        const cleanedSites = prev.map(site => site.supervisor_id === personId ? { ...site, supervisor_id: undefined } : site);
+        if (targetSiteId) {
+          return cleanedSites.map(site => site.id === targetSiteId ? { ...site, supervisor_id: personId } : site);
+        }
+        return cleanedSites;
+      });
+      setProfiles(prev => prev.map(p => p.id === personId ? { ...p, current_site_id: targetSiteId || undefined } : p));
+    }
   };
-  
+
   const handleLeaveRequest = (type: 'short' | 'long', start: string, end: string, reason: string) => {
     if (!isGuard) return;
     const newReq: LeaveRequest = {
-        id: `lr-${Date.now()}`,
-        guard_id: (user as Guard).id,
-        type,
-        start_date: start,
-        end_date: end,
-        reason,
-        status: 'pending',
-        created_at: new Date().toISOString()
+      id: `lr-${Date.now()}`,
+      guard_id: (user as Guard).id,
+      type,
+      start_date: start,
+      end_date: end,
+      reason,
+      status: 'pending',
+      created_at: new Date().toISOString()
     };
     setLeaveRequests(prev => [newReq, ...prev]);
   };
 
   const handleUpdateLeave = (id: string, status: 'approved' | 'rejected') => {
-      setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
   };
-  
+
   const handleAddPolicy = async (policy: DisciplinaryCode) => {
     const payload = { ...policy, company_id: userCompanyId };
     setDisciplinaryCodes(prev => [...prev, payload]);
     try {
       await api.post('/disciplinary-codes', payload);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleUpdatePolicy = async (code: string, updates: Partial<DisciplinaryCode>) => {
-    setDisciplinaryCodes(prev => prev.map(c => 
-        (c.code === code) ? { ...c, ...updates, updated_at: new Date().toISOString() } : c
+    setDisciplinaryCodes(prev => prev.map(c =>
+      (c.code === code) ? { ...c, ...updates, updated_at: new Date().toISOString() } : c
     ));
     try {
       await api.patch('/disciplinary-codes/' + code, { ...updates, updated_at: new Date().toISOString() });
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleDeletePolicy = async (code: string) => {
     setDisciplinaryCodes(prev => prev.filter(c => c.code !== code));
     try {
       await api.delete('/disciplinary-codes/' + code);
-    } catch (e) {}
+    } catch (e) { }
   };
-  
+
   const handleGuardReportProblem = (desc: string, evidence?: string) => {
-      if (!isGuard) return;
-      const [title, severity, notes] = String(desc).split(':::');
-      const payload: Partial<IncidentReport> = {
-        title: title || 'Incident',
-        severity: (severity as any) || 'low',
-        code: 'OTHER_REPORT',
-        notes: notes || desc,
-        evidence_url: evidence,
-        evidence_image_url: evidence,
-        reported_by: (user as Guard).full_name,
-        site_id: (user as Guard).current_site_id,
-        site_name: sites.find(s => s.id === (user as Guard).current_site_id)?.name
-      };
-      handleReportIncident((user as Guard).id, payload);
+    if (!isGuard) return;
+    const [title, severity, notes] = String(desc).split(':::');
+    const payload: Partial<IncidentReport> = {
+      title: title || 'Incident',
+      severity: (severity as any) || 'low',
+      code: 'OTHER_REPORT',
+      notes: notes || desc,
+      evidence_url: evidence,
+      evidence_image_url: evidence,
+      reported_by: (user as Guard).full_name,
+      site_id: (user as Guard).current_site_id,
+      site_name: sites.find(s => s.id === (user as Guard).current_site_id)?.name
+    };
+    handleReportIncident((user as Guard).id, payload);
   };
-  
+
   const handleAddCompany = (company: any) => {
-      const newCompany: Company = { ...company, id: `c-${Date.now()}`, is_active: true, created_at: new Date().toISOString() };
-      setCompanies(prev => [...prev, newCompany]);
+    const newCompany: Company = { ...company, id: `c-${Date.now()}`, is_active: true, created_at: new Date().toISOString() };
+    setCompanies(prev => [...prev, newCompany]);
   };
-  
+
   const handleUpdateCompany = (id: string, updates: any) => {
-      setCompanies(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    setCompanies(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   };
-  
+
   const handleAddStaff = (staff: any) => {
-      const newStaff: Profile = { ...staff, id: `p-${Date.now()}`, is_active: true, created_at: new Date().toISOString() };
-      setProfiles(prev => [...prev, newStaff]);
+    const newStaff: Profile = { ...staff, id: `p-${Date.now()}`, is_active: true, created_at: new Date().toISOString() };
+    setProfiles(prev => [...prev, newStaff]);
   };
 
   const handleToggleCompanyActive = (id: string) => {
-      setCompanies(prev => prev.map(c => c.id === id ? { ...c, is_active: !c.is_active } : c));
+    setCompanies(prev => prev.map(c => c.id === id ? { ...c, is_active: !c.is_active } : c));
   };
 
   // --- Render ---
@@ -880,473 +881,473 @@ const App: React.FC = () => {
   return (
     <NotificationManager>
       <Layout
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          userRole={userRole}
-          onLogout={handleLogout}
-          companyName={isGuard ? undefined : companies.find(c => c.id === userCompanyId)?.name}
-          currentUser={user}
-          unreadAlertsCount={unreadAlertsCount}
-          noticesPublicCount={filteredAnnouncements.length}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        userRole={userRole}
+        onLogout={handleLogout}
+        companyName={isGuard ? undefined : companies.find(c => c.id === userCompanyId)?.name}
+        currentUser={user}
+        unreadAlertsCount={unreadAlertsCount}
+        noticesPublicCount={filteredAnnouncements.length}
       >
-      {!isGuard && !isApplicant && (
-        <>
+        {!isGuard && !isApplicant && (
+          <>
             {activeTab === 'overview' && (
-                <div className="space-y-16 animate-in fade-in duration-700">
-                    <div className="bg-slate-900 rounded-[2.5rem] p-12 text-white shadow-2xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/20 rounded-full blur-3xl -mr-40 -mt-40 pointer-events-none" />
-                        <div className="relative z-10">
-                            <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight leading-none mb-8">
-                                Dashboard <br />
-                                <span className="text-primary text-2xl sm:text-3xl md:text-4xl">Overview</span>
-                            </h1>
-                            <div className="grid grid-cols-2 gap-4 sm:gap-6">
-                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
-                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Active Guards</p>
-                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredGuards.filter(g => String((g as any)?.status || '').toLowerCase() === 'active').length}</p>
-                                </div>
-                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
-                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Total Sites</p>
-                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredSites.length}</p>
-                                </div>
-                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
-                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Incidents</p>
-                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredIncidents.length}</p>
-                                </div>
-                                <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
-                                    <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Pending Leave</p>
-                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
-                                </div>
-                            </div>
-                            {userRole === UserRole.SUPER_ADMIN && redAlerts.length > 0 && (
-                              <div className="mt-6 space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-red-500 text-xl">🚨</span>
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-red-100">Red Alert — High-Risk Guards (Last 30 Days)</p>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                  {redAlerts.map(a => (
-                                    <div key={a.guard_id} className="border-2 border-red-500 animate-pulse rounded-2xl bg-white text-slate-900 p-5 shadow-xl flex items-start justify-between gap-4">
-                                      <div>
-                                        <h4 className="font-black uppercase tracking-tight leading-none">{a.full_name}</h4>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mt-1">{a.company_name || 'Unassigned'}</p>
-                                        <p className="mt-2 text-xs text-slate-700">{a.incident_description || 'Most recent incident'}</p>
-                                      </div>
-                                      <div className="flex flex-col gap-2">
-                                        <button
-                                          onClick={() => {
-                                            const guard = guards.find(x => x.id === a.guard_id);
-                                            if (guard) setSelectedGuardForAudit(guard);
-                                          }}
-                                          className="px-3 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg"
-                                        >
-                                          Review Details
-                                        </button>
-                                        <button
-                                          onClick={async () => {
-                                            try {
-                                              await api.patch('/guards/' + a.guard_id, { status: 'blacklisted' });
-                                              setGuards(prev => prev.map(g => g.id === a.guard_id ? { ...g, status: 'blacklisted', current_site_id: null, assigned_supervisor_id: null } : g));
-                                              setRedAlerts(prev => prev.filter(x => x.guard_id !== a.guard_id));
-                                              (window as any).showNotification?.('error', 'Guard immediately blacklisted.');
-                                            } catch {
-                                              setGuards(prev => prev.map(g => g.id === a.guard_id ? { ...g, status: 'blacklisted', current_site_id: null, assigned_supervisor_id: null } : g));
-                                              (window as any).showNotification?.('warning', 'Offline: blacklisted saved locally.');
-                                            }
-                                          }}
-                                          className="px-3 py-2 bg-red-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg"
-                                        >
-                                          Immediate Blacklist
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            <div className="mt-8 bg-white rounded-[2rem] p-6 text-slate-900">
-                                <h3 className="text-sm font-black uppercase tracking-widest mb-4">Fleet-Wide Metrics</h3>
-                                <PerformanceLineChart 
-                                  guards={filteredGuards}
-                                  incidents={filteredIncidents}
-                                  attendanceLogs={attendanceLogs}
-                                  userRole={userRole}
-                                  companyId={userCompanyId}
-                                />
-                            </div>
-                        </div>
+              <div className="space-y-16 animate-in fade-in duration-700">
+                <div className="bg-slate-900 rounded-[2.5rem] p-12 text-white shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/20 rounded-full blur-3xl -mr-40 -mt-40 pointer-events-none" />
+                  <div className="relative z-10">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight leading-none mb-8">
+                      Dashboard <br />
+                      <span className="text-primary text-2xl sm:text-3xl md:text-4xl">Overview</span>
+                    </h1>
+                    <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                      <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                        <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Active Guards</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredGuards.filter(g => String((g as any)?.status || '').toLowerCase() === 'active').length}</p>
+                      </div>
+                      <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                        <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Total Sites</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredSites.length}</p>
+                      </div>
+                      <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                        <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Incidents</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredIncidents.length}</p>
+                      </div>
+                      <div className="bg-white/10 rounded-2xl p-4 sm:p-6 backdrop-blur-sm">
+                        <p className="text-xs sm:text-sm font-bold text-white/60 uppercase">Pending Leave</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mt-2">{filteredLeaveRequests.filter(r => r.status === 'pending').length}</p>
+                      </div>
                     </div>
+                    {userRole === UserRole.SUPER_ADMIN && redAlerts.length > 0 && (
+                      <div className="mt-6 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-red-500 text-xl">🚨</span>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-red-100">Red Alert — High-Risk Guards (Last 30 Days)</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {redAlerts.map(a => (
+                            <div key={a.guard_id} className="border-2 border-red-500 animate-pulse rounded-2xl bg-white text-slate-900 p-5 shadow-xl flex items-start justify-between gap-4">
+                              <div>
+                                <h4 className="font-black uppercase tracking-tight leading-none">{a.full_name}</h4>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mt-1">{a.company_name || 'Unassigned'}</p>
+                                <p className="mt-2 text-xs text-slate-700">{a.incident_description || 'Most recent incident'}</p>
+                              </div>
+                              <div className="flex flex-col gap-2">
+                                <button
+                                  onClick={() => {
+                                    const guard = guards.find(x => x.id === a.guard_id);
+                                    if (guard) setSelectedGuardForAudit(guard);
+                                  }}
+                                  className="px-3 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg"
+                                >
+                                  Review Details
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await api.patch('/guards/' + a.guard_id, { status: 'blacklisted' });
+                                      setGuards(prev => prev.map(g => g.id === a.guard_id ? { ...g, status: 'blacklisted', current_site_id: null, assigned_supervisor_id: null } : g));
+                                      setRedAlerts(prev => prev.filter(x => x.guard_id !== a.guard_id));
+                                      (window as any).showNotification?.('error', 'Guard immediately blacklisted.');
+                                    } catch {
+                                      setGuards(prev => prev.map(g => g.id === a.guard_id ? { ...g, status: 'blacklisted', current_site_id: null, assigned_supervisor_id: null } : g));
+                                      (window as any).showNotification?.('warning', 'Offline: blacklisted saved locally.');
+                                    }
+                                  }}
+                                  className="px-3 py-2 bg-red-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg"
+                                >
+                                  Immediate Blacklist
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-8 bg-white rounded-[2rem] p-6 text-slate-900">
+                      <h3 className="text-sm font-black uppercase tracking-widest mb-4">Fleet-Wide Metrics</h3>
+                      <PerformanceLineChart
+                        guards={filteredGuards}
+                        incidents={filteredIncidents}
+                        attendanceLogs={attendanceLogs}
+                        userRole={userRole}
+                        companyId={userCompanyId}
+                      />
+                    </div>
+                  </div>
                 </div>
+              </div>
             )}
 
             {activeTab === 'intake' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
-                <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} />
+              <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} />
             )}
 
             {activeTab === 'wait-approval' && (isSystemHR) && (
-                <WaitForApproval 
-                    guards={filteredGuards}
-                    currentUser={user as Profile}
-                    onOpenDossier={async (g) => {
-                      try {
-                        const res = await api.get(`/guards/${g.id}`);
-                        const fresh = (res && res.data) ? (res.data as Guard) : g;
-                        setSelectedGuardForAudit(fresh);
-                      } catch {
-                        setSelectedGuardForAudit(g);
-                      }
-                    }}
-                    onApproved={handleApproveToMarketplace}
-                    onRequestedEdit={handleRequestEditFromHR}
-                    computeReadiness={computeReadiness}
-                />
+              <WaitForApproval
+                guards={filteredGuards}
+                currentUser={user as Profile}
+                onOpenDossier={async (g) => {
+                  try {
+                    const res = await api.get(`/guards/${g.id}`);
+                    const fresh = (res && res.data) ? (res.data as Guard) : g;
+                    setSelectedGuardForAudit(fresh);
+                  } catch {
+                    setSelectedGuardForAudit(g);
+                  }
+                }}
+                onApproved={handleApproveToMarketplace}
+                onRequestedEdit={handleRequestEditFromHR}
+                computeReadiness={computeReadiness}
+              />
             )}
 
             {activeTab === 'vetting' && (isSystemHR || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
-                <VettingWorkflow 
-                    guards={filteredGuards} 
-                    sites={filteredSites} 
-                    profiles={profiles} 
-                    companies={companies}
-                    incidents={filteredIncidents}
-                    disciplinaryCodes={filteredDisciplinaryCodes}
-                    onLock={handleLockGuard} 
-                    onFinalize={handleFinalizeVetting} 
-                    currentUser={user as Profile}
-                    resubmitRequests={resubmitRequests as any}
-                    onResubmitDecision={async (requestId, guardId, decision) => {
-                      try {
-                        const { data, error } = await guardService.updateResubmitRequest(requestId, decision);
-                        if (error) {
-                          setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
-                          if (decision === 'approved') {
-                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
-                          }
-                          (window as any).showNotification?.('warning', 'Offline: decision saved locally.');
-                        } else {
-                          setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...data } : r));
-                          if (decision === 'approved') {
-                            setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
-                          }
-                          (window as any).showNotification?.('success', `Request ${decision}.`);
-                        }
-                      } catch (e) {
-                        setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
-                        if (decision === 'approved') {
-                          setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
-                        }
-                        (window as any).showNotification?.('warning', 'Error: decision saved locally.');
+              <VettingWorkflow
+                guards={filteredGuards}
+                sites={filteredSites}
+                profiles={profiles}
+                companies={companies}
+                incidents={filteredIncidents}
+                disciplinaryCodes={filteredDisciplinaryCodes}
+                onLock={handleLockGuard}
+                onFinalize={handleFinalizeVetting}
+                currentUser={user as Profile}
+                resubmitRequests={resubmitRequests as any}
+                onResubmitDecision={async (requestId, guardId, decision) => {
+                  try {
+                    const { data, error } = await guardService.updateResubmitRequest(requestId, decision);
+                    if (error) {
+                      setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
+                      if (decision === 'approved') {
+                        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
                       }
-                    }}
-                />
+                      (window as any).showNotification?.('warning', 'Offline: decision saved locally.');
+                    } else {
+                      setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...data } : r));
+                      if (decision === 'approved') {
+                        setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
+                      }
+                      (window as any).showNotification?.('success', `Request ${decision}.`);
+                    }
+                  } catch (e) {
+                    setResubmitRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: decision } : r));
+                    if (decision === 'approved') {
+                      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'draft' } : g));
+                    }
+                    (window as any).showNotification?.('warning', 'Error: decision saved locally.');
+                  }
+                }}
+              />
             )}
-            
+
             {activeTab === 'interview-report' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
-                <InterviewReport guards={filteredGuards} companyId={userCompanyId} />
+              <InterviewReport guards={filteredGuards} companyId={userCompanyId} />
             )}
 
             {activeTab === 'procurement' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
-                <ProcurementDashboard 
-                    guards={filteredGuards}
-                    companyId={dbCompanyId}
-                    equipment={equipment.filter(e => !e.company_id || e.company_id === dbCompanyId)} 
-                    onIssueKit={handleIssueKit} 
-                />
+              <ProcurementDashboard
+                guards={filteredGuards}
+                companyId={dbCompanyId}
+                equipment={equipment.filter(e => !e.company_id || e.company_id === dbCompanyId)}
+                onIssueKit={handleIssueKit}
+              />
             )}
             {activeTab === 'stock-in' && (userRole === UserRole.PROCUREMENT || userRole === UserRole.COMPANY_ADMIN) && (
-                <StockInPage companyId={userCompanyId as string} />
+              <StockInPage companyId={userCompanyId as string} />
             )}
 
             {activeTab === 'operations' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.COMPANY_ADMIN) && (
-                <OperationsEngine 
-                    guards={filteredGuards} 
-                    sites={filteredSites} 
-                    incidents={filteredIncidents}
-                    onReportIncident={handleReportIncident}
-                    onClockIn={handleClockIn}
-                    disciplinaryCodes={filteredDisciplinaryCodes}
-                    userName={currentUserName}
-                    currentUser={user as Profile}
-                    companies={companies}
-                    profiles={profiles}
-                />
+              <OperationsEngine
+                guards={filteredGuards}
+                sites={filteredSites}
+                incidents={filteredIncidents}
+                onReportIncident={handleReportIncident}
+                onClockIn={handleClockIn}
+                disciplinaryCodes={filteredDisciplinaryCodes}
+                userName={currentUserName}
+                currentUser={user as Profile}
+                companies={companies}
+                profiles={profiles}
+              />
             )}
 
             {activeTab === 'roster' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
-                <RosterManager 
-                    guards={filteredGuards}
-                    sites={filteredSites}
-                    currentUser={user as Profile}
-                    userRole={userRole}
-                />
+              <RosterManager
+                guards={filteredGuards}
+                sites={filteredSites}
+                currentUser={user as Profile}
+                userRole={userRole}
+              />
             )}
 
             {activeTab === 'tactical-monitor' && (userRole === UserRole.SUPERVISOR || userRole === UserRole.COMPANY_ADMIN) && (
-                <TacticalMonitor 
-                    sites={filteredSites}
-                    guards={filteredGuards}
-                    attendanceLogs={attendanceLogs}
-                />
+              <TacticalMonitor
+                sites={filteredSites}
+                guards={filteredGuards}
+                attendanceLogs={attendanceLogs}
+              />
             )}
 
             {activeTab === 'disciplinary' && userRole && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
-                <DisciplinaryManager 
-                    guards={filteredGuards}
-                    profiles={profiles}
-                    incidents={filteredIncidents}
-                    disciplinaryCodes={filteredDisciplinaryCodes}
-                    leaveRequests={filteredLeaveRequests}
-                    sites={filteredSites}
-                    onUpdateLeaveStatus={handleUpdateLeave}
-                    onViewGuardAudit={async (g) => {
-                      try {
-                        const res = await api.get(`/guards/${g.id}`);
-                        const fresh = (res && res.data) ? (res.data as Guard) : g;
-                        setSelectedGuardForAudit(fresh);
-                      } catch {
-                        setSelectedGuardForAudit(g);
-                      }
-                    }}
-                    onAddPolicy={handleAddPolicy}
-                    onUpdatePolicy={handleUpdatePolicy}
-                    onDeletePolicy={handleDeletePolicy}
-                    onAfterSaveRecord={async (guardId: string, penaltyPoints: number) => {
-                      const codePts = Math.abs(penaltyPoints || 0);
-                      setGuards(prev => prev.map(g => {
-                        if (g.id === guardId) {
-                          const current = typeof g.performance_score === 'number' ? g.performance_score : (g.profile_score || 0);
-                          const next = Math.max(0, current - codePts);
-                          const nextStatus = (next <= 5) ? 'blacklisted' : (g as any).status;
-                          return { ...g, performance_score: next, status: nextStatus as any };
-                        }
-                        return g;
-                      }));
-                      try {
-                        const current = guards.find(g => g.id === guardId);
-                        const base = typeof current?.performance_score === 'number' ? current?.performance_score : (current?.profile_score || 0);
-                        const next = Math.max(0, (base || 0) - codePts);
-                        const patchPayload: any = { performance_score: next };
-                        if (next <= 5) patchPayload.status = 'blacklisted';
-                        await api.patch('/guards/' + guardId, patchPayload);
-                      } catch {}
-                    }}
-                />
+              <DisciplinaryManager
+                guards={filteredGuards}
+                profiles={profiles}
+                incidents={filteredIncidents}
+                disciplinaryCodes={filteredDisciplinaryCodes}
+                leaveRequests={filteredLeaveRequests}
+                sites={filteredSites}
+                onUpdateLeaveStatus={handleUpdateLeave}
+                onViewGuardAudit={async (g) => {
+                  try {
+                    const res = await api.get(`/guards/${g.id}`);
+                    const fresh = (res && res.data) ? (res.data as Guard) : g;
+                    setSelectedGuardForAudit(fresh);
+                  } catch {
+                    setSelectedGuardForAudit(g);
+                  }
+                }}
+                onAddPolicy={handleAddPolicy}
+                onUpdatePolicy={handleUpdatePolicy}
+                onDeletePolicy={handleDeletePolicy}
+                onAfterSaveRecord={async (guardId: string, penaltyPoints: number) => {
+                  const codePts = Math.abs(penaltyPoints || 0);
+                  setGuards(prev => prev.map(g => {
+                    if (g.id === guardId) {
+                      const current = typeof g.performance_score === 'number' ? g.performance_score : (g.profile_score || 0);
+                      const next = Math.max(0, current - codePts);
+                      const nextStatus = (next <= 5) ? 'blacklisted' : (g as any).status;
+                      return { ...g, performance_score: next, status: nextStatus as any };
+                    }
+                    return g;
+                  }));
+                  try {
+                    const current = guards.find(g => g.id === guardId);
+                    const base = typeof current?.performance_score === 'number' ? current?.performance_score : (current?.profile_score || 0);
+                    const next = Math.max(0, (base || 0) - codePts);
+                    const patchPayload: any = { performance_score: next };
+                    if (next <= 5) patchPayload.status = 'blacklisted';
+                    await api.patch('/guards/' + guardId, patchPayload);
+                  } catch { }
+                }}
+              />
             )}
 
             {activeTab === 'sites' && (userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
-                <SiteManager 
-                    sites={filteredSites}
-                    profiles={profiles}
-                    guards={filteredGuards}
-                    onAddSite={async (site) => {
-                      const newSite = {
-                        ...site,
-                        company_id: userCompanyId as string
-                      } as Site;
-                      try {
-                        const result = await api.post('/sites', {
-                          name: newSite.name,
-                          lat: newSite.lat,
-                          lng: newSite.lng,
-                          geofence_radius_meters: newSite.geofence_radius_meters,
-                          company_id: newSite.company_id,
-                          supervisor_id: newSite.supervisor_id || null
-                        });
-                        const data = result.data as Site;
-                        if (data) {
-                          setSites(prev => [data, ...prev]);
-                          (window as any).showNotification?.('success', 'Site created.');
-                        } else {
-                          setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
-                          (window as any).showNotification?.('warning', 'Offline: site added locally.');
-                        }
-                      } catch (e) {
-                        setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
-                        (window as any).showNotification?.('warning', 'Error: site added locally.');
-                      }
-                    }}
-                    onShiftPersonnel={handleShiftPersonnel}
-                />
+              <SiteManager
+                sites={filteredSites}
+                profiles={profiles}
+                guards={filteredGuards}
+                onAddSite={async (site) => {
+                  const newSite = {
+                    ...site,
+                    company_id: userCompanyId as string
+                  } as Site;
+                  try {
+                    const result = await api.post('/sites', {
+                      name: newSite.name,
+                      lat: newSite.lat,
+                      lng: newSite.lng,
+                      geofence_radius_meters: newSite.geofence_radius_meters,
+                      company_id: newSite.company_id,
+                      supervisor_id: newSite.supervisor_id || null
+                    });
+                    const data = result.data as Site;
+                    if (data) {
+                      setSites(prev => [data, ...prev]);
+                      (window as any).showNotification?.('success', 'Site created.');
+                    } else {
+                      setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
+                      (window as any).showNotification?.('warning', 'Offline: site added locally.');
+                    }
+                  } catch (e) {
+                    setSites(prev => [{ ...newSite, id: `s-${Date.now()}` }, ...prev]);
+                    (window as any).showNotification?.('warning', 'Error: site added locally.');
+                  }
+                }}
+                onShiftPersonnel={handleShiftPersonnel}
+              />
             )}
 
             {activeTab === 'blacklisted' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.SUPERVISOR) && (
-                <BlacklistManager 
-                    guards={blacklistedGuards}
-                    incidents={filteredIncidents}
-                    disciplinaryCodes={userRole === UserRole.SUPERVISOR ? disciplinaryCodes : filteredDisciplinaryCodes}
-                    companies={companies}
-                    userRole={userRole}
-                    onReinstateGuard={handleReinstate}
-                />
+              <BlacklistManager
+                guards={blacklistedGuards}
+                incidents={filteredIncidents}
+                disciplinaryCodes={userRole === UserRole.SUPERVISOR ? disciplinaryCodes : filteredDisciplinaryCodes}
+                companies={companies}
+                userRole={userRole}
+                onReinstateGuard={handleReinstate}
+              />
             )}
 
             {activeTab === 'registry' && userRole && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
-                <PersonnelRegistry
-                    profiles={profiles}
-                    guards={guards}
-                    companies={companies}
-                    sites={sites}
-                    onUpdateStaff={() => alert('Staff update not implemented in mock')}
-                    onAddStaff={handleAddStaff}
-                    onViewGuardAudit={setSelectedGuardForAudit}
-                    currentUser={user as Profile}
-                    onOpenIntakeEditor={(guard) => { setSelectedGuardForIntake(guard); setActiveTab('profile-update'); }}
-                />
+              <PersonnelRegistry
+                profiles={profiles}
+                guards={guards}
+                companies={companies}
+                sites={sites}
+                onUpdateStaff={() => alert('Staff update not implemented in mock')}
+                onAddStaff={handleAddStaff}
+                onViewGuardAudit={setSelectedGuardForAudit}
+                currentUser={user as Profile}
+                onOpenIntakeEditor={(guard) => { setSelectedGuardForIntake(guard); setActiveTab('profile-update'); }}
+              />
             )}
-            
+
             {activeTab === 'companies' && userRole === UserRole.SUPER_ADMIN && (
-                <CompanyRegistry
-                    companies={companies}
-                    profiles={profiles}
-                    guards={guards}
-                    incidents={incidents}
-                    onAddCompany={handleAddCompany}
-                    onUpdateCompany={handleUpdateCompany}
-                    onAddStaff={handleAddStaff}
-                    onToggleActive={handleToggleCompanyActive}
-                />
+              <CompanyRegistry
+                companies={companies}
+                profiles={profiles}
+                guards={guards}
+                incidents={incidents}
+                onAddCompany={handleAddCompany}
+                onUpdateCompany={handleUpdateCompany}
+                onAddStaff={handleAddStaff}
+                onToggleActive={handleToggleCompanyActive}
+              />
             )}
 
             {activeTab === 'architecture' && userRole === UserRole.SUPER_ADMIN && <ArchitectureOverview />}
             {activeTab === 'erd-view' && userRole === UserRole.SUPER_ADMIN && <ERDView />}
             {activeTab === 'sql-schema' && userRole === UserRole.SUPER_ADMIN && <CodeBlock code={AMINI_SQL_SCHEMA} />}
-        </>
-      )}
+          </>
+        )}
 
-      {!isGuard && isApplicant && (
-        <>
+        {!isGuard && isApplicant && (
+          <>
             {activeTab === 'application-status' && (
-                <ApplicantDashboard 
-                  guard={
-                    (guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) as Guard) ||
-                    ({
-                      id: (user as Profile).id,
-                      full_name: (user as Profile).full_name,
-                      email: (user as Profile).email,
-                      status: 'draft'
-                    } as any)
-                  } 
-                  userId={(user as Profile).id}
-                  guardsCount={guards.length}
-                  onRetry={async () => {
-                    try {
-                      const guardsRes = await guardService.getGuards();
-                      if (guardsRes.data) setGuards(guardsRes.data);
-                    } catch (e) {}
-                  }}
-                  onContinue={() => setActiveTab('profile-update')}
-                  onRequestEdit={async (reason: string) => {
-                    try {
-                      const targetGuard = guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) || ({
-                        id: (user as Profile).id
-                      } as any);
-                      if (!targetGuard) return;
-                      const payload = {
-                        id: `rr-${Date.now()}`,
-                        guard_id: targetGuard.id,
-                        company_id: userCompanyId,
-                        reason,
-                        status: 'pending',
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                      };
-                      setResubmitRequests(prev => [payload, ...prev]);
-                      await api.post('/resubmit-requests', payload);
-                      (window as any).showNotification?.('success', 'Edit request submitted.');
-                    } catch (e) {
-                      (window as any).showNotification?.('warning', 'Error: request saved locally.');
-                    }
-                  }}
-                />
+              <ApplicantDashboard
+                guard={
+                  (guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) as Guard) ||
+                  ({
+                    id: (user as Profile).id,
+                    full_name: (user as Profile).full_name,
+                    email: (user as Profile).email,
+                    status: 'draft'
+                  } as any)
+                }
+                userId={(user as Profile).id}
+                guardsCount={guards.length}
+                onRetry={async () => {
+                  try {
+                    const guardsRes = await guardService.getGuards();
+                    if (guardsRes.data) setGuards(guardsRes.data);
+                  } catch (e) { }
+                }}
+                onContinue={() => setActiveTab('profile-update')}
+                onRequestEdit={async (reason: string) => {
+                  try {
+                    const targetGuard = guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) || ({
+                      id: (user as Profile).id
+                    } as any);
+                    if (!targetGuard) return;
+                    const payload = {
+                      id: `rr-${Date.now()}`,
+                      guard_id: targetGuard.id,
+                      company_id: userCompanyId,
+                      reason,
+                      status: 'pending',
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString()
+                    };
+                    setResubmitRequests(prev => [payload, ...prev]);
+                    await api.post('/resubmit-requests', payload);
+                    (window as any).showNotification?.('success', 'Edit request submitted.');
+                  } catch (e) {
+                    (window as any).showNotification?.('warning', 'Error: request saved locally.');
+                  }
+                }}
+              />
             )}
             {activeTab === 'profile-update' && (
-                <IntakeManager 
-                  guards={guards} 
-                  userRole={userRole} 
-                  onComplete={handleIntakeComplete} 
-                  isApplicantFlow={true} 
-                  applicantData={
-                    (guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) as Guard) || 
-                    ({
-                      id: (user as Profile).id,
-                      full_name: (user as Profile).full_name,
-                      email: (user as Profile).email,
-                      status: 'draft'
-                    } as any)
-                  } 
-                />
+              <IntakeManager
+                guards={guards}
+                userRole={userRole}
+                onComplete={handleIntakeComplete}
+                isApplicantFlow={true}
+                applicantData={
+                  (guards.find(g => g.id === (user as Profile).id || g.email === (user as Profile).email) as Guard) ||
+                  ({
+                    id: (user as Profile).id,
+                    full_name: (user as Profile).full_name,
+                    email: (user as Profile).email,
+                    status: 'draft'
+                  } as any)
+                }
+              />
             )}
-        </>
-      )}
+          </>
+        )}
 
-      {isGuard && user && (
-        <>
+        {isGuard && user && (
+          <>
             {activeTab === 'overview' && (String((user as any)?.status || '').toLowerCase() === 'active') && (
-                <GuardProfile guard={user as Guard} />
+              <GuardProfile guard={user as Guard} />
             )}
             {activeTab === 'application-status' && (String((user as any)?.status || '').toLowerCase() !== 'active') && (
-                <ApplicantDashboard 
-                  guard={user as Guard} 
-                  onContinue={() => setActiveTab('profile-update')}
-                  onRequestEdit={async (reason: string) => {
-                    try {
-                      const payload = {
-                        id: `rr-${Date.now()}`,
-                        guard_id: (user as Guard)?.id || '',
-                        company_id: userCompanyId,
-                        reason,
-                        status: 'pending',
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                      };
-                      setResubmitRequests(prev => [payload, ...prev]);
-                      await api.post('/resubmit-requests', payload);
-                      (window as any).showNotification?.('success', 'Edit request submitted.');
-                    } catch (e) {
-                      console.error('Error submitting request:', e);
-                      (window as any).showNotification?.('warning', 'Error: request saved locally.');
-                    }
-                  }}
-                />
+              <ApplicantDashboard
+                guard={user as Guard}
+                onContinue={() => setActiveTab('profile-update')}
+                onRequestEdit={async (reason: string) => {
+                  try {
+                    const payload = {
+                      id: `rr-${Date.now()}`,
+                      guard_id: (user as Guard)?.id || '',
+                      company_id: userCompanyId,
+                      reason,
+                      status: 'pending',
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString()
+                    };
+                    setResubmitRequests(prev => [payload, ...prev]);
+                    await api.post('/resubmit-requests', payload);
+                    (window as any).showNotification?.('success', 'Edit request submitted.');
+                  } catch (e) {
+                    console.error('Error submitting request:', e);
+                    (window as any).showNotification?.('warning', 'Error: request saved locally.');
+                  }
+                }}
+              />
             )}
             {activeTab === 'profile-update' && (String((user as any)?.status || '').toLowerCase() !== 'active') && (
-                <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} isApplicantFlow={true} applicantData={user as Guard} />
+              <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} isApplicantFlow={true} applicantData={user as Guard} />
             )}
             {activeTab === 'operations' && (String((user as any)?.status || '').toLowerCase() === 'active') && (
-                <GuardOperations 
-                    guard={user as Guard}
-                    site={guardSite}
-                    supervisor={guardSupervisor}
-                    announcements={filteredAnnouncements}
-                    leaveRequests={filteredLeaveRequests.filter(r => r.guard_id === (user as Guard)?.id)}
-                    onReportProblem={handleGuardReportProblem}
-                    onRequestLeave={handleLeaveRequest}
-                />
+              <GuardOperations
+                guard={user as Guard}
+                site={guardSite}
+                supervisor={guardSupervisor}
+                announcements={filteredAnnouncements}
+                leaveRequests={filteredLeaveRequests.filter(r => r.guard_id === (user as Guard)?.id)}
+                onReportProblem={handleGuardReportProblem}
+                onRequestLeave={handleLeaveRequest}
+              />
             )}
             {activeTab === 'notice-board' && (String((user as any)?.status || '').toLowerCase() !== 'active') && (
-                <NoticeBoard guard={user as Guard} announcements={filteredAnnouncements} />
+              <NoticeBoard guard={user as Guard} announcements={filteredAnnouncements} />
             )}
-        </>
-      )}
+          </>
+        )}
 
-      {userRole && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && selectedGuardForIntake && activeTab === 'profile-update' && (
-        <IntakeManager 
-          guards={guards} 
-          userRole={userRole} 
-          onComplete={handleIntakeComplete} 
-          isApplicantFlow={true} 
-          applicantData={selectedGuardForIntake} 
-        />
-      )}
+        {userRole && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && selectedGuardForIntake && activeTab === 'profile-update' && (
+          <IntakeManager
+            guards={guards}
+            userRole={userRole}
+            onComplete={handleIntakeComplete}
+            isApplicantFlow={true}
+            applicantData={selectedGuardForIntake}
+          />
+        )}
 
-      {selectedGuardForAudit && (
-        <ForensicDisclosure 
-          guard={selectedGuardForAudit} 
-          incidents={incidents} 
-          disciplinaryCodes={disciplinaryCodes} 
-          onClose={() => setSelectedGuardForAudit(null)} 
-        />
-      )}
+        {selectedGuardForAudit && (
+          <ForensicDisclosure
+            guard={selectedGuardForAudit}
+            incidents={incidents}
+            disciplinaryCodes={disciplinaryCodes}
+            onClose={() => setSelectedGuardForAudit(null)}
+          />
+        )}
       </Layout>
     </NotificationManager>
   );

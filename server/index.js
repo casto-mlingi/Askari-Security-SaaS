@@ -1482,6 +1482,7 @@ app.get('/api/guards/blacklisted', requireAuth, async (req, res) => {
 });
 
 app.post('/api/interview-logs', requireAuth, async (req, res) => {
+  const client = await pool.connect();
   try {
     const actor = req.user || {};
     const {
@@ -1498,32 +1499,46 @@ app.post('/api/interview-logs', requireAuth, async (req, res) => {
       deployment_contract_url
     } = req.body || {};
     if (!guard_id) return res.status(400).json({ error: 'bad_request', detail: 'guard_id_required' });
+
+    await client.query('BEGIN');
     const uuid = id || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const numericScore = (typeof score === 'number') ? score : (typeof rating === 'number' ? rating : null);
-    await pool.query(
+
+    // Set PostgreSQL session context for RLS policy
+    const targetCompanyId = company_id || actor?.company_id || null;
+    if (targetCompanyId) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(targetCompanyId)]);
+    }
+
+    const { rows } = await client.query(
       `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, score, interview_date, interview_notes, deployment_contract_url, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())`,
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10, now()) RETURNING *`,
       [
         uuid,
         guard_id,
         interviewer_id || actor?.sub || null,
-        company_id || actor?.company_id || null,
+        targetCompanyId,
         outcome || null,
-        comments || interview_notes || null,
+        comments ? JSON.stringify(comments) : (interview_notes ? JSON.stringify(interview_notes) : null),
         numericScore,
         interview_date || null,
         interview_notes || null,
         deployment_contract_url || null
       ]
     );
-    res.status(200).json({ id: uuid, ok: true });
+    await client.query('COMMIT');
+    res.status(200).json(rows[0]);
   } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { }
     try { console.error('POST /api/interview-logs error', e); } catch { }
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  } finally {
+    client.release();
   }
 });
 
 app.post('/interview-logs', requireAuth, async (req, res) => {
+  const client = await pool.connect();
   try {
     const actor = req.user || {};
     const {
@@ -1540,28 +1555,41 @@ app.post('/interview-logs', requireAuth, async (req, res) => {
       deployment_contract_url
     } = req.body || {};
     if (!guard_id) return res.status(400).json({ error: 'bad_request', detail: 'guard_id_required' });
+
+    await client.query('BEGIN');
     const uuid = id || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const numericScore = (typeof score === 'number') ? score : (typeof rating === 'number' ? rating : null);
-    await pool.query(
+
+    // Set PostgreSQL session context for RLS policy
+    const targetCompanyId = company_id || actor?.company_id || null;
+    if (targetCompanyId) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(targetCompanyId)]);
+    }
+
+    const { rows } = await client.query(
       `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, score, interview_date, interview_notes, deployment_contract_url, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())`,
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10, now()) RETURNING *`,
       [
         uuid,
         guard_id,
         interviewer_id || actor?.sub || null,
-        company_id || actor?.company_id || null,
+        targetCompanyId,
         outcome || null,
-        comments || interview_notes || null,
+        comments ? JSON.stringify(comments) : (interview_notes ? JSON.stringify(interview_notes) : null),
         numericScore,
         interview_date || null,
         interview_notes || null,
         deployment_contract_url || null
       ]
     );
-    res.status(200).json({ id: uuid, ok: true });
+    await client.query('COMMIT');
+    res.status(200).json(rows[0]);
   } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { }
     try { console.error('POST /interview-logs error', e); } catch { }
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  } finally {
+    client.release();
   }
 });
 
