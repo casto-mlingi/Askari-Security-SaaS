@@ -1997,6 +1997,11 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'guard_not_found' });
       }
+
+      // Set PostgreSQL session context for RLS policy
+      if (company_id) {
+        await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(company_id)]);
+      }
       if (typeof penalty_points !== 'number') {
         try {
           const { rows: pRows } = await client.query(
@@ -2018,13 +2023,19 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
         placeholders = '$1,$2,$3,$4,$5,$6, now()';
         vals.splice(5, 0, evidenceUrl);
       }
-      sql += ') VALUES (' + placeholders + ')';
-      await client.query(sql, vals);
+      sql += ') VALUES (' + placeholders + ') RETURNING *';
+      const result = await client.query(sql, vals);
+
+      if (result.rowCount === 0) {
+        throw new Error('RLS Policy Violation: No rows affected');
+      }
+      console.log('[INCIDENT_INSERT] /api/disciplinary/records Success:', result.rows[0]);
+
       await client.query('COMMIT');
       try {
         await sendAlertEmail(g.full_name || 'Unknown Guard', String(formal_report || ''), undefined);
       } catch { }
-      res.status(200).json({ ok: true, guard_id });
+      res.status(200).json({ ok: true, guard_id, data: result.rows[0] });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch { }
       throw e;
@@ -2404,29 +2415,48 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
 
 // --- Operations: Incident Reporting ---
 app.post('/api/ops/incidents', requireAuth, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { guard_id, title, code, notes, evidence_image_url, severity, site_id, created_at } = req.body || {};
-    if (!guard_id) return res.status(400).json({ error: 'bad_request', message: 'guard_id is required' });
+    const actor = req.user || {};
+    const payload = req.body || {};
+    console.log('[INCIDENT_INSERT] Incoming Payload:', payload);
+    const { guard_id, title, code, notes, evidence_image_url, severity, created_at, site_id } = payload;
 
-    // Since incidents are mostly stored as disciplinary_records based on schema inspection,
-    // we bridge the gap or simply persist them as a disciplinary_record using the code.
-    // If disciplinary_records requires company_id, fetch it.
-    const { rows: gRows } = await pool.query('SELECT company_id FROM guards WHERE id = $1 LIMIT 1', [guard_id]);
-    const companyId = gRows[0]?.company_id || null;
+    if (!guard_id) {
+      client.release();
+      return res.status(400).json({ error: 'bad_request', message: 'guard_id is required' });
+    }
+
+    await client.query('BEGIN');
+
+    const { rows: gRows } = await client.query('SELECT company_id FROM guards WHERE id = $1 LIMIT 1', [guard_id]);
+    const companyId = gRows[0]?.company_id || actor.company_id || null;
+
+    // Set PostgreSQL session context for RLS policy
+    if (companyId) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(companyId)]);
+    }
 
     const penaltyPoints = severity === 'critical' ? -50 : severity === 'high' ? -20 : severity === 'medium' ? -10 : -5;
     const reportText = title ? `[${title}] ${notes || ''}` : notes || 'Incident Reported';
 
-    await pool.query(
+    const result = await client.query(
       `INSERT INTO disciplinary_records (id, guard_id, company_id, formal_report, incident_code, penalty_points, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, COALESCE($6, now()))`,
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, COALESCE($6, now())) RETURNING *`,
       [guard_id, companyId, reportText, code || 'OTHER', penaltyPoints, created_at || null]
     );
 
-    res.status(201).json({ success: true, message: 'Incident logged successfully' });
+    if (result.rowCount === 0) throw new Error('RLS Policy Violation: No rows affected');
+
+    console.log('[INCIDENT_INSERT] Success:', result.rows[0]);
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, message: 'Incident logged successfully', data: result.rows[0] });
   } catch (e) {
-    console.error('POST /api/ops/incidents error', e);
-    res.status(500).json({ error: 'error' });
+    try { await client.query('ROLLBACK'); } catch { }
+    console.error('[INCIDENT_INSERT] POST /api/ops/incidents error:', e);
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  } finally {
+    client.release();
   }
 });
 
