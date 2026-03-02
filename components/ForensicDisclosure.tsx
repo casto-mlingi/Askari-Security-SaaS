@@ -452,7 +452,7 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                     <p className="text-[11px] font-medium text-white/90 mt-1">{i.notes || i.title || 'No narrative provided.'}</p>
                     <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-2">{new Date(i.created_at).toLocaleString()}</p>
                   </div>
-                  <span className="text-[10px] font-black text-red-300 font-hud whitespace-nowrap">-{i.points_deducted || 0}</span>
+                  <span className="text-[10px] font-black text-red-300 font-hud whitespace-nowrap">-{i.penalty_points || 0}</span>
                 </div>
               </div>
             );

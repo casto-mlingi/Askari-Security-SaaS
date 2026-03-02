@@ -2031,6 +2031,15 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
       }
       console.log('[INCIDENT_INSERT] /api/disciplinary/records Success:', result.rows[0]);
 
+      const deduction = Math.abs(penalty_points || 0);
+      await client.query(
+        `UPDATE guards
+         SET performance_score = GREATEST(0, COALESCE(performance_score, 100) - $1),
+             status = CASE WHEN GREATEST(0, COALESCE(performance_score, 100) - $1) < 5 THEN 'blacklisted' ELSE status END
+         WHERE id = $2`,
+        [deduction, guard_id]
+      );
+
       await client.query('COMMIT');
       try {
         await sendAlertEmail(g.full_name || 'Unknown Guard', String(formal_report || ''), undefined);

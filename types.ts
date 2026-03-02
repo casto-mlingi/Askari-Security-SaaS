@@ -334,6 +334,7 @@ export interface IncidentReport {
   site_id?: string;
   site_name?: string; // Denormalized for display
   created_at: string;
+  penalty_points?: number;
 }
 
 export interface DisciplinaryRecord {

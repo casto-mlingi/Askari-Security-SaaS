@@ -73,7 +73,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
     return activeGuards.map(g => {
       const items = incidents.filter(i => i.guard_id === g.id);
       const points = items.reduce((acc, i) => {
-        return acc + (i.points_deducted || 0);
+        return acc + (i.penalty_points || 0);
       }, 0);
       return { guard: g, count: items.length, points };
     });
@@ -255,9 +255,9 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                     <div className="flex items-center gap-2">
                       <h4 className="font-black text-slate-900 uppercase tracking-tight">{g.full_name}</h4>
                       <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${inc.severity === 'critical' ? 'bg-red-100 text-red-700' :
-                          inc.severity === 'high' ? 'bg-orange-100 text-orange-700' :
-                            inc.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
-                              'bg-slate-100 text-slate-700'
+                        inc.severity === 'high' ? 'bg-orange-100 text-orange-700' :
+                          inc.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-700'
                         }`}>
                         {inc.severity || 'low'}
                       </span>
@@ -267,7 +267,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-4 self-start sm:self-auto min-w-max">
-                  <span className="text-lg font-black text-red-600 font-hud px-4 py-2 bg-red-50 rounded-xl border border-red-100">-{inc.points_deducted || 0} PTS</span>
+                  <span className="text-lg font-black text-red-600 font-hud px-4 py-2 bg-red-50 rounded-xl border border-red-100">-{inc.penalty_points || 0} PTS</span>
                 </div>
               </div>
             );
@@ -404,7 +404,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                             <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{code?.label || i.code}</p>
                             <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">{new Date(i.created_at).toLocaleString()}</p>
                           </div>
-                          <span className="text-[10px] font-black text-red-600 font-hud">-{i.points_deducted || 0}</span>
+                          <span className="text-[10px] font-black text-red-600 font-hud">-{i.penalty_points || 0}</span>
                         </div>
                       );
                     })}

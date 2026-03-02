@@ -78,32 +78,43 @@ const App: React.FC = () => {
     isFetchingRef.current = true;
     let isMounted = true;
     try {
-      const [guardsRes, sitesRes, profilesRes, companiesRes, incRes] = await Promise.all([
+      const [guardsRes, sitesRes, profilesRes, companiesRes, recordsRes] = await Promise.all([
         guardService.getGuards(),
         api.get<Site[]>('/sites'),
         api.get<Profile[]>('/profiles'),
         api.get<Company[]>('/companies'),
-        api.get<IncidentReport[]>('/ops/incidents').catch(() => ({ data: [] }))
+        api.get<DisciplinaryRecord[]>('/disciplinary/records').catch(() => ({ data: [] }))
       ]);
       if (isMounted) {
         if (guardsRes.data) setGuards(guardsRes.data);
         if (sitesRes.data) setSites(sitesRes.data as Site[]);
         if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
         if (companiesRes.data) setCompanies(companiesRes.data as Company[]);
-        if (incRes.data) {
-          const rawRecords = (incRes.data as any[]).map(r => ({
-            id: r.id,
-            guard_id: r.guard_id,
-            site_id: r.site_id || undefined,
-            code: 'OTHER_REPORT',
-            notes: (r.title ? `[${r.title}] ` : '') + (r.notes || ''),
-            evidence_url: r.evidence_url || '',
-            points_deducted: r.points_deducted || r.penalty_points || 0,
-            severity: r.severity || 'low',
-            reported_by: r.reported_by || 'System',
-            created_at: r.created_at
-          }));
-          setIncidents(rawRecords);
+        if (recordsRes.data) {
+          const rawRecords = recordsRes.data as DisciplinaryRecord[];
+          setDisciplinaryRecords(rawRecords);
+          const mappedIncidents: IncidentReport[] = rawRecords.map(r => {
+            const pts = r.penalty_points || 0;
+            let sev: 'low' | 'medium' | 'high' | 'critical' = 'low';
+            if (pts >= 20) sev = 'critical';
+            else if (pts >= 15) sev = 'high';
+            else if (pts >= 10) sev = 'medium';
+            else if (pts >= 5) sev = 'low';
+
+            return {
+              id: r.id,
+              guard_id: r.guard_id,
+              site_id: undefined,
+              code: r.incident_code || 'OTHER_REPORT',
+              notes: r.formal_report || '',
+              evidence_url: r.evidence_url || '',
+              penalty_points: Math.abs(pts),
+              severity: sev,
+              reported_by: 'HR System',
+              created_at: r.created_at
+            };
+          });
+          setIncidents(mappedIncidents);
         }
         setLoading(false);
       }
@@ -659,14 +670,12 @@ const App: React.FC = () => {
 
   const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
     try {
-      await api.post('/ops/incidents', {
+      await api.post('/disciplinary/records', {
         guard_id: guardId,
-        title: report.title,
-        notes: report.notes,
-        severity: report.severity,
-        evidence_image_url: report.evidence_image_url,
-        site_id: report.site_id,
-        created_at: new Date().toISOString()
+        description: report.notes || report.title || 'Incident',
+        incident_type: report.code || 'OTHER',
+        evidence_url: report.evidence_image_url,
+        penalty_points: report.severity === 'critical' ? 20 : report.severity === 'high' ? 15 : report.severity === 'medium' ? 10 : 5
       });
       // Re-fetch all real DB data so performance_score updates dynamically from the backend PostgreSQL Trigger
       fetchRealData();
