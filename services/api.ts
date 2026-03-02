@@ -57,6 +57,7 @@ class TokenManager {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('amini_auth_token');
       localStorage.removeItem('token');
+      localStorage.clear();
       sessionStorage.clear();
       window.location.href = '/login';
     }
@@ -116,6 +117,9 @@ class ApiClient {
       return { error: 'Invalid server response' };
     }
     if (!response.ok) {
+      if (response.status === 401 && ctx?.path?.includes('/auth/login')) {
+        return { error: 'Barua pepe au Nywila siyo sahihi.' };
+      }
       if (response.status === 401 && ctx && !ctx.retried) {
         const newTok = await tokenManager.refresh();
         if (newTok) {

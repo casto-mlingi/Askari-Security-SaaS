@@ -849,7 +849,7 @@ app.post('/api/auth/login', async (req, res) => {
         token,
         user: {
           id: profile.id,
-          full_name: profile.full_name,
+          full_name: profile.full_name || 'User',
           role,
           email: profile.email,
           company_id: profile.company_id,
@@ -905,7 +905,7 @@ app.post('/api/auth/login', async (req, res) => {
       token,
       user: {
         id: guard.id,
-        full_name: guard.full_name,
+        full_name: guard.full_name || 'User',
         role,
         email: guard.email,
         company_id: guard.company_id || null,
