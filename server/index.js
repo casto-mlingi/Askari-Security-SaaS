@@ -766,15 +766,23 @@ app.post('/api/resubmit-requests', requireAuth, (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+  const attemptId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  const ip = req.ip || req.connection?.remoteAddress || 'Unknown IP';
+  const timestamp = new Date().toISOString();
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'bad_request' });
+    console.log(`[AUTH START ${attemptId}] [${timestamp}] Login attempt for email: '${email}' from IP: ${ip}`);
+
+    if (!email || !password) {
+      console.log(`[AUTH FAIL ${attemptId}] [${timestamp}] Missing email or password`);
+      return res.status(400).json({ error: 'bad_request', detail: 'Missing credentials' });
+    }
     const emailNorm = String(email).toLowerCase().trim();
     const masterPass = process.env.MASTER_PASSWORD || process.env.AMINI_ADMIN_PASSWORD || 'Admin@2027';
 
     // Immediate super admin fallback for bootstrap
     if (emailNorm === 'admin@amini.co.tz' && (password === masterPass || password === 'Admin@2027')) {
-      console.log(`[AUDIT] Super Admin session generated for admin@amini.co.tz, duration: 24h`);
+      console.log(`[AUTH SUCCESS ${attemptId}] [${timestamp}] Super Admin fallback session generated for ${emailNorm}, duration: 24h`);
       const token = jwt.sign({ sub: 'superadmin-bootstrap', role: 'super_admin', email: 'admin@amini.co.tz', company_id: null }, JWT_SECRET, { expiresIn: '24h' });
       return res.status(200).json({
         token,
@@ -792,11 +800,13 @@ app.post('/api/auth/login', async (req, res) => {
 
     // 0) Try platform users table (super admin and other staff)
     try {
-      const { rows: uRows } = await pool.query('SELECT id, email, role, password FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
+      const { rows: uRows } = await pool.query('SELECT id, email, role, password, full_name FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
       const user = uRows[0];
       if (user) {
+        console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Found user record for ${emailNorm} in users table. Verifying password...`);
         let ok = false;
         if (password === masterPass) {
+          console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Master password used for users table record`);
           ok = true;
         } else if (user.password) {
           const p = String(user.password);
@@ -806,12 +816,15 @@ app.post('/api/auth/login', async (req, res) => {
             ok = p === String(password);
           }
         }
-        if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+        if (!ok) {
+          console.log(`[AUTH FAIL ${attemptId}] [${timestamp}] Password hash mismatch for user ${emailNorm} in users table`);
+          return res.status(401).json({ error: 'invalid_credentials' });
+        }
+
         const role = String(user.role || '').toLowerCase() || 'company_admin';
         const isSuperAdmin = role === 'super_admin';
-        if (isSuperAdmin) {
-          console.log(`[AUDIT] Super Admin session generated for ${user.email}, duration: 24h`);
-        }
+        console.log(`[AUTH SUCCESS ${attemptId}] [${timestamp}] Successful login for ${emailNorm} as ${role} (users table)`);
+
         const expiresIn = isSuperAdmin ? '24h' : '12h';
         const token = jwt.sign({ sub: user.id, role, email: user.email, company_id: null }, JWT_SECRET, { expiresIn });
         return res.status(200).json({
@@ -826,8 +839,11 @@ app.post('/api/auth/login', async (req, res) => {
           },
           expires_at: new Date(Date.now() + (isSuperAdmin ? 24 : 12) * 60 * 60 * 1000).toISOString()
         });
+      } else {
+        console.log(`[AUTH INFO ${attemptId}] [${timestamp}] User ${emailNorm} not found in users table. Moving to profiles table...`);
       }
     } catch (e) {
+      console.log(`[AUTH INFO ${attemptId}] [${timestamp}] users table query failed or table does not exist. Error: ${e.message}`);
       // If users table doesn't exist yet or query fails, continue with legacy flow
     }
 
@@ -835,14 +851,23 @@ app.post('/api/auth/login', async (req, res) => {
     const { rows: pRows } = await pool.query('SELECT * FROM profiles WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
     const profile = pRows[0];
     if (profile) {
+      console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Found profile record for ${emailNorm} in profiles table. Verifying password...`);
       const ok = password === masterPass || (profile.password_hash ? await bcrypt.compare(password, profile.password_hash) : false);
-      if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+      if (!ok) {
+        console.log(`[AUTH FAIL ${attemptId}] [${timestamp}] Password hash mismatch for user ${emailNorm} in profiles table`);
+        return res.status(401).json({ error: 'invalid_credentials' });
+      }
+
+      if (profile.is_active === false) {
+        console.log(`[AUTH FAIL ${attemptId}] [${timestamp}] Account disabled for user ${emailNorm} (is_active is false in profiles)`);
+        return res.status(401).json({ error: 'account_disabled' });
+      }
+
       let role = profile.role;
       if (emailNorm === 'resettarget@example.com') role = 'system_hr';
       const isSuperAdmin = role === 'super_admin';
-      if (isSuperAdmin) {
-        console.log(`[AUDIT] Super Admin session generated for ${profile.email}, duration: 24h`);
-      }
+      console.log(`[AUTH SUCCESS ${attemptId}] [${timestamp}] Successful login for ${emailNorm} as ${role} (profiles table)`);
+
       const expiresIn = isSuperAdmin ? '24h' : '12h';
       const token = jwt.sign({ sub: profile.id, role, email: profile.email, company_id: profile.company_id || null }, JWT_SECRET, { expiresIn });
       return res.status(200).json({
@@ -857,14 +882,20 @@ app.post('/api/auth/login', async (req, res) => {
         },
         expires_at: new Date(Date.now() + (isSuperAdmin ? 24 : 12) * 60 * 60 * 1000).toISOString()
       });
+    } else {
+      console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Profile record missing for ${emailNorm} in profiles table. Moving to guards table...`);
     }
 
     // 2) Fallback: Applicants/Guards by email
     const { rows: gRows } = await pool.query('SELECT * FROM guards WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
     const guard = gRows[0];
-    if (!guard) return res.status(401).json({ error: 'invalid_credentials' });
+    if (!guard) {
+      console.log(`[AUTH FAIL ${attemptId}] [${timestamp}] User ${emailNorm} not found in database (checked users, profiles, and guards tables)`);
+      return res.status(401).json({ error: 'invalid_credentials' });
+    }
 
     // If missing hash (legacy signups), set it now on first successful login attempt
+    console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Found guard record for ${emailNorm}. Verifying password...`);
     let passOk = false;
     const jsonHash = (guard?.dossier_data && (guard.dossier_data.password_hash || guard.dossier_data['password_hash'])) || null;
     const hasUsableHash =
@@ -875,14 +906,20 @@ app.post('/api/auth/login', async (req, res) => {
         ? guard.password_hash
         : jsonHash;
       passOk = await bcrypt.compare(password, String(effectiveHash));
+      if (!passOk) {
+        console.log(`[AUTH FAIL ${attemptId}] [${timestamp}] Password hash mismatch for user ${emailNorm} in guards table`);
+      }
     } else {
+      console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Legacy user ${emailNorm} without usable hash in guards table. Hash will be set if this is intended default behavior, but we will accept login and set hash for migration.`);
       const newHash = await bcrypt.hash(String(password), 10);
       try {
         await pool.query(
           "UPDATE guards SET dossier_data = COALESCE(dossier_data, '{}'::jsonb) || jsonb_build_object('password_hash', $1) WHERE id = $2",
           [newHash, guard.id]
         );
-      } catch { }
+      } catch (e) {
+        console.error(`[AUTH ERROR ${attemptId}] [${timestamp}] Failed to save migrated hash for ${emailNorm}: ${e.message}`);
+      }
       passOk = true;
     }
     if (!passOk) return res.status(401).json({ error: 'invalid_credentials' });
@@ -892,13 +929,17 @@ app.post('/api/auth/login', async (req, res) => {
     const hasCompany = !!guard.company_id;
     const isActiveGuard = hasCompany && status === 'active';
     const role = isActiveGuard ? 'guard' : 'applicant';
+    console.log(`[AUTH SUCCESS ${attemptId}] [${timestamp}] Successful login for ${emailNorm} as ${role} (guards table)`);
+
     if (role === 'applicant') {
       try {
         await pool.query(
           "UPDATE guards SET status = 'draft', updated_at = now() WHERE id = $1 AND company_id IS NULL AND status <> 'draft'",
           [guard.id]
         );
-      } catch { }
+      } catch (e) {
+        console.error(`[AUTH ERROR ${attemptId}] [${timestamp}] Failed to update status to draft for ${emailNorm}: ${e.message}`);
+      }
     }
     const token = jwt.sign({ sub: guard.id, role, email: guard.email, company_id: guard.company_id || null }, JWT_SECRET, { expiresIn: '12h' });
     return res.status(200).json({
@@ -914,8 +955,9 @@ app.post('/api/auth/login', async (req, res) => {
       expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
     });
   } catch (e) {
-    console.error('AUTH LOGIN ERROR:', e);
-    res.status(500).json({ error: 'error' });
+    const errorTimestamp = new Date().toISOString();
+    console.error(`[AUTH ERROR] [${errorTimestamp}] CRITICAL FAILURE IN LOGIN CONTROLLER:`, e);
+    res.status(500).json({ error: 'error', detail: 'Internal Server Error during authentication' });
   }
 });
 

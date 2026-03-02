@@ -118,7 +118,12 @@ class ApiClient {
     }
     if (!response.ok) {
       if (response.status === 401 && ctx?.path?.includes('/auth/login')) {
-        return { error: 'Barua pepe au Nywila siyo sahihi.' };
+        tokenManager.setToken(null);
+        if (typeof window !== 'undefined') {
+          localStorage.clear();
+          sessionStorage.clear();
+        }
+        return { error: 'Invalid Email or Password' };
       }
       if (response.status === 401 && ctx && !ctx.retried) {
         const newTok = await tokenManager.refresh();
