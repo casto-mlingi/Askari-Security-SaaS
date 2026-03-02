@@ -2,7 +2,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { UserRole, Guard, Profile, ApplicationStatus } from '../types';
 import PublicApplication from './PublicApplication';
-import { MOCK_PROFILES, MOCK_GUARDS } from '../constants/mock';
 import { api } from '../services/api';
 
 interface AuthProps {
@@ -24,7 +23,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
   useEffect(() => {
     return () => {
       if (loginAbortRef.current) {
-        try { loginAbortRef.current.abort(); } catch {}
+        try { loginAbortRef.current.abort(); } catch { }
         loginAbortRef.current = null;
       }
     };
@@ -35,7 +34,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
     setError('');
     if (isSubmitting) return;
     if (loginAbortRef.current) {
-      try { loginAbortRef.current.abort(); } catch {}
+      try { loginAbortRef.current.abort(); } catch { }
       loginAbortRef.current = null;
     }
 
@@ -69,10 +68,10 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
 
     if (!error) setError('Invalid email or password');
   };
-  
- 
 
- 
+
+
+
 
   if (view === 'apply') {
     return <PublicApplication onBack={() => setView('login')} onSubmit={onPublicSubmit} />;
@@ -92,7 +91,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
       if ((payload.full_name && payload.full_name.trim()) || (payload.nida_number && String(payload.nida_number).trim())) {
         localStorage.setItem('amini_pending_guard', JSON.stringify(payload));
       }
-    } catch {}
+    } catch { }
   };
 
   return (
@@ -200,7 +199,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
             </div>
 
             <div className="mt-8 pt-6 border-t border-border-light">
-              
+
             </div>
           </div>
         </div>

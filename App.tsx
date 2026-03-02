@@ -31,11 +31,7 @@ import RosterManager from './components/RosterManager';
 import { NotificationManager } from './components/Notification';
 import { AMINI_SQL_SCHEMA } from './constants/sql';
 import { api } from './services/api';
-import {
-  MOCK_COMPANIES, MOCK_PROFILES, MOCK_SITES, MOCK_GUARDS,
-  MOCK_INCIDENTS, MOCK_EQUIPMENT, MOCK_DISCIPLINARY_CODES,
-  MOCK_LEAVE_REQUESTS, MOCK_ATTENDANCE, MOCK_ANNOUNCEMENTS
-} from './constants/mock';
+
 import { Guard, Profile, UserRole, Company, Site, IncidentReport, DisciplinaryCode, LeaveRequest, Announcement, DisciplinaryRecord } from './types';
 
 const App: React.FC = () => {
@@ -63,13 +59,13 @@ const App: React.FC = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [guards, setGuards] = useState<Guard[]>([]);
-  const [incidents, setIncidents] = useState<IncidentReport[]>(MOCK_INCIDENTS);
+  const [incidents, setIncidents] = useState<IncidentReport[]>([]);
   const [disciplinaryRecords, setDisciplinaryRecords] = useState<DisciplinaryRecord[]>([]);
-  const [equipment, setEquipment] = useState(MOCK_EQUIPMENT);
-  const [disciplinaryCodes, setDisciplinaryCodes] = useState<DisciplinaryCode[]>(MOCK_DISCIPLINARY_CODES);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(MOCK_LEAVE_REQUESTS);
-  const [attendanceLogs, setAttendanceLogs] = useState(MOCK_ATTENDANCE);
-  const [announcements, setAnnouncements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
+  const [equipment, setEquipment] = useState<any[]>([]);
+  const [disciplinaryCodes, setDisciplinaryCodes] = useState<DisciplinaryCode[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [resubmitRequests, setResubmitRequests] = useState<any[]>([]);
   const [dbCompanyId, setDbCompanyId] = useState<string | undefined>(undefined);
   const [blacklistedGuards, setBlacklistedGuards] = useState<Guard[]>([]);
@@ -82,17 +78,33 @@ const App: React.FC = () => {
     isFetchingRef.current = true;
     let isMounted = true;
     try {
-      const [guardsRes, sitesRes, profilesRes, companiesRes] = await Promise.all([
+      const [guardsRes, sitesRes, profilesRes, companiesRes, recordsRes] = await Promise.all([
         guardService.getGuards(),
         api.get<Site[]>('/sites'),
         api.get<Profile[]>('/profiles'),
         api.get<Company[]>('/companies'),
+        api.get<DisciplinaryRecord[]>('/disciplinary/records')
       ]);
       if (isMounted) {
         if (guardsRes.data) setGuards(guardsRes.data);
         if (sitesRes.data) setSites(sitesRes.data as Site[]);
         if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
         if (companiesRes.data) setCompanies(companiesRes.data as Company[]);
+        if (recordsRes.data) {
+          const rawRecords = recordsRes.data as DisciplinaryRecord[];
+          setDisciplinaryRecords(rawRecords);
+          const mappedIncidents: IncidentReport[] = rawRecords.map(r => ({
+            id: r.id,
+            guard_id: r.guard_id,
+            site_id: undefined,
+            code: r.incident_code || 'OTHER_REPORT',
+            notes: r.formal_report || '',
+            evidence_url: r.evidence_url,
+            reported_by: undefined,
+            created_at: r.created_at
+          }));
+          setIncidents(mappedIncidents);
+        }
         setLoading(false);
       }
     } catch (error) {
@@ -122,23 +134,13 @@ const App: React.FC = () => {
         } else {
           setBlacklistedGuards([]);
         }
-      } catch {
-        const counts: Record<string, number> = {};
-        for (const r of disciplinaryRecords) {
-          counts[r.guard_id] = (counts[r.guard_id] || 0) + 1;
-        }
-        const fallback = (guards || [])
-          .filter(g => String((g as any)?.status).toLowerCase() === 'blacklisted')
-          .map(g => ({ ...g, incident_count: counts[g.id] || 0 } as any));
-        setBlacklistedGuards(fallback as Guard[]);
+      } catch (err) {
+        console.error('Failed to load blacklisted guards:', err);
+        setBlacklistedGuards([]);
       }
     };
     refreshOnBlacklist();
-  }, [activeTab, guards, disciplinaryRecords]);
-
-  // (Removed debug logs and local blacklist filter in favor of server /guards/blacklisted)
-
-
+  }, [activeTab]);
 
   // --- Derived State Helpers ---
   const isGuard = user && !('role' in user);
@@ -163,10 +165,10 @@ const App: React.FC = () => {
         setDbCompanyId(undefined);
         return;
       }
-      const mockCompany = MOCK_COMPANIES.find(c => c.id === userCompanyId);
-      const desiredSlug = mockCompany?.slug;
-      const desiredName = mockCompany?.name;
-      const desiredEmail = mockCompany?.contact_email || 'ops@company.local';
+      const currentCompany = companies.find(c => c.id === userCompanyId);
+      const desiredSlug = currentCompany?.slug;
+      const desiredName = currentCompany?.name;
+      const desiredEmail = currentCompany?.contact_email || 'ops@company.local';
 
       if (!desiredSlug || !desiredName) {
         setDbCompanyId(undefined);
@@ -670,57 +672,23 @@ const App: React.FC = () => {
   };
 
   const handleReportIncident = async (guardId: string, report: Partial<IncidentReport>) => {
-    const now = new Date().toISOString();
-    const newIncident: IncidentReport = {
-      id: `inc-${Date.now()}`,
-      guard_id: guardId,
-      title: report.title,
-      code: report.code || 'OTHER_REPORT',
-      notes: report.notes || '',
-      evidence_url: report.evidence_url || '',
-      evidence_image_url: report.evidence_image_url || report.evidence_url || '',
-      severity: report.severity || 'low',
-      reported_by: report.reported_by || 'Unknown',
-      site_id: report.site_id,
-      site_name: report.site_name,
-      created_at: now
-    };
-    setIncidents(prev => [newIncident, ...prev]);
     try {
       await api.post('/ops/incidents', {
-        guard_id: newIncident.guard_id,
-        title: newIncident.title,
-        notes: newIncident.notes,
-        severity: newIncident.severity,
-        evidence_image_url: newIncident.evidence_image_url,
-        site_id: newIncident.site_id,
-        created_at: newIncident.created_at
+        guard_id: guardId,
+        title: report.title,
+        notes: report.notes,
+        severity: report.severity,
+        evidence_image_url: report.evidence_image_url,
+        site_id: report.site_id,
+        created_at: new Date().toISOString()
       });
-    } catch (e) { }
-
-    const codeMeta = disciplinaryCodes.find(c => c.code === (report.code || 'OTHER_REPORT'));
-    if (codeMeta) {
-      setGuards(prev => prev.map(g => {
-        if (g.id === guardId && typeof g.performance_score === 'number') {
-          const newScore = Math.max(0, (g.performance_score || 100) - codeMeta.points);
-          return { ...g, performance_score: newScore };
-        }
-        return g;
-      }));
+      // Re-fetch all real DB data so performance_score updates dynamically from the backend PostgreSQL Trigger
+      fetchRealData();
+    } catch (e) {
+      console.error('Failed to report incident', e);
     }
 
-    const current = guards.find(g => g.id === guardId);
-    const scoreAfter = (typeof current?.performance_score === 'number')
-      ? Math.max(0, (current.performance_score || 100) - (codeMeta?.points || 0))
-      : undefined;
-    if (typeof scoreAfter === 'number' && scoreAfter <= 5) {
-      setGuards(prev => prev.map(g => g.id === guardId ? { ...g, status: 'blacklisted', performance_score: scoreAfter } : g));
-      try {
-        await api.patch('/guards/' + guardId, { status: 'blacklisted', performance_score: scoreAfter });
-      } catch (e) { }
-    }
-
-    if (newIncident.severity === 'high' || newIncident.severity === 'critical') {
+    if (report.severity === 'high' || report.severity === 'critical') {
       (window as any).showNotification?.('error', 'High severity incident reported.');
     }
   };

@@ -205,14 +205,14 @@ export interface Guard {
   assigned_supervisor_id?: string; // References Profile.id
   company_id?: string; // Optional for POOL_APPLICANT
   phone?: string;
-  
+
   // Dossier data (only remaining flexible fields as per SQL schema comment)
-  dossier_data?: DossierData; 
-  
+  dossier_data?: DossierData;
+
   // Normalized fields (now top-level arrays/properties)
-  education_history: EducationRecord[]; 
-  guarantors: Guarantor[]; 
-  
+  education_history: EducationRecord[];
+  guarantors: Guarantor[];
+
   // Next of Kin (migrated to top-level columns in SQL)
   next_of_kin_name?: string;
   next_of_kin_phone?: string;
@@ -228,7 +228,7 @@ export interface Guard {
   cv_url?: string;
   passport_photo_url?: string;
   previous_employer_letter_url?: string;
-  
+
   agreed_salary?: number;
   contract_start_date?: string;
   contract_end_date?: string;
@@ -236,7 +236,7 @@ export interface Guard {
   employment_contract_url?: string;
   current_shift?: 'day' | 'night';
   leave_return_date?: string;
-  consecutive_absences: number; 
+  consecutive_absences: number;
   residence_lat?: number;
   residence_lng?: number;
   is_armed: boolean;
@@ -331,7 +331,7 @@ export interface IncidentReport {
   evidence_image_url?: string;
   severity?: 'low' | 'medium' | 'high' | 'critical';
   reported_by: string; // Can be Profile.id or Profile.full_name
-  site_id?: string; 
+  site_id?: string;
   site_name?: string; // Denormalized for display
   created_at: string;
 }
@@ -343,6 +343,7 @@ export interface DisciplinaryRecord {
   formal_report: string;
   penalty_points: number;
   incident_code: string;
+  evidence_url?: string;
   created_at: string;
 }
 

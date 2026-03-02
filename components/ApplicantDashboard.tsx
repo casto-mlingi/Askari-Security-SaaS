@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Guard, ApplicationStatus } from '../types';
 import { api } from '../services/api';
 import { generateAIResponse } from '../services/ai';
-import { MOCK_ANNOUNCEMENTS } from '../constants/mock';
 
 interface ApplicantDashboardProps {
   guard?: Guard;
@@ -35,7 +34,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
         const r = await api.get<any[]>(`/resubmit-requests?guard_id=${guardId}`);
         const list = (r.data || []) as any[];
         setApproved(!!list.find(x => x.status === 'approved'));
-      } catch {}
+      } catch { }
     };
     run();
   }, [guardId]);
@@ -68,7 +67,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
       if (auto === '1' && guardId) {
         debugVerify();
       }
-    } catch {}
+    } catch { }
   }, [guardId]);
   useEffect(() => {
     const fetchLatest = async () => {
@@ -76,7 +75,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
         if (!guardId) return;
         const r = await api.get<Guard>(`/guards/${guardId}`);
         if (r.data) setFreshGuard(r.data as Guard);
-      } catch {}
+      } catch { }
     };
     fetchLatest();
     const onFocus = () => { fetchLatest(); };
@@ -104,7 +103,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
     const t = setTimeout(() => setTimedOut(true), 5000);
     return () => clearTimeout(t);
   }, [guardId]);
-  
+
   if (!guard) return (
     <div className="p-20 text-center font-black space-y-6">
       <div>INAPAKIA WASIFU WAKO...</div>
@@ -116,7 +115,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
       )}
     </div>
   );
-  
+
   const displayGuard = (freshGuard || guard) as Guard;
   const readinessScore = useMemo(() => {
     if (typeof displayGuard?.readiness_score === 'number') return displayGuard.readiness_score as number;
@@ -251,8 +250,8 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
             </div>
           </div>
           <div className="text-right">
-             <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Readiness Score</p>
-             <p className="text-4xl md:text-5xl font-black font-hud text-primary">{readinessScore}%</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Readiness Score</p>
+            <p className="text-4xl md:text-5xl font-black font-hud text-primary">{readinessScore}%</p>
           </div>
         </div>
       </div>
@@ -260,13 +259,8 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
           <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Public SMS</p>
-          <div className="space-y-3">
-            {(MOCK_ANNOUNCEMENTS || []).slice(0, 3).map(a => (
-              <div key={a.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <p className="text-xs font-bold text-slate-500">{a.title}</p>
-                <p className="text-sm font-medium text-slate-900 mt-1">{a.content}</p>
-              </div>
-            ))}
+          <div className="space-y-3 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <p className="text-sm font-medium text-slate-500 text-center">Hakuna matangazo mapya kwa sasa.</p>
           </div>
         </div>
         <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
@@ -283,7 +277,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
           Tracking Status
           <div className="h-px flex-grow bg-slate-100" />
         </h3>
-        
+
         <div className="space-y-12">
           {steps.map((step, idx) => {
             const isLast = idx === steps.length - 1;
@@ -296,13 +290,12 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
                 {!isLast && (
                   <div className={`absolute left-5 top-10 w-0.5 h-14 transition-colors duration-500 ${isComplete ? 'bg-primary' : 'bg-slate-100'}`} />
                 )}
-                
-                <div className={`z-10 w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500 font-hud font-black text-sm ${
-                  isComplete ? 'bg-primary border-primary text-white' :
-                  isCurrent ? 'bg-white border-primary text-primary shadow-lg shadow-blue-900/10 scale-110' :
-                  isError ? 'bg-red-50 border-red-500 text-red-500' :
-                  'bg-white border-slate-200 text-slate-300'
-                }`}>
+
+                <div className={`z-10 w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500 font-hud font-black text-sm ${isComplete ? 'bg-primary border-primary text-white' :
+                    isCurrent ? 'bg-white border-primary text-primary shadow-lg shadow-blue-900/10 scale-110' :
+                      isError ? 'bg-red-50 border-red-500 text-red-500' :
+                        'bg-white border-slate-200 text-slate-300'
+                  }`}>
                   {isComplete ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" strokeWidth="4" /></svg>
                   ) : isError ? (
@@ -316,16 +309,15 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
                   <p className={`font-black uppercase tracking-widest transition-colors ${step.status !== 'pending' ? 'text-slate-900 text-sm md:text-base' : 'text-slate-300 text-sm'}`}>
                     {step.label}
                   </p>
-                  <p className={`text-xs font-bold uppercase mt-1 ${
-                    isComplete ? 'text-emerald-500' : 
-                    isCurrent ? 'text-primary animate-pulse' : 
-                    isError ? 'text-red-500' :
-                    'text-slate-300'
-                  }`}>
-                    {isComplete ? 'Step Complete' : 
-                     isCurrent ? 'In Progress' : 
-                     isError ? 'Application Halted' :
-                     'Next Step'}
+                  <p className={`text-xs font-bold uppercase mt-1 ${isComplete ? 'text-emerald-500' :
+                      isCurrent ? 'text-primary animate-pulse' :
+                        isError ? 'text-red-500' :
+                          'text-slate-300'
+                    }`}>
+                    {isComplete ? 'Step Complete' :
+                      isCurrent ? 'In Progress' :
+                        isError ? 'Application Halted' :
+                          'Next Step'}
                   </p>
                 </div>
               </div>
@@ -337,20 +329,20 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
       {/* HR Notes / Dossier */}
       {guard.dossier_data?.interviewer_notes && (
         <div className="bg-slate-900 rounded-[2.5rem] p-8 md:p-12 text-white space-y-6 shadow-2xl">
-           <div className="flex items-center gap-3">
-              <div className="w-2 h-6 bg-primary rounded-full" />
-              <h3 className="text-sm font-black uppercase tracking-widest">Notes from HR</h3>
-           </div>
-           
-           <div className="bg-white/5 border border-white/10 p-6 rounded-3xl space-y-4">
-              <div className="flex items-center justify-between">
-                 <span className="text-xs font-black text-primary uppercase tracking-widest">Official Interview Notes</span>
-                 <span className="text-[10px] font-bold text-white/40 uppercase">Private</span>
-              </div>
-              <p className="text-base font-medium text-white/80 leading-relaxed italic">
-                 &quot;{guard.dossier_data?.interviewer_notes}&quot;
-              </p>
-           </div>
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-6 bg-primary rounded-full" />
+            <h3 className="text-sm font-black uppercase tracking-widest">Notes from HR</h3>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 p-6 rounded-3xl space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-primary uppercase tracking-widest">Official Interview Notes</span>
+              <span className="text-[10px] font-bold text-white/40 uppercase">Private</span>
+            </div>
+            <p className="text-base font-medium text-white/80 leading-relaxed italic">
+              &quot;{guard.dossier_data?.interviewer_notes}&quot;
+            </p>
+          </div>
         </div>
       )}
       {(guard?.dossier_data?.interview_schedule?.date || guard?.dossier_data?.interview_schedule?.location) && (
@@ -374,8 +366,8 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
           )}
         </div>
       )}
-      
-      
+
+
       {String((freshGuard || guard)?.status || '').toLowerCase() !== 'draft' && (
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 md:p-12 shadow-sm space-y-4">
           <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Request CV Edit</h3>
@@ -383,7 +375,7 @@ const ApplicantDashboard: React.FC<ApplicantDashboardProps> = ({ guard, userId, 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <textarea id="req-reason" className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm" placeholder="Describe what you need to update"></textarea>
             <div className="flex items-end">
-              <button 
+              <button
                 type="button"
                 onClick={() => {
                   const el = document.getElementById('req-reason') as HTMLTextAreaElement | null;
