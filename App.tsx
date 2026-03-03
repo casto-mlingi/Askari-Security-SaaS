@@ -78,18 +78,20 @@ const App: React.FC = () => {
     isFetchingRef.current = true;
     let isMounted = true;
     try {
-      const [guardsRes, sitesRes, profilesRes, companiesRes, recordsRes] = await Promise.all([
+      const [guardsRes, sitesRes, profilesRes, companiesRes, recordsRes, codesRes] = await Promise.all([
         guardService.getGuards(),
         api.get<Site[]>('/sites'),
         api.get<Profile[]>('/profiles'),
         api.get<Company[]>('/companies'),
-        api.get<DisciplinaryRecord[]>('/disciplinary/records').catch(() => ({ data: [] }))
+        api.get<DisciplinaryRecord[]>('/disciplinary/records').catch(() => ({ data: [] })),
+        api.get<DisciplinaryCode[]>('/disciplinary-codes').catch(() => ({ data: [] }))
       ]);
       if (isMounted) {
         if (guardsRes.data) setGuards(guardsRes.data);
         if (sitesRes.data) setSites(sitesRes.data as Site[]);
         if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
         if (companiesRes.data) setCompanies(companiesRes.data as Company[]);
+        if (codesRes.data) setDisciplinaryCodes(codesRes.data as DisciplinaryCode[]);
         if (recordsRes.data) {
           const rawRecords = recordsRes.data as DisciplinaryRecord[];
           setDisciplinaryRecords(rawRecords);

@@ -1,7 +1,7 @@
-
 import React, { useMemo, useEffect, useState } from 'react';
 import { Guard } from '../types';
 import { api } from '../services/api';
+import AvatarImage from './AvatarImage';
 
 interface InterviewReportProps {
   guards: Guard[];
@@ -159,13 +159,7 @@ const InterviewReport: React.FC<InterviewReportProps> = ({ guards, companyId }) 
                   <tr key={log.id || `${log.guard_id}-${log.created_at}`}>
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-3">
-                        {guard?.passport_photo_url ? (
-                          <img src={guard.passport_photo_url} alt={guard?.full_name || log.guard_id} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
-                        ) : (
-                          <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-black text-xs">
-                            {(guard?.full_name || log.guard_id)[0]}
-                          </div>
-                        )}
+                        <AvatarImage filename={guard?.passport_photo_url} alt={guard?.full_name || log.guard_id} fallbackLetter={(guard?.full_name || log.guard_id)[0]} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
                         <div>
                           <p className="font-bold text-sm text-slate-900">{guard?.full_name || log.guard_id}</p>
                           {guard?.nida_number && <p className="text-xs text-slate-500 font-mono">{guard.nida_number}</p>}
@@ -229,13 +223,7 @@ const InterviewReport: React.FC<InterviewReportProps> = ({ guards, companyId }) 
                   <tr key={log.id || `${log.guard_id}-${log.created_at}`}>
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-3">
-                        {guard?.passport_photo_url ? (
-                          <img src={guard.passport_photo_url} alt={guard?.full_name || log.guard_id} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
-                        ) : (
-                          <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-black text-xs">
-                            {(guard?.full_name || log.guard_id)[0]}
-                          </div>
-                        )}
+                        <AvatarImage filename={guard?.passport_photo_url} alt={guard?.full_name || log.guard_id} fallbackLetter={(guard?.full_name || log.guard_id)[0]} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
                         <div>
                           <p className="font-bold text-sm text-slate-900">{guard?.full_name || log.guard_id}</p>
                           {guard?.nida_number && <p className="text-xs text-slate-500 font-mono">{guard.nida_number}</p>}

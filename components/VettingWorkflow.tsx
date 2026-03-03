@@ -458,13 +458,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 >
                   <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-4">
-                      {guard.passport_photo_url ? (
-                        <img src={guard.passport_photo_url} alt={guard.full_name} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
-                      ) : (
-                        <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-xl">
-                          {guard.full_name?.[0] || 'G'}
-                        </div>
-                      )}
+                      <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
                       <div>
                         <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">
                           {guard.full_name}
@@ -480,12 +474,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                           {guard.security_level && (
                             <span
                               className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border ${(guard.security_level || '').toLowerCase() === 'armed'
-                                  ? 'bg-red-50 text-red-600 border-red-100'
-                                  : (guard.security_level || '').toLowerCase() === 'elite'
-                                    ? 'bg-purple-50 text-purple-600 border-purple-100'
-                                    : (guard.security_level || '').toLowerCase() === 'supervisor'
-                                      ? 'bg-blue-50 text-blue-600 border-blue-100'
-                                      : 'bg-slate-50 text-slate-600 border-slate-100'
+                                ? 'bg-red-50 text-red-600 border-red-100'
+                                : (guard.security_level || '').toLowerCase() === 'elite'
+                                  ? 'bg-purple-50 text-purple-600 border-purple-100'
+                                  : (guard.security_level || '').toLowerCase() === 'supervisor'
+                                    ? 'bg-blue-50 text-blue-600 border-blue-100'
+                                    : 'bg-slate-50 text-slate-600 border-slate-100'
                                 }`}
                             >
                               {(guard.security_level || '').toString().toUpperCase()}
@@ -580,13 +574,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 flex items-center justify-between gap-6 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
-                    {guard.passport_photo_url ? (
-                      <img src={guard.passport_photo_url} alt={guard.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
-                    ) : (
-                      <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-lg">
-                        {guard.full_name?.[0] || 'G'}
-                      </div>
-                    )}
+                    <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
                     <div>
                       <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">
                         {guard.full_name}
@@ -607,12 +595,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                         {guard.security_level && (
                           <span
                             className={`px-2 rounded text-[10px] font-black uppercase tracking-widest ${(guard.security_level || '').toLowerCase() === 'armed'
-                                ? 'text-red-600 bg-red-50'
-                                : (guard.security_level || '').toLowerCase() === 'elite'
-                                  ? 'text-purple-600 bg-purple-50'
-                                  : (guard.security_level || '').toLowerCase() === 'supervisor'
-                                    ? 'text-blue-600 bg-blue-50'
-                                    : 'text-slate-700 bg-slate-50'
+                              ? 'text-red-600 bg-red-50'
+                              : (guard.security_level || '').toLowerCase() === 'elite'
+                                ? 'text-purple-600 bg-purple-50'
+                                : (guard.security_level || '').toLowerCase() === 'supervisor'
+                                  ? 'text-blue-600 bg-blue-50'
+                                  : 'text-slate-700 bg-slate-50'
                               }`}
                           >
                             {(guard.security_level || '').toString().toUpperCase()}
@@ -691,13 +679,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
           {submittedApplicants.length ? submittedApplicants.map(guard => (
             <div key={guard.id} className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-6">
               <div className="flex items-center gap-4">
-                {guard.passport_photo_url ? (
-                  <img src={guard.passport_photo_url} alt={guard.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
-                ) : (
-                  <div className="w-12 h-12 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-black text-lg">
-                    {guard.full_name?.[0] || 'G'}
-                  </div>
-                )}
+                <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
                 <div>
                   <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Submitted Application</p>
@@ -818,13 +800,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
               {hiredGuards.length > 0 ? hiredGuards.map(guard => (
                 <div key={guard.id} className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group">
                   <div className="flex items-center gap-4 mb-4">
-                    {guard.passport_photo_url ? (
-                      <img src={guard.passport_photo_url} alt={guard.full_name} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
-                    ) : (
-                      <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-xl">
-                        {guard.full_name?.[0] || 'G'}
-                      </div>
-                    )}
+                    <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
                     <div>
                       <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{guard.full_name}</h4>
                       <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Active • {companies.find(c => c.id === guard.company_id)?.name || 'Assigned'}</p>
@@ -847,11 +823,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
               {hiredGuards.length > 0 ? hiredGuards.map(guard => (
                 <div key={guard.id} className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all flex items-center justify-between gap-6">
                   <div className="flex items-center gap-4">
-                    {guard.passport_photo_url ? (
-                      <img src={guard.passport_photo_url} alt={guard.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
-                    ) : (
-                      <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-lg">{guard.full_name?.[0] || 'G'}</div>
-                    )}
+                    <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
                     <div>
                       <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
                       <div className="flex gap-2 text-[10px] font-black uppercase tracking-widest">

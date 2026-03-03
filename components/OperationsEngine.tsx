@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import ForensicDisclosure from './ForensicDisclosure';
 import { getPerfCategory } from '../utils/performance';
 import PerformanceCircle from './PerformanceCircle';
+import AvatarImage from './AvatarImage';
 
 interface OperationsEngineProps {
   guards: Guard[];
@@ -213,11 +214,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                 onClick={() => openDetail(g)}
               >
                 <div className="flex items-center gap-4 flex-1">
-                  {g.passport_photo_url ? (
-                    <img src={g.passport_photo_url} alt={g.full_name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
-                  ) : (
-                    <div className="w-12 h-12 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-black">{g.full_name?.[0] || 'G'}</div>
-                  )}
+                  <AvatarImage filename={g.passport_photo_url} alt={g.full_name} fallbackLetter={g.full_name?.[0] || 'G'} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
                   <div>
                     <h4 className="font-black text-slate-900 uppercase tracking-tight">{g.full_name}</h4>
                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">NIDA: {g.nida_number?.slice(0, 10)}...</p>

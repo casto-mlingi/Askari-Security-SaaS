@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Guard, Profile, UserRole } from '../types';
 import { api } from '../services/api';
- 
+import AvatarImage from './AvatarImage';
+
 interface WaitForApprovalProps {
   guards: Guard[];
   currentUser?: Profile | null;
@@ -10,7 +11,7 @@ interface WaitForApprovalProps {
   onRequestedEdit?: (guardId: string, note: string) => void;
   computeReadiness?: (g: Guard) => number;
 }
- 
+
 const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, onOpenDossier, onApproved, onRequestedEdit, computeReadiness }) => {
   const isPrivileged = currentUser?.role === UserRole.SYSTEM_HR || currentUser?.role === UserRole.SUPER_ADMIN;
   const applicants = useMemo(() => {
@@ -20,7 +21,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
   const [selectedForEdit, setSelectedForEdit] = useState<Guard | null>(null);
   const [editNote, setEditNote] = useState('');
   // removed inline document preview from card; use View Dossier for full disclosure
- 
+
   const handleApprove = async (g: Guard) => {
     try {
       const result = await api.patch(`/guards/${g.id}`, { status: 'marketplace', company_id: null });
@@ -34,7 +35,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
       (window as any).showNotification?.('error', 'Failed to approve.');
     }
   };
- 
+
   const handleRequestEdit = async () => {
     const g = selectedForEdit;
     const note = editNote.trim();
@@ -57,7 +58,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
         dossier_data: {
           ...(g.dossier_data || {}),
           allow_edit: true,
-          hr_private_notes: [ ...(g.dossier_data?.hr_private_notes || []), hrNote ]
+          hr_private_notes: [...(g.dossier_data?.hr_private_notes || []), hrNote]
         }
       });
       (window as any).showNotification?.('success', 'Edit requested and profile unlocked.');
@@ -69,7 +70,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
       (window as any).showNotification?.('error', 'Failed to request edit.');
     }
   };
- 
+
   const ageOf = (dob?: string | null) => {
     if (!dob) return null;
     try {
@@ -87,7 +88,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
       <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200">
         <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Applicants awaiting HR approval</p>
       </div>
- 
+
       {applicants.length === 0 ? (
         <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
           <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-xs">No applicants pending approval</p>
@@ -104,13 +105,7 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
                   onClick={() => onOpenDossier?.(g)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenDossier?.(g); }}
                 >
-                  {g.passport_photo_url ? (
-                    <img src={g.passport_photo_url} alt={g.full_name} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
-                  ) : (
-                    <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-black text-xl">
-                      {g.full_name?.[0] || 'G'}
-                    </div>
-                  )}
+                  <AvatarImage filename={g.passport_photo_url} alt={g.full_name} fallbackLetter={g.full_name?.[0] || 'G'} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
                   <div>
                     <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">{g.full_name}</h4>
                     <p className="text-xs text-slate-500">{g.nida_number}</p>
@@ -179,5 +174,5 @@ const WaitForApproval: React.FC<WaitForApprovalProps> = ({ guards, currentUser, 
     </div>
   );
 };
- 
+
 export default WaitForApproval;

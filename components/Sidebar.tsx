@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { UserRole, Profile, Guard, ApplicationStatus } from '../types';
+import AvatarImage from './AvatarImage';
 
 interface SidebarProps {
   activeTab: string;
@@ -126,11 +127,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
           e.preventDefault();
           setActiveTab(item.tab);
         }}
-        className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group relative overflow-hidden ${
-          isActive
+        className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group relative overflow-hidden ${isActive
             ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
             : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
-        }`}
+          }`}
       >
         <Icon className="w-6 h-6" />
         <span className="text-sm tracking-tight">{item.label}</span>
@@ -167,21 +167,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
         {currentUser && (
           <div className="flex items-center gap-3 mb-6">
             {guardUser ? (
-              guardUser.passport_photo_url ? (
-                <img src={guardUser.passport_photo_url} alt={guardUser.full_name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
-              ) : (
-                <div className="w-10 h-10 bg-white/10 text-white/80 rounded-full flex items-center justify-center font-black border border-white/20">
-                  {guardUser.full_name?.[0] || 'G'}
-                </div>
-              )
+              <AvatarImage filename={guardUser.passport_photo_url} alt={guardUser.full_name} fallbackLetter={guardUser.full_name?.[0] || 'G'} className="w-10 h-10 rounded-full object-cover border border-white/20" />
             ) : (
-              (currentUser as Profile).avatar_url ? (
-                <img src={(currentUser as Profile).avatar_url as string} alt={(currentUser as Profile).full_name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
-              ) : (
-                <div className="w-10 h-10 bg-white/10 text-white/80 rounded-full flex items-center justify-center font-black border border-white/20">
-                  {(currentUser as Profile).full_name?.[0] || 'U'}
-                </div>
-              )
+              <AvatarImage filename={(currentUser as Profile).avatar_url as string} alt={(currentUser as Profile).full_name} fallbackLetter={(currentUser as Profile).full_name?.[0] || 'U'} className="w-10 h-10 rounded-full object-cover border border-white/20" />
             )}
             <div>
               <p className="text-sm font-bold">{(currentUser as any).full_name || 'User'}</p>
@@ -190,7 +178,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
           </div>
         )}
 
-          <nav className="flex-grow space-y-3 overflow-y-auto pr-3 -mr-3">
+        <nav className="flex-grow space-y-3 overflow-y-auto pr-3 -mr-3">
           <div className="space-y-2">
             {navItems.map((item, index) => (
               <div key={item.tab} className="animate-fade-in" style={{ animationDelay: `${index * 50}ms` }}>
@@ -200,7 +188,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
           </div>
         </nav>
 
-        
+
 
         {isAdmin && (
           <div className="mt-16 pt-8 border-t border-white/20 shrink-0">
@@ -209,11 +197,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
               <a
                 href="#"
                 onClick={(e) => { e.preventDefault(); setActiveTab('architecture'); }}
-                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
-                  activeTab === 'architecture'
+                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${activeTab === 'architecture'
                     ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
                     : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
-                }`}
+                  }`}
               >
                 <ICONS.Registry className="w-6 h-6 group-hover:scale-110 transition-transform" />
                 <span className="text-sm tracking-tight">Architecture</span>
@@ -221,11 +208,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
               <a
                 href="#"
                 onClick={(e) => { e.preventDefault(); setActiveTab('erd-view'); }}
-                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
-                  activeTab === 'erd-view'
+                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${activeTab === 'erd-view'
                     ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
                     : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
-                }`}
+                  }`}
               >
                 <ICONS.Database className="w-6 h-6 group-hover:scale-110 transition-transform" />
                 <span className="text-sm tracking-tight">ERD View</span>
@@ -233,11 +219,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, cu
               <a
                 href="#"
                 onClick={(e) => { e.preventDefault(); setActiveTab('sql-schema'); }}
-                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${
-                  activeTab === 'sql-schema'
+                className={`flex items-center gap-4 px-6 py-4 rounded-xl transition-all duration-200 font-semibold group ${activeTab === 'sql-schema'
                     ? 'bg-white/15 text-white shadow-lg shadow-white/10 border border-white/20'
                     : 'text-white/80 hover:text-white hover:bg-white/10 hover:shadow-md'
-                }`}
+                  }`}
               >
                 <ICONS.Operations className="w-6 h-6 group-hover:scale-110 transition-transform" />
                 <span className="text-sm tracking-tight">SQL Schema</span>
