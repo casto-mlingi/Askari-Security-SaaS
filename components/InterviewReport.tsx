@@ -27,11 +27,15 @@ const InterviewReport: React.FC<InterviewReportProps> = ({ guards, companyId }) 
     let isMounted = true;
     const fetchLogs = async () => {
       try {
-        const path = companyId ? `/interview-logs?company_id=${companyId}` : '/interview-logs';
+        const path = companyId
+          ? `/api/interview-logs?company_id=${companyId}`
+          : '/api/interview-logs';
         const result = await api.get<InterviewLog[]>(path);
         if (isMounted) setLogs((result.data as InterviewLog[]) || []);
       } catch (e) {
-        console.error('Failed to fetch interview_logs', e);
+        console.warn('Failed to fetch interview_logs — displaying empty list', e);
+        // Fail gracefully: dashboard must continue to load
+        if (isMounted) setLogs([]);
       }
     };
     fetchLogs();

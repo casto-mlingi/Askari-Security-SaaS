@@ -1522,6 +1522,59 @@ app.get('/api/guards/blacklisted', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
   }
 });
+// --- Interview Logs: GET ---
+app.get('/api/interview-logs', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    let companyId = actor.company_id || null;
+
+    // Resolve company_id if not on token
+    if (!companyId && actor?.sub) {
+      try {
+        const { rows: pr } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        companyId = pr[0]?.company_id || null;
+      } catch { }
+    }
+
+    await client.query('BEGIN');
+    if (companyId) {
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(companyId)]);
+    } else {
+      await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b'");
+    }
+
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      const { rows: r } = await client.query('SELECT * FROM interview_logs ORDER BY created_at DESC');
+      rows = r;
+    } else if (companyId) {
+      const { rows: r } = await client.query(
+        'SELECT * FROM interview_logs WHERE company_id = $1 ORDER BY created_at DESC',
+        [companyId]
+      );
+      rows = r;
+    } else {
+      const { rows: r } = await client.query('SELECT * FROM interview_logs ORDER BY created_at DESC LIMIT 200');
+      rows = r;
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json(rows);
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { }
+    console.error('GET /api/interview-logs error', e?.message || e);
+    res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  } finally {
+    client.release();
+  }
+});
+
+// Alias without /api prefix
+app.get('/interview-logs', requireAuth, async (req, res) => {
+  req.url = '/api/interview-logs';
+  res.redirect(307, '/api/interview-logs');
+});
 
 app.post('/api/interview-logs', requireAuth, async (req, res) => {
   const client = await pool.connect();
