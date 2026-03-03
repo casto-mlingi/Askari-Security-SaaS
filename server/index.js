@@ -2552,10 +2552,39 @@ app.get('/api/ops/incidents', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
-    const { rows } = await pool.query(
-      'SELECT *, penalty_points as points_deducted FROM disciplinary_records WHERE company_id = $1 OR $1 IS NULL ORDER BY created_at DESC',
-      [myCompanyId]
-    );
+    if (!myCompanyId && actor?.sub) {
+      try {
+        const { rows: pr } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = pr[0]?.company_id || null;
+      } catch { }
+    }
+
+    const baseSelect = `
+      SELECT
+        id, guard_id, company_id,
+        incident_code,
+        incident_code AS code,
+        penalty_points,
+        penalty_points AS points_deducted,
+        formal_report,
+        formal_report AS notes,
+        rough_notes,
+        evidence_url,
+        created_at
+      FROM disciplinary_records
+    `;
+
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      const { rows: r } = await pool.query(`${baseSelect} ORDER BY created_at DESC`);
+      rows = r;
+    } else if (myCompanyId) {
+      const { rows: r } = await pool.query(`${baseSelect} WHERE company_id = $1 ORDER BY created_at DESC`, [myCompanyId]);
+      rows = r;
+    } else {
+      const { rows: r } = await pool.query(`${baseSelect} ORDER BY created_at DESC LIMIT 200`);
+      rows = r;
+    }
     res.status(200).json(rows || []);
   } catch (e) {
     res.status(500).json({ error: 'error', detail: e.message });

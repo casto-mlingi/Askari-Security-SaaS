@@ -395,15 +395,17 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                           <div key={i.id} className="p-6 bg-white rounded-xl shadow-md border border-slate-200">
                             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                               <div className="flex-1">
-                                <p className="text-sm font-black text-slate-900 uppercase">{code?.label || i.incident_code || i.code}</p>
-                                <p className="text-sm font-medium text-slate-600 mt-2 leading-relaxed">{i.notes || i.title || 'No narrative provided.'}</p>
+                                <p className="text-sm font-black text-slate-900 uppercase">{code?.label || i.incident_code || (i as any).code}</p>
+                                <p className="text-sm font-medium text-slate-600 mt-2 leading-relaxed">
+                                  {(i as any).formal_report || (i as any).notes || (i as any).title || 'No narrative provided.'}
+                                </p>
                                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-4 flex items-center gap-2">
                                   <AlertTriangle className="w-3 h-3" />
                                   {new Date(i.created_at).toLocaleString()}
                                 </p>
                               </div>
-                              <span className="text-sm font-black bg-red-100 text-red-700 px-3 py-1.5 rounded-lg border border-red-200 whitespace-nowrap">
-                                -{i.penalty_points || 0} POINTS
+                              <span className="text-sm font-black bg-red-600 text-white px-3 py-1.5 rounded-lg whitespace-nowrap shadow-sm">
+                                -{(i as any).penalty_points || 0} POINTS
                               </span>
                             </div>
                           </div>

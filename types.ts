@@ -326,17 +326,20 @@ export interface IncidentReport {
   id: string;
   guard_id: string;
   title?: string;
-  code: string; // References DisciplinaryCode.code
-  notes: string;
-  evidence_url: string;
+  code?: string;          // Legacy alias (may come from old endpoints)
+  incident_code?: string; // Actual DB column name in disciplinary_records
+  notes?: string;         // Legacy alias
+  formal_report?: string; // Actual DB column (body of the report)
+  evidence_url?: string;
   evidence_urls?: string[];
   evidence_image_url?: string;
   severity?: 'low' | 'medium' | 'high' | 'critical';
-  reported_by: string; // Can be Profile.id or Profile.full_name
+  reported_by?: string;
   site_id?: string;
-  site_name?: string; // Denormalized for display
+  site_name?: string;
   created_at: string;
   penalty_points?: number;
+  points_deducted?: number; // Alias returned by GET /api/ops/incidents
 }
 
 export interface DisciplinaryRecord {
