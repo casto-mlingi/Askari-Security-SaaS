@@ -84,7 +84,10 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     return guards.filter(g => String((g as any)?.status || '').toLowerCase() === 'pending_approval');
   }, [guards]);
   const interviewApplicants = useMemo(() => {
-    const s = (g: any) => String(g?.status || '').toLowerCase() === 'interviewing';
+    const s = (g: any) => {
+      const status = String(g?.status || '').toLowerCase();
+      return status === 'interviewing' || status === 'pending';
+    };
     const compId = currentUser?.company_id;
     return guards.filter(g => s(g) && String(g.company_id || '') === String(compId || '') && !locallyRejectedIds.includes(g.id));
   }, [guards, currentUser?.company_id, locallyRejectedIds]);
@@ -548,7 +551,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                       onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
                       className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95 text-center"
                     >
-                      {isPrivileged ? 'Call for Interview' : 'Review & Lock'}
+                      {isPrivileged ? 'Start Interview' : 'Review & Lock'}
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
@@ -642,7 +645,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                       onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
                       className="px-6 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95"
                     >
-                      Review & Lock
+                      Start Interview
                     </div>
                     <button
                       onClick={async (e) => {
@@ -726,7 +729,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
             <div
               key={guard.id}
               onClick={() => setDetailGuard(guard)}
-              className="cursor-pointer text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col md:flex-row gap-8 items-start w-full hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="cursor-pointer text-left bg-[#0A192F] p-8 rounded-[2.5rem] border border-slate-700 shadow-xl flex flex-col md:flex-row gap-8 items-start w-full hover:shadow-2xl transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             >
               <span className="w-16 h-16 rounded-full border border-slate-200 overflow-hidden shrink-0">
                 {guard.passport_photo_url
@@ -735,14 +738,14 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
               </span>
               <div className="flex-grow">
                 <div className="flex items-center gap-4 mb-2">
-                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{guard.full_name}</h3>
-                  <span className="bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md">Interview Locked</span>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{guard.full_name}</h3>
+                  <span className="bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md">Interview Ready</span>
                 </div>
-                <p className="text-sm font-medium text-slate-500 italic">"{guard.dossier_data?.interviewer_notes || 'No notes added.'}"</p>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700">
-                  <div>Company: <strong>{companies.find(c => c.id === guard.company_id)?.name || '—'}</strong></div>
-                  <div>Site: <strong>{sites.find(s => s.id === guard.current_site_id)?.name || '—'}</strong></div>
-                  <div>Supervisor: <strong>{profiles.find(p => p.id === guard.assigned_supervisor_id)?.full_name || '—'}</strong></div>
+                <p className="text-sm font-medium text-slate-300 italic">"{guard.dossier_data?.interviewer_notes || 'No notes added.'}"</p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-400">
+                  <div>Company: <strong className="text-white">{companies.find(c => c.id === guard.company_id)?.name || '—'}</strong></div>
+                  <div>Site: <strong className="text-white">{sites.find(s => s.id === guard.current_site_id)?.name || '—'}</strong></div>
+                  <div>Supervisor: <strong className="text-white">{profiles.find(p => p.id === guard.assigned_supervisor_id)?.full_name || '—'}</strong></div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-4">
@@ -771,8 +774,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
               <div className="shrink-0 flex flex-col gap-3 w-full md:w-auto">
                 <button
                   onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
-                  className="px-8 py-4 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg"
-                  style={{ backgroundColor: '#2171B5' }}
+                  className="px-8 py-4 bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg hover:bg-emerald-500 active:scale-95"
                 >
                   Hire & Deploy
                 </button>

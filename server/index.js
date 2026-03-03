@@ -1527,9 +1527,10 @@ app.get('/api/interview-logs', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const actor = req.user || {};
-    let companyId = actor.company_id || null;
+    // Priority: query param > actor property
+    let companyId = req.query.company_id || actor.company_id || null;
 
-    // Resolve company_id if not on token
+    // Resolve company_id if not on token or query
     if (!companyId && actor?.sub) {
       try {
         const { rows: pr } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
@@ -1560,7 +1561,7 @@ app.get('/api/interview-logs', requireAuth, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.status(200).json(rows);
+    res.status(200).json(rows || []);
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch { }
     console.error('GET /api/interview-logs error', e?.message || e);
@@ -1571,9 +1572,9 @@ app.get('/api/interview-logs', requireAuth, async (req, res) => {
 });
 
 // Alias without /api prefix
-app.get('/interview-logs', requireAuth, async (req, res) => {
-  req.url = '/api/interview-logs';
-  res.redirect(307, '/api/interview-logs');
+app.get('/interview-logs', (req, res) => {
+  const query = req.url.includes('?') ? req.url.split('?')[1] : '';
+  res.redirect(307, `/api/interview-logs${query ? '?' + query : ''}`);
 });
 
 app.post('/api/interview-logs', requireAuth, async (req, res) => {
