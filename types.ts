@@ -316,6 +316,8 @@ export interface DisciplinaryCode {
   label: string;
   description?: string;
   points: number;
+  is_ai_generated?: boolean;
+  is_approved?: boolean;
   created_at?: string;
   updated_at?: string;
 }

@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
+import { X, CheckCircle, Trash2 } from 'lucide-react';
 import { Guard, IncidentReport, DisciplinaryCode, Site, LeaveRequest, Profile, Company } from '../types';
 import PerformanceLineChart from './PerformanceLineChart';
 // ✅ FIXED: Imported only once, using the correct relative path
@@ -99,12 +101,14 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
       if (result) {
         setGeneratedPolicy(result);
       }
-    } catch (error) {
-      console.error("Policy generation failed:", error);
+    } catch {
+      // Ignore
     }
     setIsGenerating(false);
   };
 
+  const pendingCodes = useMemo(() => disciplinaryCodes.filter(c => c.is_ai_generated && !c.is_approved), [disciplinaryCodes]);
+  const activeCodes = useMemo(() => disciplinaryCodes.filter(c => !c.is_ai_generated || c.is_approved), [disciplinaryCodes]);
   const confirmPolicy = () => {
     if (generatedPolicy && onAddPolicy) {
       onAddPolicy(generatedPolicy);
@@ -437,71 +441,174 @@ const DisciplinaryManager: React.FC<DisciplinaryManagerProps> = ({
             )}
           </div>
 
-          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-8 border-b border-slate-100">
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter">Active Disciplinary Codes</h3>
-            </div>
-            <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto custom-scrollbar">
-              {disciplinaryCodes.map(code => (
-                <div key={code.code} className="p-6 flex items-center justify-between group hover:bg-slate-50 transition-colors">
-                  <div className="flex-grow">
-                    <div className="flex items-center gap-3">
-                      <span className="font-black text-slate-900 uppercase tracking-tight">{code.code}</span>
-                      <span className="text-[9px] font-black text-red-500 bg-red-50 px-2 py-0.5 rounded uppercase tracking-widest">-{code.points} Pts</span>
-                    </div>
-                    <p className="text-xs font-medium text-slate-500 mt-1">{code.label}</p>
-                    {code.description && <p className="text-[10px] text-slate-400 mt-0.5 italic max-w-sm">{code.description}</p>}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {onUpdatePolicy && (
-                      <button onClick={() => openEditModal(code)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-primary transition-colors">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>
-                      </button>
-                    )}
-                    {onDeletePolicy && (
-                      <button onClick={() => onDeletePolicy(code.code)} className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
-                    )}
-                  </div>
+          <div className="flex flex-col gap-8 w-full">
+            {pendingCodes.length > 0 && (
+              <div className="bg-white rounded-[2.5rem] border-2 border-primary/20 shadow-xl overflow-hidden animate-in slide-in-from-bottom-4">
+                <div className="p-8 border-b border-primary/10 bg-primary/5">
+                  <h3 className="text-lg font-black text-primary uppercase tracking-tighter flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                    Pending AI Approvals
+                  </h3>
                 </div>
-              ))}
+                <div className="divide-y divide-primary/5 max-h-[400px] overflow-y-auto custom-scrollbar">
+                  {pendingCodes.map(code => (
+                    <div key={code.code} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:bg-primary/5 transition-colors">
+                      <div className="flex-grow">
+                        <div className="flex items-center gap-3">
+                          <span className="font-black text-slate-900 uppercase tracking-tight">{code.code}</span>
+                          <span className="text-[9px] font-black text-white bg-red-600 px-2 py-0.5 rounded uppercase tracking-widest cursor-pointer hover:bg-red-700 transition-colors shadow-sm" onClick={() => openEditModal(code)}>
+                            -{code.points} PTS
+                          </span>
+                        </div>
+                        <p className="text-xs font-medium text-slate-500 mt-1">{code.label}</p>
+                        {code.description && <p className="text-[10px] text-slate-400 mt-0.5 italic max-w-sm">{code.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {onUpdatePolicy && (
+                          <button onClick={() => onUpdatePolicy(code.code, { is_approved: true })} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2">
+                            <CheckCircle className="w-3.5 h-3.5" /> Approve
+                          </button>
+                        )}
+                        {onDeletePolicy && (
+                          <button onClick={() => onDeletePolicy(code.code)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2">
+                            <Trash2 className="w-3.5 h-3.5" /> Reject
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex-grow">
+              <div className="p-8 border-b border-slate-100">
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter">Active Disciplinary Codes</h3>
+              </div>
+              <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto custom-scrollbar">
+                {activeCodes.map(code => (
+                  <div key={code.code} className="p-6 flex items-center justify-between group hover:bg-slate-50 transition-colors">
+                    <div className="flex-grow">
+                      <div className="flex items-center gap-3">
+                        <span className="font-black text-slate-900 uppercase tracking-tight">{code.code}</span>
+                        <span className="text-[9px] font-black text-white bg-red-600 px-2 py-0.5 rounded uppercase tracking-widest cursor-pointer hover:bg-red-700 transition-colors shadow-sm" onClick={() => openEditModal(code)}>
+                          -{code.points} Pts
+                        </span>
+                      </div>
+                      <p className="text-xs font-medium text-slate-500 mt-1">{code.label}</p>
+                      {code.description && <p className="text-[10px] text-slate-400 mt-0.5 italic max-w-sm">{code.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {onUpdatePolicy && (
+                        <button onClick={() => openEditModal(code)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-primary transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>
+                        </button>
+                      )}
+                      {onDeletePolicy && (
+                        <button onClick={() => onDeletePolicy(code.code)} className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Edit Policy Modal */}
-      {isEditModalOpen && editingPolicy && (
-        <div className="fixed inset-0 z-[1200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-10 space-y-8 border border-white/20">
-            <div className="text-center">
-              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Edit Disciplinary Policy</h3>
-              <p className="text-sm font-medium text-slate-500 mt-2">Modify policy: <span className="font-bold">{editingPolicy.code}</span></p>
+      {/* Edit Policy Modal (Full-Screen Headless UI Dialog) */}
+      <Transition appear show={isEditModalOpen && !!editingPolicy} as={Fragment}>
+        <Dialog as="div" className="relative z-[9999] font-sans" onClose={() => setIsEditModalOpen(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-[#0A192F]/80 backdrop-blur-sm" aria-hidden="true" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-6">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
+                <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-[2.5rem] bg-[#F8FAFC] text-left align-middle shadow-2xl transition-all">
+
+                  {/* Header */}
+                  <div className="bg-[#0A192F] p-8 text-white relative">
+                    <button
+                      onClick={() => setIsEditModalOpen(false)}
+                      className="absolute top-6 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors focus:outline-none"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                    <Dialog.Title as="h3" className="text-2xl font-black uppercase tracking-tighter">
+                      Policy Deduction Editor
+                    </Dialog.Title>
+                    <p className="text-xs font-bold text-white/70 uppercase tracking-widest mt-2 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Modifying Database Record
+                    </p>
+                  </div>
+
+                  {/* Body */}
+                  <form onSubmit={(e) => { e.preventDefault(); handleSaveEdit(); }} className="p-8 space-y-8">
+                    <div className="p-6 bg-slate-100 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-200">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">System Code</p>
+                        <p className="text-xl font-black text-slate-900 uppercase tracking-tight">{editingPolicy?.code}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Origin</p>
+                        <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest ${editingPolicy?.is_ai_generated ? 'bg-primary text-white' : 'bg-slate-800 text-white'}`}>
+                          {editingPolicy?.is_ai_generated ? 'AI Generated' : 'System Default'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Policy Label</label>
+                      <input value={editLabel} onChange={e => setEditLabel(e.target.value)} required className="w-full h-14 px-6 bg-white border border-slate-200 shadow-sm rounded-xl font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-slate-900" />
+                    </div>
+
+                    <div className="space-y-2 relative">
+                      <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-2 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" /> Live Points Deduction
+                      </label>
+                      <input type="number" value={editPoints} onChange={e => setEditPoints(Number(e.target.value))} required min="0" max="100" className="w-full h-16 px-6 bg-white border border-red-200 shadow-sm rounded-xl font-black text-2xl text-red-600 outline-none focus:border-red-500 focus:ring-4 focus:ring-red-100 transition-all font-hud" />
+                      <div className="absolute right-6 top-[3.2rem] text-sm font-black text-slate-300 uppercase">PTS</div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Formal Description</label>
+                      <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={3} className="w-full p-6 bg-white border border-slate-200 shadow-sm rounded-xl font-medium outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-slate-600 resize-none leading-relaxed" />
+                    </div>
+
+                    <div className="flex gap-4 pt-4 border-t border-slate-100">
+                      <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 transition-all">Cancel</button>
+                      <button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary shadow-xl hover:shadow-primary/20 hover:-translate-y-0.5 active:scale-95 transition-all">
+                        Execute Database Update
+                      </button>
+                    </div>
+                  </form>
+
+                </Dialog.Panel>
+              </Transition.Child>
             </div>
-            <form onSubmit={(e) => { e.preventDefault(); handleSaveEdit(); }} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Policy Label</label>
-                <input value={editLabel} onChange={e => setEditLabel(e.target.value)} required className="w-full h-14 px-6 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold uppercase outline-none focus:border-primary transition-all" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Points Deduction</label>
-                <input type="number" value={editPoints} onChange={e => setEditPoints(Number(e.target.value))} required min="0" max="100" className="w-full h-14 px-6 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-primary transition-all" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Description</label>
-                <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={3} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-primary transition-all" />
-              </div>
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 transition-all">Cancel</button>
-                <button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary shadow-xl active:scale-95 transition-all">
-                  Save Changes
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        </Dialog>
+      </Transition>
     </div>
   );
 };

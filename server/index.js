@@ -2453,6 +2453,47 @@ app.get('/api/disciplinary-codes', requireAuth, async (req, res) => {
   }
 });
 
+app.patch('/api/disciplinary-codes/:code', requireAuth, async (req, res) => {
+  try {
+    const code = req.params.code;
+    const { points, is_approved } = req.body;
+    let updates = [];
+    let values = [];
+    let idx = 1;
+
+    if (points !== undefined) {
+      updates.push(`points = $${idx++}`);
+      values.push(points);
+    }
+    if (is_approved !== undefined) {
+      updates.push(`is_approved = $${idx++}`);
+      values.push(is_approved);
+    }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+    values.push(code);
+    const sql = `UPDATE disciplinary_codes SET ${updates.join(', ')} WHERE code = $${idx} RETURNING *`;
+    const { rows } = await pool.query(sql, values);
+
+    if (rows.length === 0) return res.status(404).json({ error: 'Code not found' });
+    res.status(200).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: 'error', detail: e.message });
+  }
+});
+
+app.delete('/api/disciplinary-codes/:code', requireAuth, async (req, res) => {
+  try {
+    const code = req.params.code;
+    const { rows } = await pool.query('DELETE FROM disciplinary_codes WHERE code = $1 RETURNING *', [code]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Code not found' });
+    res.status(200).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: 'error', detail: e.message });
+  }
+});
+
 // --- Operations: Incident Reporting ---
 app.get('/api/ops/incidents', requireAuth, async (req, res) => {
   try {
