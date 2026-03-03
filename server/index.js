@@ -2424,13 +2424,42 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
   }
 });
 
+// --- Settings: Disciplinary Codes ---
+app.get('/api/disciplinary-codes', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    let myCompanyId = actor.company_id || null;
+    if (!myCompanyId && actor?.sub) {
+      try {
+        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        myCompanyId = meRows[0]?.company_id || null;
+      } catch { }
+    }
+
+    let rows = [];
+    if (actor.role === 'super_admin' || actor.role === 'system_hr') {
+      const { rows: r } = await pool.query('SELECT * FROM disciplinary_codes ORDER BY created_at DESC');
+      rows = r || [];
+    } else if (myCompanyId) {
+      const { rows: r } = await pool.query('SELECT * FROM disciplinary_codes WHERE company_id = $1 OR company_id IS NULL ORDER BY created_at DESC', [myCompanyId]);
+      rows = r || [];
+    } else {
+      const { rows: r } = await pool.query('SELECT * FROM disciplinary_codes WHERE company_id IS NULL ORDER BY created_at DESC');
+      rows = r || [];
+    }
+    res.status(200).json(rows);
+  } catch (e) {
+    res.status(500).json({ error: 'error', detail: e.message });
+  }
+});
+
 // --- Operations: Incident Reporting ---
 app.get('/api/ops/incidents', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
     const { rows } = await pool.query(
-      'SELECT *, penalty_points as points_deducted FROM incidents WHERE company_id = $1 OR $1 IS NULL ORDER BY created_at DESC',
+      'SELECT *, penalty_points as points_deducted FROM disciplinary_records WHERE company_id = $1 OR $1 IS NULL ORDER BY created_at DESC',
       [myCompanyId]
     );
     res.status(200).json(rows || []);
@@ -2464,23 +2493,14 @@ app.post('/api/ops/incidents', requireAuth, async (req, res) => {
     // MANDATORY ACTION 4: Point Deduction Logic
     const deduction = severity === 'critical' ? 20 : severity === 'high' ? 15 : severity === 'medium' ? 10 : 5;
 
-    // Write to genuine 'incidents' table
+    // Write to 'disciplinary_records' table (which triggers performance_score update)
     const result = await client.query(
-      `INSERT INTO incidents (guard_id, company_id, site_id, title, notes, evidence_url, severity, penalty_points, reported_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now()) RETURNING *`,
-      [guard_id, companyId, site_id || null, title || 'Incident', notes || '', evidence_image_url || null, severity || 'low', deduction, actor.full_name || 'System']
+      `INSERT INTO disciplinary_records (guard_id, company_id, incident_code, formal_report, evidence_url, penalty_points, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING *`,
+      [guard_id, companyId, 'OTHER_REPORT', title + ': ' + (notes || ''), evidence_image_url || null, deduction]
     );
 
     if (result.rowCount === 0) throw new Error('RLS Policy Violation: No rows affected');
-
-    // MANDATORY ACTION 5: Automatic Blacklist Rule
-    await client.query(
-      `UPDATE guards
-       SET performance_score = GREATEST(0, COALESCE(performance_score, 100) - $1),
-           status = CASE WHEN GREATEST(0, COALESCE(performance_score, 100) - $1) < 5 THEN 'blacklisted' ELSE status END
-       WHERE id = $2`,
-      [deduction, guard_id]
-    );
 
     await client.query('COMMIT');
     res.status(201).json({ success: true, message: 'Incident logged successfully', data: result.rows[0] });
