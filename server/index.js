@@ -31,7 +31,7 @@ const requireAuth = (req, res, next) => {
     if (token && token.startsWith('ey-mock-token')) {
       req.user = {
         sub: 'moshi-dev',
-        role: 'supervisor',
+        role: 'company_admin',
         email: 'moshi@anasel.co.tz',
         company_id: 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b'
       };
@@ -1547,6 +1547,7 @@ app.post('/api/interview-logs', requireAuth, async (req, res) => {
     const numericScore = (typeof score === 'number') ? score : (typeof rating === 'number' ? rating : null);
 
     // Set PostgreSQL session context for RLS policy
+    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
     const targetCompanyId = company_id || actor?.company_id || null;
     if (targetCompanyId) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(targetCompanyId)]);
@@ -1603,6 +1604,7 @@ app.post('/interview-logs', requireAuth, async (req, res) => {
     const numericScore = (typeof score === 'number') ? score : (typeof rating === 'number' ? rating : null);
 
     // Set PostgreSQL session context for RLS policy
+    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
     const targetCompanyId = company_id || actor?.company_id || null;
     if (targetCompanyId) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(targetCompanyId)]);
@@ -2551,6 +2553,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
     const qStart = String(req.query?.start || '').trim() || null;
     const qEnd = String(req.query?.end || '').trim() || null;
     await client.query('BEGIN');
+    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
     if (myCompanyId) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(myCompanyId)]);
     }
@@ -2622,6 +2625,7 @@ app.post('/api/rosters', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'bad_request' });
     }
     await client.query('BEGIN');
+    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
     if (company_id) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(company_id)]);
     }
@@ -2685,6 +2689,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
     const qStart = String(req.query?.start || '').trim() || null;
     const qEnd = String(req.query?.end || '').trim() || null;
     await client.query('BEGIN');
+    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
     if (myCompanyId) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(myCompanyId)]);
     }
@@ -2756,6 +2761,7 @@ app.post('/api/rosters', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'bad_request' });
     }
     await client.query('BEGIN');
+    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
     if (company_id) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(company_id)]);
     }

@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
+import { X, ShieldAlert, FileText, UserCircle, Briefcase, BookOpen, AlertTriangle } from 'lucide-react';
 import { Guard, IncidentReport, DisciplinaryCode } from '../types';
 import { getPerfCategory } from '../utils/performance';
 
@@ -9,18 +11,21 @@ interface ForensicDisclosureProps {
   onClose: () => void;
 }
 
-const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes }) => {
+const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes, onClose }) => {
   const isInitiallyBlacklisted = (() => {
     const score = typeof guard.performance_score === 'number' ? guard.performance_score : undefined;
     const status = String((guard as any)?.status || '').toLowerCase();
     return (typeof score === 'number' && score <= 5) || status === 'blacklisted' || status === 'blacklist';
   })();
   const [activeTab, setActiveTab] = useState<'forensic' | 'incident'>(isInitiallyBlacklisted ? 'incident' : 'forensic');
+
   const guardIncidents = useMemo(
     () => incidents.filter(i => i.guard_id === guard.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [incidents, guard.id]
   );
+
   const perf = getPerfCategory(guard.performance_score);
+
   const age = useMemo(() => {
     if (!guard.dob) return null;
     const birth = new Date(guard.dob);
@@ -31,11 +36,13 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
     if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) a--;
     return a;
   }, [guard.dob]);
+
   const isBlacklisted = useMemo(() => {
     const score = typeof guard.performance_score === 'number' ? guard.performance_score : undefined;
     const status = String((guard as any)?.status || '').toLowerCase();
     return (typeof score === 'number' && score <= 5) || status === 'blacklisted' || status === 'blacklist';
   }, [guard.performance_score, (guard as any)?.status]);
+
   const canViewDocs = useMemo(() => {
     try {
       const raw = localStorage.getItem('amini_user') || '';
@@ -55,415 +62,376 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
     } catch { return false; }
   }, [guard.company_id]);
 
+  const countFromGuardArr = Array.isArray((guard as any)?.incidents) ? ((guard as any).incidents.length || 0) : 0;
+  const countFromProp = incidents.filter(i => i.guard_id === guard.id).length;
+  const countFromIncidentCount = typeof (guard as any)?.incident_count === 'number' ? (guard as any).incident_count : 0;
+  const incidentCount = Math.max(countFromGuardArr, countFromProp, countFromIncidentCount);
+
   return (
-    <div className="forensic-print p-8 border-b border-slate-100 overflow-y-auto md:overflow-visible">
-      <style>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          .forensic-print, .forensic-print * { visibility: visible !important; }
-          .forensic-print { position: static !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .no-print { display: none !important; }
-          .force-blacklisted { background-color: #b91c1c !important; border-color: #991b1b !important; color: #fff !important; }
-          .anasul-logo { display: flex !important; }
-          .print-footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px; font-size: 10px; color: #475569; text-align: right; }
-        }
-      `}</style>
-      {(!guard.company_id) ? (
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-lg bg-slate-200 text-slate-700 font-black flex items-center justify-center">N</div>
-          <div className="text-sm font-black uppercase tracking-widest text-slate-600">Marketplace Applicant</div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 mb-4 anasul-logo">
-          <div className="w-10 h-10 rounded-lg bg-red-700 text-white font-black flex items-center justify-center">A</div>
-          <div className="text-sm font-black uppercase tracking-widest text-slate-700">Anasel Security Solutions</div>
-        </div>
-      )}
-      <div className="sticky top-0 z-10 border-b border-transparent mb-6 no-print">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('forensic')}
-            className={`px-4 py-3 text-[11px] font-black uppercase tracking-widest flex-1 sm:flex-none text-center rounded-xl ${activeTab === 'forensic' ? 'text-white border-b-2 border-white' : 'text-white/70'
-              }`}
-          >
-            FORENSIC DISCLOSURE
-          </button>
-          <button
-            onClick={() => setActiveTab('incident')}
-            className={`px-4 py-3 text-[11px] font-black uppercase tracking-widest flex-1 sm:flex-none text-center rounded-xl ${activeTab === 'incident' ? 'text-white border-b-2 border-white' : 'text-white/70'
-              }`}
-          >
-            INCIDENT REPORT
-          </button>
-        </div>
-      </div>
+    <Transition appear show={true} as={Fragment}>
+      <Dialog as="div" className="relative z-[9999] font-sans" onClose={onClose}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-[#0A192F]/80 backdrop-blur-sm" aria-hidden="true" />
+        </Transition.Child>
 
-      {activeTab === 'forensic' && (
-        <>
-          <div className="mb-6 p-4 bg-white rounded-2xl border border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">{guard.full_name}</h2>
-              <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">NIDA: {(guard.nida_number || '').slice(0, 15)}{(guard.nida_number || '').length > 15 ? '...' : ''}</p>
-            </div>
-          </div>
-          {(() => {
-            const countFromGuardArr = Array.isArray((guard as any)?.incidents) ? ((guard as any).incidents.length || 0) : 0;
-            const countFromProp = incidents.filter(i => i.guard_id === guard.id).length;
-            const countFromIncidentCount = typeof (guard as any)?.incident_count === 'number' ? (guard as any).incident_count : 0;
-            const incidentCount = Math.max(countFromGuardArr, countFromProp, countFromIncidentCount);
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-5 bg-blue-700 rounded-2xl border border-blue-600">
-                  <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">PERFORMANCE</p>
-                  <p className="text-3xl font-black font-hud text-white">{guard.performance_score ?? 0}%</p>
-                  <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">{perf.label}</p>
-                </div>
-                <div className="p-5 bg-blue-700 rounded-2xl border border-blue-600">
-                  <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">INCIDENTS</p>
-                  <p className="text-2xl font-black text-white font-hud">{incidentCount} Incidents</p>
-                  <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Total Reported</p>
-                </div>
-                <div className={`p-5 rounded-2xl border ${isBlacklisted ? 'bg-red-700 border-red-600 force-blacklisted' : 'bg-blue-700 border-blue-600'}`}>
-                  <p className="text-[10px] font-black text-white uppercase tracking-widest mb-2">CURRENT SYSTEM STATUS</p>
-                  <p className="text-xl font-black text-white uppercase">
-                    {isBlacklisted ? 'BLACKLISTED' : (!guard.company_id ? 'APPLICANT' : 'ACTIVE GUARD')}
-                  </p>
-                  <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Current</p>
-                </div>
-              </div>
-            );
-          })()}
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-6">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-5xl transform overflow-hidden rounded-2xl bg-[#F8FAFC] text-left align-middle shadow-2xl transition-all">
 
-          <div className="mt-8 space-y-8">
-            <section>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeWidth="2.5" /></svg>
-                </div>
-                <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em]">Personal Details</h3>
-                <div className="h-px flex-grow bg-slate-100" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">NIDA Number</p>
-                  <p className="text-sm font-bold text-slate-700 font-mono">{guard.nida_number || 'Not Disclosed'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Phone Number</p>
-                  <p className="text-sm font-bold text-slate-700 font-mono">{guard.phone || 'Not Disclosed'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</p>
-                  <p className="text-sm font-bold text-slate-700">{guard.dob || 'Not Disclosed'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Age</p>
-                  <p className="text-sm font-bold text-slate-700">{typeof age === 'number' ? `${age} Years` : 'Not Disclosed'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Current Shift</p>
-                  <p className="text-sm font-bold text-slate-700">{guard.current_shift?.toUpperCase() || 'NOT_ASSIGNED'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Armed Status</p>
-                  <p className="text-sm font-bold text-slate-700">{guard.is_armed ? 'Armed' : 'Unarmed'}</p>
-                </div>
-              </div>
-            </section>
+                {/* Header Section */}
+                <div className="bg-[#0A192F] p-6 text-white relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      {(!guard.company_id) ? (
+                        <>
+                          <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center font-black">N</div>
+                          <span className="text-xs font-bold uppercase tracking-widest text-white/80">Marketplace Applicant</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-8 h-8 rounded bg-red-600 flex items-center justify-center font-black text-white">A</div>
+                          <span className="text-xs font-bold uppercase tracking-widest text-white/80">Anasel Security Solutions</span>
+                        </>
+                      )}
+                    </div>
+                    <Dialog.Title as="h2" className="text-3xl font-black uppercase tracking-tight text-white">
+                      {guard.full_name}
+                    </Dialog.Title>
+                    <p className="text-xs font-mono font-medium text-white/70 mt-1 tracking-widest uppercase">
+                      NIDA: {guard.nida_number || 'NOT DISCLOSED'}
+                    </p>
+                  </div>
 
-            <section>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18" strokeWidth="2.5" /></svg>
+                  <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors focus:outline-none"
+                    aria-label="Close dialog"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
                 </div>
-                <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em]">Dossier</h3>
-                <div className="h-px flex-grow bg-slate-100" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Physical Address</p>
-                  <p className="text-sm font-bold text-slate-700">{(guard as any)?.dossier_data?.physical_address || 'N/A'}</p>
+
+                {/* Tabs */}
+                <div className="bg-[#0A192F] border-t border-white/10 px-6 sm:px-8 flex gap-6">
+                  <button
+                    onClick={() => setActiveTab('forensic')}
+                    className={`py-4 text-xs font-bold uppercase tracking-widest border-b-2 transition-colors ${activeTab === 'forensic' ? 'border-white text-white' : 'border-transparent text-white/60 hover:text-white'
+                      }`}
+                  >
+                    Forensic Disclosure
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('incident')}
+                    className={`py-4 text-xs font-bold uppercase tracking-widest border-b-2 transition-colors ${activeTab === 'incident' ? 'border-white text-white' : 'border-transparent text-white/60 hover:text-white'
+                      }`}
+                  >
+                    Incident Report
+                  </button>
                 </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Emergency Contact</p>
-                  <p className="text-sm font-bold text-slate-700">{(guard as any)?.dossier_data?.emergency_contact || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Shirt Size</p>
-                  <p className="text-sm font-bold text-slate-700">{(guard as any)?.dossier_data?.uniform_shirt_size || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Boot Size</p>
-                  <p className="text-sm font-bold text-slate-700">{(guard as any)?.dossier_data?.uniform_boot_size || 'N/A'}</p>
-                </div>
-              </div>
-              <div className="mt-6 p-6 bg-slate-50 border border-slate-100 rounded-2xl">
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3">Guarantors</p>
-                {Array.isArray(guard.guarantors) && guard.guarantors.length > 0 ? (
-                  <div className="space-y-4">
-                    {guard.guarantors.map((g, i) => (
-                      <div key={g.id} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3">
-                        <div>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{`Guarantor #${i + 1} Name`}</p>
-                          <p className="text-sm font-bold text-slate-700">{g.name}</p>
+
+                {/* Content Body */}
+                <div className="p-6 sm:p-8">
+                  {activeTab === 'forensic' && (
+                    <div className="space-y-8 animate-in fade-in duration-300">
+
+                      {/* High Contrast Status Cards */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="p-6 bg-[#0A192F] rounded-xl shadow-md border border-slate-200">
+                          <div className="flex items-center gap-2 mb-3 text-white">
+                            <ShieldAlert className="w-4 h-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-white">Performance</p>
+                          </div>
+                          <p className="text-4xl font-black text-white">{guard.performance_score ?? 0}%</p>
+                          <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mt-1">{perf.label}</p>
                         </div>
-                        <div>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{`Guarantor #${i + 1} Phone`}</p>
-                          <p className="text-sm font-bold text-slate-700 font-mono">{g.phone}</p>
+
+                        <div className="p-6 bg-[#0A192F] rounded-xl shadow-md border border-slate-200">
+                          <div className="flex items-center gap-2 mb-3 text-white">
+                            <AlertTriangle className="w-4 h-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-white">Incidents</p>
+                          </div>
+                          <p className="text-3xl font-black text-white">{incidentCount} <span className="text-lg text-white">Reports</span></p>
+                          <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest mt-1">Total Lifetime</p>
                         </div>
-                        {(g as any)?.occupation && (
+
+                        <div className={`p-6 rounded-xl shadow-md border ${isBlacklisted ? 'bg-red-700 border-red-800' : 'bg-[#0A192F] border-slate-200'
+                          }`}>
+                          <div className="flex items-center gap-2 mb-3 text-white">
+                            <Briefcase className="w-4 h-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-white">System Status</p>
+                          </div>
+                          <p className="text-2xl font-black text-white uppercase break-words">
+                            {isBlacklisted ? 'BLACKLISTED' : (!guard.company_id ? 'APPLICANT' : 'ACTIVE GUARD')}
+                          </p>
+                          <p className="text-[11px] font-bold text-white uppercase tracking-widest mt-1">Current</p>
+                        </div>
+                      </div>
+
+                      {/* Personal Details */}
+                      <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
+                        <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                          <div className="p-2 bg-[#0A192F]/5 rounded-lg text-[#0A192F]">
+                            <UserCircle className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black text-[#0A192F] uppercase tracking-[0.15em]">Personal Details</h3>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-8 gap-x-6">
                           <div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{`Guarantor #${i + 1} Occupation`}</p>
-                            <p className="text-sm font-bold text-slate-700">{(g as any).occupation}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">NIDA Number</p>
+                            <p className="text-sm font-semibold text-slate-800 font-mono">{guard.nida_number || 'Not Disclosed'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Phone Number</p>
+                            <p className="text-sm font-semibold text-slate-800 font-mono">{guard.phone || 'Not Disclosed'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Date of Birth</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.dob || 'Not Disclosed'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Age</p>
+                            <p className="text-sm font-semibold text-slate-800">{typeof age === 'number' ? `${age} Years` : 'Not Disclosed'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Current Shift</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.current_shift?.toUpperCase() || 'NOT_ASSIGNED'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Armed Status</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.is_armed ? 'Armed' : 'Unarmed'}</p>
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* Dossier & Guarantors */}
+                      <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
+                        <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                          <div className="p-2 bg-[#0A192F]/5 rounded-lg text-[#0A192F]">
+                            <Briefcase className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black text-[#0A192F] uppercase tracking-[0.15em]">Dossier</h3>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-y-8 gap-x-6 mb-8">
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Physical Address</p>
+                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.physical_address || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Emergency Contact</p>
+                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.emergency_contact || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Shirt Size</p>
+                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.uniform_shirt_size || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Boot Size</p>
+                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.uniform_boot_size || 'N/A'}</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
+                          <p className="text-xs font-black text-slate-600 uppercase tracking-[0.15em] mb-4">Guarantors</p>
+                          {Array.isArray(guard.guarantors) && guard.guarantors.length > 0 ? (
+                            <div className="space-y-6">
+                              {guard.guarantors.map((g, i) => (
+                                <div key={g.id} className="grid grid-cols-1 sm:grid-cols-3 gap-6 pb-6 border-b border-slate-200 last:border-0 last:pb-0">
+                                  <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{`Guarantor #${i + 1} Name`}</p>
+                                    <p className="text-sm font-semibold text-slate-800">{g.name}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{`Phone Number`}</p>
+                                    <p className="text-sm font-semibold text-slate-800 font-mono">{g.phone}</p>
+                                  </div>
+                                  {(g as any)?.occupation && (
+                                    <div>
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{`Occupation`}</p>
+                                      <p className="text-sm font-semibold text-slate-800">{(g as any).occupation}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs font-medium text-slate-400 italic">No guarantors listed.</p>
+                          )}
+                        </div>
+
+                        {/* Next of Kin */}
+                        <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Next of Kin Name</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.next_of_kin_name || 'Not Disclosed'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Next of Kin Phone</p>
+                            <p className="text-sm font-semibold text-slate-800 font-mono">{guard.next_of_kin_phone || 'Not Disclosed'}</p>
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* Education & Contacts */}
+                      <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
+                        <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                          <div className="p-2 bg-[#0A192F]/5 rounded-lg text-[#0A192F]">
+                            <BookOpen className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black text-[#0A192F] uppercase tracking-[0.15em]">Education</h3>
+                        </div>
+
+                        {Array.isArray(guard.education_history) && guard.education_history.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {guard.education_history.map(edu => (
+                              <div key={edu.id} className="p-5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-bold text-slate-800 uppercase tracking-tight">{edu.level?.replace('_', ' ')}</p>
+                                  <p className="text-xs font-medium text-slate-500 mt-1">Completed: <span className="text-slate-700 font-bold">{edu.year}</span></p>
+                                </div>
+                                {edu.weapon_proficiency === 'pass' && (
+                                  <span className="text-[10px] font-bold bg-[#0A192F] text-white px-2.5 py-1 rounded-md uppercase tracking-wider">Armed Certified</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-medium text-slate-400 italic">No education history found.</p>
+                        )}
+                      </section>
+
+                      {/* Documents Section */}
+                      <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
+                        <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                          <div className="p-2 bg-[#0A192F]/5 rounded-lg text-[#0A192F]">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black text-[#0A192F] uppercase tracking-[0.15em]">Documents</h3>
+                        </div>
+
+                        {canViewDocs ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {[
+                              { label: 'NIDA Document', url: guard.nida_front_url },
+                              { label: 'Application Letter', url: guard.application_letter_url },
+                              { label: 'Birth Certificate', url: guard.birth_cert_url },
+                              { label: 'Residence Letter', url: guard.residence_letter_url },
+                              { label: 'Medical Report', url: guard.medical_report_url },
+                              { label: 'Police Clearance', url: guard.police_clearance_url },
+                              { label: 'Curriculum Vitae', url: guard.cv_url },
+                              { label: 'Passport Photo', url: guard.passport_photo_url },
+                              { label: 'Employment Contract', url: guard.employment_contract_url },
+                            ].map((doc, idx) => doc.url && (
+                              <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{doc.label}</span>
+                                <a href={doc.url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                              </div>
+                            ))}
+
+                            {guard.guarantors?.map((g, i) => (
+                              <Fragment key={g.id}>
+                                {((g as any).guarantor_letter_url || (g as any).letter_url) && (
+                                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                    <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} Letter`}</span>
+                                    <a href={(g as any).guarantor_letter_url || (g as any).letter_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                  </div>
+                                )}
+                                {(g as any).id_copy_url && (
+                                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                    <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} ID Copy`}</span>
+                                    <a href={(g as any).id_copy_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                  </div>
+                                )}
+                                {(g as any).residence_letter_url && (
+                                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                    <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} Residence`}</span>
+                                    <a href={(g as any).residence_letter_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                  </div>
+                                )}
+                              </Fragment>
+                            ))}
+
+                            {guard.education_history?.map((edu) => edu.certificate_url && (
+                              <div key={edu.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`${edu.level?.replace('_', ' ')} Cert`}</span>
+                                <a href={edu.certificate_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center">
+                            <p className="text-amber-800 text-sm font-bold uppercase tracking-widest text-center">
+                              Login as Supervisor to view sensitive documents.
+                            </p>
                           </div>
                         )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">No guarantors listed.</p>
-                )}
-              </div>
-            </section>
+                      </section>
 
-            <section>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" strokeWidth="2.5" /></svg>
-                </div>
-                <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em]">Contacts</h3>
-                <div className="h-px flex-grow bg-slate-100" />
-              </div>
-              <div className="space-y-8">
-                {guard.guarantors?.map((g, i) => (
-                  <div key={g.id} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 p-6 bg-slate-50 border border-slate-100 rounded-2xl">
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{`Guarantor #${i + 1} Name`}</p>
-                      <p className="text-sm font-bold text-slate-700">{g.name}</p>
                     </div>
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{`Guarantor #${i + 1} Phone`}</p>
-                      <p className="text-sm font-bold text-slate-700 font-mono">{g.phone}</p>
-                    </div>
-                    {(g as any)?.occupation && (
-                      <div>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{`Guarantor #${i + 1} Occupation`}</p>
-                        <p className="text-sm font-bold text-slate-700">{(g as any).occupation}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 pt-8 border-t border-slate-100">
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Next of Kin Name</p>
-                    <p className="text-sm font-bold text-slate-700">{guard.next_of_kin_name || 'Not Disclosed'}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Next of Kin Phone</p>
-                    <p className="text-sm font-bold text-slate-700 font-mono">{guard.next_of_kin_phone || 'Not Disclosed'}</p>
-                  </div>
-                </div>
-              </div>
-            </section>
+                  )}
 
-            <section>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 14l9-5-9-5-9 5 9 5z" strokeWidth="2.5" /><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" strokeWidth="2.5" /></svg>
-                </div>
-                <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em]">Education</h3>
-                <div className="h-px flex-grow bg-slate-100" />
-              </div>
-              <div className="space-y-4">
-                {Array.isArray(guard.education_history) && guard.education_history.length > 0 ? (
-                  guard.education_history.map(edu => (
-                    <div key={edu.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-black text-slate-900 uppercase tracking-tight">{edu.level?.replace('_', ' ')}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5 tracking-widest">Completed: {edu.year}</p>
-                      </div>
-                      {edu.weapon_proficiency === 'pass' && (
-                        <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded uppercase tracking-widest border border-emerald-200">Armed Certified</span>
+                  {activeTab === 'incident' && (
+                    <div className="space-y-4 animate-in fade-in duration-300">
+                      <h3 className="text-sm font-black text-[#0A192F] uppercase tracking-[0.15em] mb-6">Incident History</h3>
+                      {guardIncidents.map(i => {
+                        const code = disciplinaryCodes.find(c => c.code === i.code);
+                        return (
+                          <div key={i.id} className="p-6 bg-white rounded-xl shadow-md border border-slate-200">
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <p className="text-sm font-black text-slate-900 uppercase">{code?.label || i.code}</p>
+                                <p className="text-sm font-medium text-slate-600 mt-2 leading-relaxed">{i.notes || i.title || 'No narrative provided.'}</p>
+                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-4 flex items-center gap-2">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  {new Date(i.created_at).toLocaleString()}
+                                </p>
+                              </div>
+                              <span className="text-sm font-black bg-red-100 text-red-700 px-3 py-1.5 rounded-lg border border-red-200 whitespace-nowrap">
+                                -{i.penalty_points || 0} POINTS
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {guardIncidents.length === 0 && (
+                        <div className="p-12 bg-white rounded-xl shadow-md border border-slate-200 text-center">
+                          <ShieldAlert className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                          <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">No incidents recorded.</p>
+                        </div>
                       )}
                     </div>
-                  ))
-                ) : (
-                  <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">No education history found.</p>
-                )}
-              </div>
-            </section>
+                  )}
 
-            <section>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
+                  {/* Footer Timestamp */}
+                  <div className="mt-8 pt-6 border-t border-slate-200 text-center">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      System Verified Timestamp: {new Date().toLocaleString()}
+                    </p>
+                  </div>
+
                 </div>
-                <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em]">Documents</h3>
-                <div className="h-px flex-grow bg-slate-100" />
-              </div>
-              {canViewDocs ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {guard.nida_front_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">NIDA Document</span>
-                      </div>
-                      <a href={guard.nida_front_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.application_letter_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Application Letter</span>
-                      </div>
-                      <a href={guard.application_letter_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.birth_cert_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Birth Certificate</span>
-                      </div>
-                      <a href={guard.birth_cert_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.residence_letter_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Residence Letter</span>
-                      </div>
-                      <a href={guard.residence_letter_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.medical_report_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Medical Report</span>
-                      </div>
-                      <a href={guard.medical_report_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.police_clearance_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Police Clearance</span>
-                      </div>
-                      <a href={guard.police_clearance_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.cv_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Curriculum Vitae</span>
-                      </div>
-                      <a href={guard.cv_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.passport_photo_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Passport Photo</span>
-                      </div>
-                      <a href={guard.passport_photo_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.employment_contract_url && (
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                        <span className="text-[10px] font-bold text-slate-600 uppercase truncate">Employment Contract</span>
-                      </div>
-                      <a href={guard.employment_contract_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                    </div>
-                  )}
-                  {guard.guarantors?.map((g, i) => (
-                    <React.Fragment key={g.id}>
-                      {((g as any).guarantor_letter_url || (g as any).letter_url) && (
-                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex items-center gap-3">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                            <span className="text-[10px] font-bold text-slate-600 uppercase truncate">{`Guarantor #${i + 1} Letter`}</span>
-                          </div>
-                          <a href={(g as any).guarantor_letter_url || (g as any).letter_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                        </div>
-                      )}
-                      {(g as any).id_copy_url && (
-                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex items-center gap-3">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                            <span className="text-[10px] font-bold text-slate-600 uppercase truncate">{`Guarantor #${i + 1} ID Copy`}</span>
-                          </div>
-                          <a href={(g as any).id_copy_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                        </div>
-                      )}
-                      {(g as any).residence_letter_url && (
-                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex items-center gap-3">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                            <span className="text-[10px] font-bold text-slate-600 uppercase truncate">{`Guarantor #${i + 1} Residence Letter`}</span>
-                          </div>
-                          <a href={(g as any).residence_letter_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                  {guard.education_history?.map(edu => (
-                    edu.certificate_url ? (
-                      <div key={edu.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="flex items-center gap-3">
-                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
-                          <span className="text-[10px] font-bold text-slate-600 uppercase truncate">{`${edu.level?.replace('_', ' ')} Cert (${edu.year})`}</span>
-                        </div>
-                        <a href={edu.certificate_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</a>
-                      </div>
-                    ) : null
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4 md:p-5 bg-amber-50 border border-amber-200 rounded-2xl">
-                  <p className="text-amber-700 text-[10px] md:text-xs font-black uppercase tracking-widest text-center md:text-left">
-                    Login as Supervisor to view sensitive documents.
-                  </p>
-                </div>
-              )}
-            </section>
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
-        </>
-      )}
-
-      {activeTab === 'incident' && (
-        <div className="mt-6 space-y-3">
-          <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Incidents</p>
-          {guardIncidents.map(i => {
-            const code = disciplinaryCodes.find(c => c.code === i.code);
-            return (
-              <div key={i.id} className="p-4 bg-slate-800 rounded-xl border border-slate-700 text-white">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <p className="text-sm font-black uppercase">{code?.label || i.code}</p>
-                    <p className="text-[11px] font-medium text-white/90 mt-1">{i.notes || i.title || 'No narrative provided.'}</p>
-                    <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-2">{new Date(i.created_at).toLocaleString()}</p>
-                  </div>
-                  <span className="text-[10px] font-black text-red-300 font-hud whitespace-nowrap">-{i.penalty_points || 0}</span>
-                </div>
-              </div>
-            );
-          })}
-          {guardIncidents.length === 0 && <p className="text-xs text-slate-600">No incidents recorded.</p>}
         </div>
-      )}
-      <div className="print-footer">
-        System Verified Timestamp: {new Date().toLocaleString()}
-      </div>
-    </div>
+      </Dialog>
+    </Transition>
   );
 };
 
