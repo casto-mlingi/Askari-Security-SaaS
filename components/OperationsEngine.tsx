@@ -251,10 +251,10 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-black text-slate-900 uppercase tracking-tight">{g.full_name}</h4>
-                      <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${inc.severity === 'critical' ? 'bg-red-100 text-red-700' :
-                        inc.severity === 'high' ? 'bg-orange-100 text-orange-700' :
-                          inc.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
-                            'bg-slate-100 text-slate-700'
+                      <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-white ${inc.severity === 'critical' ? 'bg-red-600' :
+                        inc.severity === 'high' ? 'bg-orange-500' :
+                          inc.severity === 'medium' ? 'bg-amber-500' :
+                            'bg-slate-500'
                         }`}>
                         {inc.severity || 'low'}
                       </span>
@@ -264,7 +264,7 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-4 self-start sm:self-auto min-w-max">
-                  <span className="text-lg font-black text-red-600 font-hud px-4 py-2 bg-red-50 rounded-xl border border-red-100">-{inc.penalty_points || 0} PTS</span>
+                  <span className="text-lg font-black text-white font-hud px-4 py-2 bg-red-600 rounded-xl shadow-sm">-{inc.penalty_points || 0} PTS</span>
                 </div>
               </div>
             );

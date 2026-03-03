@@ -25,7 +25,7 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
   onRequestLeave
 }) => {
   const [activeTab, setActiveTab] = useState<'report' | 'leave' | 'announcements' | 'worktools' | 'help'>('report');
-  
+
   const [reportTitle, setReportTitle] = useState('');
   const [reportText, setReportText] = useState('');
   const [reportSeverity, setReportSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
@@ -99,7 +99,7 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
     setEvidence('');
     alert("Your report has been sent to your supervisor.");
   };
-  
+
   const handleSubmitLeave = async () => {
     if (!leaveStart || !leaveEnd || !leaveReason) {
       alert("Please complete all fields for your leave request.");
@@ -114,7 +114,7 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
     setLeaveReason('');
     alert("Your leave request has been submitted to HR for review.");
   };
-  
+
   const renderContent = () => {
     switch (activeTab) {
       case 'report':
@@ -143,19 +143,19 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
               value={reportText}
               onChange={(e) => setReportText(e.target.value)}
             />
-            <FileUploader 
+            <FileUploader
               label="Attach Photo Evidence"
               fileUrl={evidence}
               onUpload={setEvidence}
               onRemove={() => setEvidence('')}
               className="!h-32"
             />
-            <button 
+            <button
               onClick={handleSubmitReport}
               disabled={isSyncingReport}
               className="w-full h-16 bg-slate-900 text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 disabled:bg-slate-200"
             >
-              {isSyncingReport && <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>}
+              {isSyncingReport && <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               {isSyncingReport ? 'Sending...' : 'Send Report'}
             </button>
           </div>
@@ -163,39 +163,38 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
       case 'leave':
         return (
           <div className="space-y-8 animate-in fade-in duration-300">
-             <div>
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Request Leave</h3>
-                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
-                  <select value={leaveType} onChange={e => setLeaveType(e.target.value as any)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold uppercase">
-                    <option value="short">Short Leave</option>
-                    <option value="long">Long Leave</option>
-                  </select>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input type="date" value={leaveStart} onChange={e => setLeaveStart(e.target.value)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold uppercase"/>
-                    <input type="date" value={leaveEnd} onChange={e => setLeaveEnd(e.target.value)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold uppercase"/>
-                  </div>
-                  <textarea value={leaveReason} onChange={e => setLeaveReason(e.target.value)} placeholder="Reason for leave..." className="w-full h-24 p-4 bg-white border border-slate-200 rounded-lg text-sm font-medium"/>
-                  <button onClick={handleSubmitLeave} disabled={isSyncingLeave} className="w-full h-14 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg active:scale-95 transition-all">Submit Request</button>
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Request Leave</h3>
+              <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+                <select value={leaveType} onChange={e => setLeaveType(e.target.value as any)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold uppercase">
+                  <option value="short">Short Leave</option>
+                  <option value="long">Long Leave</option>
+                </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="date" value={leaveStart} onChange={e => setLeaveStart(e.target.value)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold uppercase" />
+                  <input type="date" value={leaveEnd} onChange={e => setLeaveEnd(e.target.value)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold uppercase" />
                 </div>
-             </div>
-             <div>
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Leave History</h3>
-                 <div className="space-y-3">
-                    {leaveRequests.length > 0 ? leaveRequests.map(req => (
-                        <div key={req.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center">
-                            <div>
-                                <p className="text-xs font-black text-slate-800 uppercase">{req.start_date} to {req.end_date}</p>
-                                <p className="text-[10px] font-medium text-slate-400 italic truncate max-w-[150px]">"{req.reason}"</p>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase border ${
-                                req.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                req.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-100' :
-                                'bg-amber-50 text-amber-600 border-amber-100'
-                            }`}>{req.status}</span>
-                        </div>
-                    )) : <p className="text-xs text-slate-400 italic">No previous leave requests.</p>}
-                 </div>
-             </div>
+                <textarea value={leaveReason} onChange={e => setLeaveReason(e.target.value)} placeholder="Reason for leave..." className="w-full h-24 p-4 bg-white border border-slate-200 rounded-lg text-sm font-medium" />
+                <button onClick={handleSubmitLeave} disabled={isSyncingLeave} className="w-full h-14 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg active:scale-95 transition-all">Submit Request</button>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Leave History</h3>
+              <div className="space-y-3">
+                {leaveRequests.length > 0 ? leaveRequests.map(req => (
+                  <div key={req.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center">
+                    <div>
+                      <p className="text-xs font-black text-slate-800 uppercase">{req.start_date} to {req.end_date}</p>
+                      <p className="text-[10px] font-medium text-slate-400 italic truncate max-w-[150px]">"{req.reason}"</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase border ${req.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                        req.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-100' :
+                          'bg-amber-50 text-amber-600 border-amber-100'
+                      }`}>{req.status}</span>
+                  </div>
+                )) : <p className="text-xs text-slate-400 italic">No previous leave requests.</p>}
+              </div>
+            </div>
           </div>
         );
       case 'announcements':
@@ -203,14 +202,14 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
           <div className="space-y-6 animate-in fade-in duration-300">
             {announcements.map(ann => (
               <div key={ann.id} className="p-6 bg-slate-50 border border-slate-200 rounded-2xl">
-                 <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{ann.title}</h4>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">From: {ann.author_name}</p>
-                    </div>
-                    <span className="text-[9px] font-mono text-slate-400">{new Date(ann.created_at).toLocaleDateString()}</span>
-                 </div>
-                 <p className="text-sm text-slate-600 font-medium leading-relaxed">{ann.content}</p>
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{ann.title}</h4>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">From: {ann.author_name}</p>
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-400">{new Date(ann.created_at).toLocaleDateString()}</span>
+                </div>
+                <p className="text-sm text-slate-600 font-medium leading-relaxed">{ann.content}</p>
               </div>
             ))}
           </div>
@@ -250,7 +249,7 @@ const GuardOperations: React.FC<GuardOperationsProps> = ({
                       <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{r.name}</p>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Qty: {r.qty} • Condition: {r.condition}</p>
                     </div>
-                    <span className={`px-3 py-1 rounded-full ${r.amount ? 'bg-red-100 border border-red-200 text-red-600' : 'bg-slate-100 border border-slate-200 text-slate-600'} text-[10px] font-black uppercase tracking-widest`}>
+                    <span className={`px-3 py-1 rounded-full ${r.amount ? 'bg-red-600 text-white' : 'bg-slate-700 text-white'} text-[10px] font-black uppercase tracking-widest`}>
                       {r.amount ? Intl.NumberFormat('en-TZ', { style: 'currency', currency: 'TZS', maximumFractionDigits: 0 }).format(r.amount) : 'No charge'}
                     </span>
                   </div>
