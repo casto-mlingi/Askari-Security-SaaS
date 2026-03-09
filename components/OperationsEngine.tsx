@@ -111,8 +111,8 @@ const OperationsEngine: React.FC<OperationsEngineProps> = ({
     onReportIncident(selectedGuardId, {
       code: incidentCode,
       notes: incidentNotes,
-      evidence_url: evidences[0],
-      evidence_urls: evidences,
+      evidence_url: `https://api.amini.co.tz/uploads/${evidences[0]}`,
+      evidence_urls: evidences.map(e => `https://api.amini.co.tz/uploads/${e}`),
       site_id: selectedSiteId,
       site_name: siteName,
       reported_by: userName

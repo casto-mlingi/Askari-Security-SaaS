@@ -457,8 +457,18 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       console.error(`KIN_VALIDATION_FAILED: next_of_kin_relationship - This field is required. (Type: ${formData.next_of_kin_relationship || 'None'})`);
     }
 
-    if (!formData.physical_address) newErrors.physical_address = 'This field is required.';
-    if (!formData.emergency_contact) newErrors.emergency_contact = 'This field is required.';
+    if (!formData.physical_address) {
+      newErrors.physical_address = 'This field is required.';
+    }
+    if (!formData.emergency_contact) {
+      newErrors.emergency_contact = 'This field is required.';
+    }
+    if (!formData.uniform_shirt_size) {
+      newErrors.uniform_shirt_size = 'This field is required.';
+    }
+    if (!formData.uniform_boot_size) {
+      newErrors.uniform_boot_size = 'This field is required.';
+    }
 
     // Guarantor Validation Analysis
     if (formData.guarantors.length < 2) {
@@ -696,6 +706,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         gender: coreGuardData.gender || undefined,
         physical_address: coreGuardData.physical_address || undefined,
         emergency_contact: coreGuardData.emergency_contact || undefined,
+        uniform_shirt_size: (coreGuardData as any).uniform_shirt_size || undefined,
+        uniform_boot_size: (coreGuardData as any).uniform_boot_size || undefined,
         emergency_contact_name,
         emergency_contact_phone,
         previous_experience: coreGuardData.previous_experience || false,
@@ -713,8 +725,6 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           district: coreGuardData.district || (initialData as any)?.dossier_data?.district || '',
           uniform_shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.uniform_shirt_size || '',
           uniform_boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.uniform_boot_size || '',
-          shirt_size: (coreGuardData as any).uniform_shirt_size || (initialData as any)?.dossier_data?.shirt_size || '',
-          boot_size: (coreGuardData as any).uniform_boot_size || (initialData as any)?.dossier_data?.boot_size || ''
         },
         security_training: (securityTraining.length ? securityTraining : undefined),
         ...((isApplicantFlow || userRole === UserRole.SUPER_ADMIN) ? { company_id: null } : {}),

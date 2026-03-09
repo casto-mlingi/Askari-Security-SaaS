@@ -213,8 +213,19 @@ try {
 // Removed obsolete BRELA settings endpoints
 
 // --- File Uploads: ensure uploads directory and configure multer ---
-const uploadsDir = path.join(process.cwd(), 'uploads');
-try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch { }
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+// Use absolute path /app/uploads for Docker/Coolify consistency, or process.cwd()/uploads for local dev
+const uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === 'production' ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
+try {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  // Verify write permission
+  const testFile = path.join(uploadsDir, '.write_test');
+  fs.writeFileSync(testFile, 'ok');
+  fs.unlinkSync(testFile);
+  console.log(`UPLOADS: Directory "${uploadsDir}" is ready and writable.`);
+} catch (err) {
+  console.error(`UPLOADS ERROR: Cannot write to "${uploadsDir}". Check permissions/mounts.`, err.message);
+}
 const sanitize = (name) => String(name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
@@ -2087,14 +2098,9 @@ app.post('/api/disciplinary/records', requireAuth, upload.single('evidence'), as
       }
       console.log('[INCIDENT_INSERT] /api/disciplinary/records Success:', result.rows[0]);
 
-      const deduction = Math.abs(penalty_points || 0);
-      await client.query(
-        `UPDATE guards
-         SET performance_score = GREATEST(0, COALESCE(performance_score, 100) - $1),
-             status = CASE WHEN GREATEST(0, COALESCE(performance_score, 100) - $1) < 5 THEN 'blacklisted' ELSE status END
-         WHERE id = $2`,
-        [deduction, guard_id]
-      );
+      // Note: performance_score and blacklisted status are now handled by 
+      // the adjust_guard_score_on_incident trigger in the database.
+      // 100 - SUM(penalty_points) logic ensures non-duplication.
 
       await client.query('COMMIT');
       try {
@@ -2617,14 +2623,11 @@ app.post('/api/ops/incidents', requireAuth, async (req, res) => {
     // MANDATORY ACTION 4: Point Deduction Logic
     const deduction = severity === 'critical' ? 20 : severity === 'high' ? 15 : severity === 'medium' ? 10 : 5;
 
-    // Write to 'disciplinary_records' table (which triggers performance_score update)
-    const result = await client.query(
-      `INSERT INTO disciplinary_records (guard_id, company_id, incident_code, formal_report, evidence_url, penalty_points, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING *`,
-      [guard_id, companyId, 'OTHER_REPORT', title + ': ' + (notes || ''), evidence_image_url || null, deduction]
-    );
-
     if (result.rowCount === 0) throw new Error('RLS Policy Violation: No rows affected');
+
+    // Note: performance_score and blacklisted status are now handled by 
+    // the adjust_guard_score_on_incident trigger in the database.
+    // 100 - SUM(penalty_points) logic ensures non-duplication.
 
     await client.query('COMMIT');
     res.status(201).json({ success: true, message: 'Incident logged successfully', data: result.rows[0] });
@@ -2754,98 +2757,31 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/rosters', requireAuth, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const actor = req.user || {};
-    const b = req.body || {};
-    const site_id = b.site_id || null;
-    const company_id = b.company_id || actor.company_id || null;
-    const guard_id = b.guard_id || null;
-    const shift_date = b.shift_date || b.date || null;
-    const shift_type = b.shift_type || b.shift || null;
-    const status = b.status || 'scheduled';
-    if (!guard_id || !shift_date || !shift_type) {
-      return res.status(400).json({ error: 'bad_request' });
-    }
-    await client.query('BEGIN');
-    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
-    if (company_id) {
-      await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(company_id)]);
-    }
-    if (site_id) {
-      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(site_id)]);
-    } else if (actor?.sub) {
-      try {
-        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        const sid = sRows[0]?.current_site_id || null;
-        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch { }
-    }
-    let existing = null;
-    if (site_id) {
-      try {
-        const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND site_id = $2 AND shift_date = $3 LIMIT 1', [guard_id, site_id, shift_date]);
-        existing = rows[0] || null;
-      } catch { }
-    } else {
-      try {
-        const { rows } = await client.query('SELECT * FROM rosters WHERE guard_id = $1 AND shift_date = $2 LIMIT 1', [guard_id, shift_date]);
-        existing = rows[0] || null;
-      } catch { }
-    }
-    if (existing && existing.id) {
-      const { rows } = await client.query(
-        'UPDATE rosters SET shift_type = $1, status = $2, updated_at = now() WHERE id = $3 RETURNING *',
-        [shift_type, status, existing.id]
-      );
-      await client.query('COMMIT');
-      return res.status(200).json(rows[0] || null);
-    } else {
-      const cols = ['company_id', 'site_id', 'guard_id', 'shift_date', 'shift_type', 'status', 'created_at', 'updated_at'];
-      const vals = [company_id, site_id, guard_id, shift_date, shift_type, status];
-      const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', 'now()', 'now()'];
-      const sql = `INSERT INTO rosters (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
-      const { rows } = await client.query(sql, vals);
-      await client.query('COMMIT');
-      return res.status(200).json(rows[0] || null);
-    }
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch { }
-    res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
-  } finally {
-    client.release();
-  }
-});
-
+// ROSTER ENDPOINTS (Unified & Hardened)
 app.get('/api/rosters', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
+
     if (!myCompanyId && actor?.sub) {
       try {
-        const { rows: meRows } = await pool.query('SELECT company_id, current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+        const { rows: meRows } = await client.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         myCompanyId = meRows[0]?.company_id || null;
       } catch { }
     }
-    const qSiteId = String(req.query?.site_id || '').trim() || null;
-    const qStart = String(req.query?.start || '').trim() || null;
-    const qEnd = String(req.query?.end || '').trim() || null;
+
+    const qSiteId = (req.query?.site_id || '').trim() || null;
+    const qStart = (req.query?.start || '').trim() || null;
+    const qEnd = (req.query?.end || '').trim() || null;
+
     await client.query('BEGIN');
-    await client.query("SET LOCAL app.current_company_id = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';");
+
+    // Set company context for RLS if applicable
     if (myCompanyId) {
       await client.query("SELECT set_config('app.current_company_id', $1, true)", [String(myCompanyId)]);
     }
-    if (qSiteId) {
-      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(qSiteId)]);
-    } else if (actor?.sub) {
-      try {
-        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        const sid = sRows[0]?.current_site_id || null;
-        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch { }
-    }
+
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
       if (qSiteId && qStart && qEnd) {
@@ -2866,25 +2802,23 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(200).json([]);
       }
-      if (qSiteId && qStart && qEnd) {
-        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 AND shift_date BETWEEN $2 AND $3 ORDER BY shift_date ASC', [qSiteId, qStart, qEnd]);
-        rows = r || [];
-      } else if (qStart && qEnd) {
-        const { rows: r } = await client.query('SELECT * FROM rosters WHERE shift_date BETWEEN sap_min_date($1) AND $2 ORDER BY shift_date ASC', [qStart, qEnd]);
-        rows = r || [];
-      } else if (qSiteId) {
-        const { rows: r } = await client.query('SELECT * FROM rosters WHERE site_id = $1 ORDER BY shift_date DESC NULLS LAST, created_at DESC', [qSiteId]);
-        rows = r || [];
-      } else {
-        const { rows: r } = await client.query('SELECT * FROM rosters ORDER BY shift_date DESC NULLS LAST, created_at DESC');
-        rows = r || [];
-      }
+
+      const siteFilter = qSiteId ? 'AND site_id = $2' : '';
+      const params = qSiteId ? [myCompanyId, qSiteId] : [myCompanyId];
+
+      const { rows: r } = await client.query(
+        `SELECT * FROM rosters WHERE company_id = $1 ${siteFilter} ORDER BY shift_date DESC NULLS LAST, created_at DESC`,
+        params
+      );
+      rows = r || [];
     }
+
     await client.query('COMMIT');
     res.status(200).json(rows);
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch { }
-    res.status(500).json({ error: 'error', message: e?.message, detail: e?.detail });
+    console.error('GET /api/rosters error:', e);
+    res.status(500).json({ error: 'error', detail: e.message });
   } finally {
     client.release();
   }

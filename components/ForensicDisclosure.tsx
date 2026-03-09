@@ -3,6 +3,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { X, ShieldAlert, FileText, UserCircle, Briefcase, BookOpen, AlertTriangle } from 'lucide-react';
 import { Guard, IncidentReport, DisciplinaryCode } from '../types';
 import { getPerfCategory } from '../utils/performance';
+import DocumentViewerDialog from './DocumentViewerDialog';
 
 interface ForensicDisclosureProps {
   guard: Guard;
@@ -23,6 +24,18 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
     () => incidents.filter(i => i.guard_id === guard.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [incidents, guard.id]
   );
+
+  const [viewer, setViewer] = useState<{ isOpen: boolean; url: string; title: string }>({
+    isOpen: false,
+    url: '',
+    title: ''
+  });
+
+  const openViewer = (url: string, title: string) => {
+    // Database contains ONLY filenames. Hardcode the prefix.
+    const fullUrl = `https://api.amini.co.tz/uploads/${url}`;
+    setViewer({ isOpen: true, url: fullUrl, title });
+  };
 
   const perf = getPerfCategory(guard.performance_score);
 
@@ -50,17 +63,25 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
       const u = JSON.parse(raw) || {};
       const role = String(u?.role || '').toLowerCase();
       const myCompanyId = String(u?.company_id || '');
-      const isSameCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
-      const anasulId = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
-      const isNeutral = !guard.company_id;
-      const isSelfApplicant = role === 'applicant' && String(u?.id || '') === String(guard.id);
+
+      // Super admins and system HR always have access
       if (role === 'super_admin' || role === 'system_hr') return true;
-      if (isNeutral || isSelfApplicant) return true;
-      if ((role === 'company_admin' || role === 'hr_officer') && isSameCompany) return true;
-      if (role === 'supervisor' && isSameCompany && String(guard.company_id) === anasulId) return true;
+
+      // Check if it's the guard's own profile
+      const isSelfApplicant = role === 'applicant' && String(u?.id || '') === String(guard.id);
+      if (isSelfApplicant) return true;
+
+      // Check for same company access: company_admin, company_hr, hr_officer, supervisor
+      const isSameCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
+      const privilegedRoles = ['company_admin', 'company_hr', 'hr_officer', 'supervisor'];
+      if (privilegedRoles.includes(role) && isSameCompany) return true;
+
+      // If the guard is neutral (no company_id), allow certain roles to view
+      if (!guard.company_id && (role === 'company_admin' || role === 'company_hr' || role === 'hr_officer')) return true;
+
       return false;
     } catch { return false; }
-  }, [guard.company_id]);
+  }, [guard.company_id, guard.id]);
 
   const countFromGuardArr = Array.isArray((guard as any)?.incidents) ? ((guard as any).incidents.length || 0) : 0;
   const countFromProp = incidents.filter(i => i.guard_id === guard.id).length;
@@ -99,17 +120,8 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                 <div className="bg-[#0A192F] p-6 text-white relative flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-3 mb-2">
-                      {(!guard.company_id) ? (
-                        <>
-                          <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center font-black">N</div>
-                          <span className="text-xs font-bold uppercase tracking-widest text-white/80">Marketplace Applicant</span>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-8 h-8 rounded bg-red-600 flex items-center justify-center font-black text-white">A</div>
-                          <span className="text-xs font-bold uppercase tracking-widest text-white/80">Anasel Security Solutions</span>
-                        </>
-                      )}
+                      <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center font-black">A</div>
+                      <span className="text-xs font-bold uppercase tracking-widest text-white">Askari Security Ecosystem</span>
                     </div>
                     <Dialog.Title as="h2" className="text-3xl font-black uppercase tracking-tight text-white">
                       {guard.full_name}
@@ -153,25 +165,25 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
 
                       {/* High Contrast Status Cards */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="p-6 bg-[#0A192F] rounded-xl shadow-md border border-slate-200">
+                        <div className="p-6 bg-[#0A192F] rounded-xl shadow-md border border-white/20">
                           <div className="flex items-center gap-2 mb-3 text-white">
                             <ShieldAlert className="w-4 h-4" />
                             <p className="text-[10px] font-black uppercase tracking-widest text-white">Performance</p>
                           </div>
                           <p className="text-4xl font-black text-white">{guard.performance_score ?? 0}%</p>
-                          <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mt-1">{perf.label}</p>
+                          <p className="text-[11px] font-bold text-white uppercase tracking-widest mt-1 opacity-80">{perf.label}</p>
                         </div>
 
-                        <div className="p-6 bg-[#0A192F] rounded-xl shadow-md border border-slate-200">
+                        <div className="p-6 bg-[#0A192F] rounded-xl shadow-md border border-white/20">
                           <div className="flex items-center gap-2 mb-3 text-white">
                             <AlertTriangle className="w-4 h-4" />
                             <p className="text-[10px] font-black uppercase tracking-widest text-white">Incidents</p>
                           </div>
                           <p className="text-3xl font-black text-white">{incidentCount} <span className="text-lg text-white">Reports</span></p>
-                          <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest mt-1">Total Lifetime</p>
+                          <p className="text-[11px] font-bold text-white uppercase tracking-widest mt-1 opacity-80">Total Lifetime</p>
                         </div>
 
-                        <div className={`p-6 rounded-xl shadow-md border ${isBlacklisted ? 'bg-red-700 border-red-800' : 'bg-[#0A192F] border-slate-200'
+                        <div className={`p-6 rounded-xl shadow-md border ${isBlacklisted ? 'bg-red-700 border-red-800' : 'bg-[#0A192F] border-white/20'
                           }`}>
                           <div className="flex items-center gap-2 mb-3 text-white">
                             <Briefcase className="w-4 h-4" />
@@ -180,7 +192,7 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                           <p className="text-2xl font-black text-white uppercase break-words">
                             {isBlacklisted ? 'BLACKLISTED' : (!guard.company_id ? 'APPLICANT' : 'ACTIVE GUARD')}
                           </p>
-                          <p className="text-[11px] font-bold text-white uppercase tracking-widest mt-1">Current</p>
+                          <p className="text-[11px] font-bold text-white uppercase tracking-widest mt-1 opacity-80">Current</p>
                         </div>
                       </div>
 
@@ -231,19 +243,19 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-y-8 gap-x-6 mb-8">
                           <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Physical Address</p>
-                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.physical_address || 'N/A'}</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.physical_address || (guard as any)?.dossier_data?.physical_address || 'N/A'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Emergency Contact</p>
-                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.emergency_contact || 'N/A'}</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.emergency_contact || (guard as any)?.dossier_data?.emergency_contact || 'N/A'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Shirt Size</p>
-                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.uniform_shirt_size || 'N/A'}</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.uniform_shirt_size || (guard as any)?.dossier_data?.uniform_shirt_size || 'N/A'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Boot Size</p>
-                            <p className="text-sm font-semibold text-slate-800">{(guard as any)?.dossier_data?.uniform_boot_size || 'N/A'}</p>
+                            <p className="text-sm font-semibold text-slate-800">{guard.uniform_boot_size || (guard as any)?.dossier_data?.uniform_boot_size || 'N/A'}</p>
                           </div>
                         </div>
 
@@ -340,7 +352,12 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                             ].map((doc, idx) => doc.url && (
                               <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
                                 <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{doc.label}</span>
-                                <a href={doc.url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                <button
+                                  onClick={() => openViewer(doc.url!, doc.label)}
+                                  className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
+                                >
+                                  View
+                                </button>
                               </div>
                             ))}
 
@@ -349,19 +366,34 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                                 {((g as any).guarantor_letter_url || (g as any).letter_url) && (
                                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
                                     <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} Letter`}</span>
-                                    <a href={(g as any).guarantor_letter_url || (g as any).letter_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                    <button
+                                      onClick={() => openViewer(((g as any).guarantor_letter_url || (g as any).letter_url), `Guarantor #${i + 1} Letter`)}
+                                      className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
+                                    >
+                                      View
+                                    </button>
                                   </div>
                                 )}
                                 {(g as any).id_copy_url && (
                                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
                                     <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} ID Copy`}</span>
-                                    <a href={(g as any).id_copy_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                    <button
+                                      onClick={() => openViewer((g as any).id_copy_url, `Guarantor #${i + 1} ID Copy`)}
+                                      className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
+                                    >
+                                      View
+                                    </button>
                                   </div>
                                 )}
                                 {(g as any).residence_letter_url && (
                                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
                                     <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} Residence`}</span>
-                                    <a href={(g as any).residence_letter_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                    <button
+                                      onClick={() => openViewer((g as any).residence_letter_url, `Guarantor #${i + 1} Residence Letter`)}
+                                      className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
+                                    >
+                                      View
+                                    </button>
                                   </div>
                                 )}
                               </Fragment>
@@ -370,14 +402,24 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                             {guard.education_history?.map((edu) => edu.certificate_url && (
                               <div key={edu.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
                                 <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`${edu.level?.replace('_', ' ')} Cert`}</span>
-                                <a href={edu.certificate_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap">View</a>
+                                <button
+                                  onClick={() => openViewer(edu.certificate_url!, `${edu.level?.replace('_', ' ')} Cert`)}
+                                  className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
+                                >
+                                  View
+                                </button>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center">
-                            <p className="text-amber-800 text-sm font-bold uppercase tracking-widest text-center">
-                              Login as Supervisor to view sensitive documents.
+                          <div className="p-12 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center text-center">
+                            <ShieldAlert className="w-12 h-12 text-slate-300 mb-4" />
+                            <p className="text-slate-900 text-sm font-black uppercase tracking-widest mb-2">
+                              Access Restricted
+                            </p>
+                            <p className="text-slate-500 text-xs font-bold max-w-sm">
+                              You do not have permission to view sensitive documents for this guard.
+                              Only authorized company personnel or system administrators can access these records.
                             </p>
                           </div>
                         )}
@@ -420,14 +462,21 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                     </div>
                   )}
 
-                  {/* Footer Timestamp */}
+                  {/* Footer */}
                   <div className="mt-8 pt-6 border-t border-slate-200 text-center">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      System Verified Timestamp: {new Date().toLocaleString()}
+                      Forensic System Snapshot: {new Date().toLocaleString()}
                     </p>
                   </div>
-
                 </div>
+
+                <DocumentViewerDialog
+                  isOpen={viewer.isOpen}
+                  onClose={() => setViewer(prev => ({ ...prev, isOpen: false }))}
+                  url={viewer.url}
+                  title={viewer.title}
+                />
+
               </Dialog.Panel>
             </Transition.Child>
           </div>

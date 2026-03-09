@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { Guard } from '../types';
 import AvatarImage from './AvatarImage';
+import DocumentViewerDialog from './DocumentViewerDialog';
 
 interface GuardProfileProps {
   guard: Guard;
@@ -40,7 +41,7 @@ const DetailItem: React.FC<{ label: string; value?: string | number; mono?: bool
   </div>
 );
 
-const DocumentLink: React.FC<{ label: string; url?: string; onView?: (url: string) => void; }> = ({ label, url, onView }) => {
+const DocumentLink: React.FC<{ label: string; url?: string; onView?: (url: string, title: string) => void; }> = ({ label, url, onView }) => {
   if (!url) return null;
   return (
     <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -48,21 +49,27 @@ const DocumentLink: React.FC<{ label: string; url?: string; onView?: (url: strin
         <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" /></svg>
         <span className="text-[10px] font-bold text-slate-600 uppercase truncate">{label}</span>
       </div>
-      <button onClick={() => onView && url && onView(url)} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</button>
+      <button onClick={() => onView && url && onView(url, label)} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View File</button>
     </div>
   );
 };
 
 const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
   const age = useMemo(() => calculateAge(guard.dob), [guard.dob]);
+  const [viewer, setViewer] = React.useState<{ isOpen: boolean; url: string; title: string }>({
+    isOpen: false,
+    url: '',
+    title: ''
+  });
 
   const handleRequestUpdate = () => {
     alert("Your request to update your profile has been sent to HR for review.");
   };
-  
-  // Dummy function for document viewing within the profile, not a real modal for this component
-  const handleViewDocument = (url: string) => {
-    window.open(url, '_blank');
+
+  const handleViewDocument = (url: string, title: string) => {
+    // Database contains ONLY filenames. Hardcode the prefix.
+    const fullUrl = `https://api.amini.co.tz/uploads/${url}`;
+    setViewer({ isOpen: true, url: fullUrl, title });
   };
 
   return (
@@ -79,18 +86,17 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           <div>
             <h2 className="text-2xl font-black uppercase tracking-tighter leading-none">{guard.full_name}</h2>
             <div className="flex items-center gap-3 mt-3">
-              <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                (String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted')
-                  ? 'bg-red-50 text-red-600 border-red-100'
-                  : 'bg-primary/20 text-primary-light border-white/10'
-              }`}>
+              <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${(String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted')
+                ? 'bg-red-50 text-red-600 border-red-100'
+                : 'bg-primary/20 text-primary-light border-white/10'
+                }`}>
                 {(String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted') ? 'Blacklisted' : 'Active Duty'}
               </span>
               <span className="text-[10px] font-mono text-white/40 font-bold">ID: {guard.id.slice(0, 8)}</span>
             </div>
           </div>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-white/5">
           <div>
             <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Performance</p>
@@ -102,10 +108,9 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           </div>
           <div className="text-right">
             <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Status</p>
-            <p className={`text-lg font-black uppercase tracking-tight ${
-              (String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted') ? 'text-red-400' : 'text-white/90'
-            }`}>
-              {String((guard as any)?.status || 'active').replace('_',' ')}
+            <p className={`text-lg font-black uppercase tracking-tight ${(String((guard as any)?.status || '').toLowerCase() === 'blacklist' || String((guard as any)?.status || '').toLowerCase() === 'blacklisted') ? 'text-red-400' : 'text-white/90'
+              }`}>
+              {String((guard as any)?.status || 'active').replace('_', ' ')}
             </p>
           </div>
         </div>
@@ -113,7 +118,7 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
 
       {/* Main Dossier Content */}
       <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden p-8 md:p-12 space-y-12">
-        
+
         {/* Identity Registry */}
         <section>
           <SectionHeader title="Personal Details" icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeWidth="2.5" /></svg>} />
@@ -169,14 +174,14 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           <div className="space-y-8">
             {guard.guarantors?.map((g, i) => (
               <div key={g.id} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 p-6 bg-slate-50 border border-slate-100 rounded-2xl">
-                 <DetailItem label={`Guarantor #${i + 1} Name`} value={g.name} />
-                 <DetailItem label={`Guarantor #${i + 1} Phone`} value={g.phone} mono />
+                <DetailItem label={`Guarantor #${i + 1} Name`} value={g.name} />
+                <DetailItem label={`Guarantor #${i + 1} Phone`} value={g.phone} mono />
               </div>
             ))}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 pt-8 border-t border-slate-100">
-                <DetailItem label="Next of Kin Name" value={guard.next_of_kin_name} />
-                <DetailItem label="Next of Kin Phone" value={guard.next_of_kin_phone} mono />
-             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 pt-8 border-t border-slate-100">
+              <DetailItem label="Next of Kin Name" value={guard.next_of_kin_name} />
+              <DetailItem label="Next of Kin Phone" value={guard.next_of_kin_phone} mono />
+            </div>
           </div>
         </section>
 
@@ -218,9 +223,9 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
                     <div className="mt-3 flex items-center gap-3">
                       <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21.44 11.05l-8.49 8.49a5 5 0 01-7.07-7.07l8.49-8.49a3 3 0 114.24 4.24l-8.49 8.49a1 1 0 01-1.41-1.41l8.49-8.49" strokeWidth="2.5" /></svg>
                       {/\.(png|jpe?g|gif|webp)$/i.test(String(inc.evidence_url)) ? (
-                        <img src={inc.evidence_url} alt="Evidence" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
+                        <img src={`https://api.amini.co.tz/uploads/${inc.evidence_url}`} alt="Evidence" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
                       ) : (
-                        <a href={inc.evidence_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Download Attachment</a>
+                        <a href={`https://api.amini.co.tz/uploads/${inc.evidence_url}`} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Download Attachment</a>
                       )}
                     </div>
                   )}
@@ -240,9 +245,9 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
                     <div className="mt-3 flex items-center gap-3">
                       <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21.44 11.05l-8.49 8.49a5 5 0 01-7.07-7.07l8.49-8.49a3 3 0 114.24 4.24l-8.49 8.49a1 1 0 01-1.41-1.41l8.49-8.49" strokeWidth="2.5" /></svg>
                       {/\.(png|jpe?g|gif|webp)$/i.test(String(inc.evidence_url)) ? (
-                        <img src={inc.evidence_url} alt="Evidence" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
+                        <img src={`https://api.amini.co.tz/uploads/${inc.evidence_url}`} alt="Evidence" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
                       ) : (
-                        <a href={inc.evidence_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Download Attachment</a>
+                        <a href={`https://api.amini.co.tz/uploads/${inc.evidence_url}`} target="_blank" rel="noreferrer" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Download Attachment</a>
                       )}
                     </div>
                   )}
@@ -264,13 +269,13 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
             <DocumentLink label="Employment Contract" url={guard.employment_contract_url} onView={handleViewDocument} />
             {/* Add guarantor letters here if they were globally viewable, otherwise they are nested under guarantors */}
             {guard.guarantors?.map((g, i) => (
-                <React.Fragment key={g.id}>
-                    <DocumentLink label={`Guarantor #${i+1} Letter`} url={g.letter_url} onView={handleViewDocument} />
-                    <DocumentLink label={`Guarantor #${i+1} Residence`} url={g.residence_letter_url} onView={handleViewDocument} />
-                </React.Fragment>
+              <React.Fragment key={g.id}>
+                <DocumentLink label={`Guarantor #${i + 1} Letter`} url={g.letter_url} onView={handleViewDocument} />
+                <DocumentLink label={`Guarantor #${i + 1} Residence`} url={g.residence_letter_url} onView={handleViewDocument} />
+              </React.Fragment>
             ))}
             {guard.education_history?.map(edu => (
-                edu.certificate_url && <DocumentLink key={edu.id} label={`${edu.level?.replace('_', ' ')} Cert (${edu.year})`} url={edu.certificate_url} onView={handleViewDocument} />
+              edu.certificate_url && <DocumentLink key={edu.id} label={`${edu.level?.replace('_', ' ')} Cert (${edu.year})`} url={edu.certificate_url} onView={handleViewDocument} />
             ))}
           </div>
         </section>
@@ -280,7 +285,7 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center max-w-sm">
             To change your profile information, you must submit an update request to HR.
           </p>
-          <button 
+          <button
             onClick={handleRequestUpdate}
             className="w-full h-16 bg-slate-900 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-primary transition-all active:scale-95 shadow-xl shadow-slate-200"
           >
@@ -288,6 +293,12 @@ const GuardProfile: React.FC<GuardProfileProps> = ({ guard }) => {
           </button>
         </div>
       </div>
+      <DocumentViewerDialog
+        isOpen={viewer.isOpen}
+        onClose={() => setViewer(prev => ({ ...prev, isOpen: false }))}
+        url={viewer.url}
+        title={viewer.title}
+      />
     </div>
   );
 };

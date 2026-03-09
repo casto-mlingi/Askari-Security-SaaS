@@ -589,3 +589,58 @@ CREATE TRIGGER trg_adjust_guard_score_on_incident
 AFTER INSERT ON disciplinary_records
 FOR EACH ROW
 EXECUTE PROCEDURE adjust_guard_score_on_incident();
+-- Migration to fix scoring logic and add missing dossier columns
+
+-- 1. Add top-level columns to guards table if they don't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'physical_address') THEN
+        ALTER TABLE guards ADD COLUMN physical_address TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'emergency_contact') THEN
+        ALTER TABLE guards ADD COLUMN emergency_contact TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'uniform_shirt_size') THEN
+        ALTER TABLE guards ADD COLUMN uniform_shirt_size TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'guards' AND column_name = 'uniform_boot_size') THEN
+        ALTER TABLE guards ADD COLUMN uniform_boot_size TEXT;
+    END IF;
+END $$;
+
+-- 2. Update scoring trigger to 100 - SUM(penalty_points)
+-- This fixes the triple-deduction and ensures scores are always a real audit of incidents.
+CREATE OR REPLACE FUNCTION adjust_guard_score_on_incident()
+RETURNS TRIGGER AS $$
+DECLARE
+  total_penalty INTEGER;
+  next_score INTEGER;
+BEGIN
+  -- Sum all penalty points for this guard
+  SELECT COALESCE(SUM(penalty_points), 0) INTO total_penalty 
+  FROM disciplinary_records 
+  WHERE guard_id = NEW.guard_id;
+
+  next_score := GREATEST(0, 100 - total_penalty);
+
+  PERFORM set_config('app.allow_score_update', 'true', true);
+  
+  IF next_score <= 5 THEN
+    UPDATE guards
+      SET performance_score = next_score,
+          status = 'blacklisted',
+          current_site_id = NULL,
+          assigned_supervisor_id = NULL,
+          updated_at = NOW()
+      WHERE id = NEW.guard_id;
+  ELSE
+    UPDATE guards
+      SET performance_score = next_score,
+          updated_at = NOW()
+      WHERE id = NEW.guard_id;
+  END IF;
+
+  PERFORM set_config('app.allow_score_update', 'false', true);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;

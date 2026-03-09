@@ -31,12 +31,12 @@ interface RosterManagerProps {
 
 const RosterManager: React.FC<RosterManagerProps> = ({ guards, sites, currentUser, userRole }) => {
   const isSupervisor = String(userRole || '').toLowerCase() === 'supervisor';
-  const isAdmin = ['super_admin','company_admin','hr_officer','system_hr'].includes(String(userRole || '').toLowerCase());
+  const isAdmin = ['super_admin', 'company_admin', 'hr_officer', 'system_hr'].includes(String(userRole || '').toLowerCase());
   const mySiteId = (currentUser as Profile)?.current_site_id || undefined;
   const [siteId, setSiteId] = useState<string | undefined>(() => isSupervisor ? mySiteId : undefined);
   const [anchorDate, setAnchorDate] = useState<Date>(() => {
     const now = new Date();
-    now.setHours(0,0,0,0);
+    now.setHours(0, 0, 0, 0);
     return now;
   });
   const [daysCount, setDaysCount] = useState(7);
@@ -110,6 +110,7 @@ const RosterManager: React.FC<RosterManagerProps> = ({ guards, sites, currentUse
           const others = prev.filter(x => !(x.guard_id === guardId && x.shift_date === dateStr));
           return [...others, row];
         });
+        (window as any).showNotification?.('success', 'Roster updated successfully');
       }
     } finally {
       setAssigning(null);
@@ -193,12 +194,12 @@ const RosterManager: React.FC<RosterManagerProps> = ({ guards, sites, currentUse
                           disabled={assigning === key}
                           onClick={() => {
                             const next: ShiftType = r?.shift_type ? r.shift_type : 'day';
-                            const options: ShiftType[] = ['day','night','swing'];
+                            const options: ShiftType[] = ['day', 'night', 'swing'];
                             const idx = options.indexOf(next);
                             const newShift = options[(idx + 1) % options.length];
                             onAssign(g.id, dateStr, newShift);
                           }}
-                          className={`min-w-[90px] px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border ${r ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'} ${conflict ? 'opacity-60' : ''}`}
+                          className={`min-w-[90px] px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border ${r ? 'bg-[#0A192F] text-[#FFFFFF] border-[#0A192F]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'} ${conflict ? 'opacity-60' : ''}`}
                           title="Click to cycle Day/Night/Swing"
                         >
                           {label || 'Assign'}

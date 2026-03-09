@@ -5,6 +5,7 @@ import { analyzeGuardDossier } from '../services/ai';
 import FileUploader from './FileUploader';
 import { api } from '../services/api';
 import AvatarImage from './AvatarImage';
+import DocumentViewerDialog from './DocumentViewerDialog';
 
 interface VettingWorkflowProps {
   guards: Guard[];
@@ -74,6 +75,13 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
   const [aiAnalysis, setAiAnalysis] = useState<{ score: number, reasoning: string, flags: string[] } | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [locallyRejectedIds, setLocallyRejectedIds] = useState<string[]>([]);
+
+  // Document Viewer State
+  const [viewer, setViewer] = useState<{ isOpen: boolean; url: string; title: string }>({
+    isOpen: false,
+    url: '',
+    title: ''
+  });
 
   // Filter lists
   const poolApplicants = useMemo(() => {
@@ -376,6 +384,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     return `${new Date().getFullYear() - d.getFullYear()} Years`;
   };
 
+  const handleViewDocument = (url: string, title: string) => {
+    // Database contains ONLY filenames. Hardcode the prefix.
+    const fullUrl = `https://api.amini.co.tz/uploads/${url}`;
+    setViewer({ isOpen: true, url: fullUrl, title });
+  };
+
   const renderDocLink = (label: string, url?: string) => {
     const trimmed = (url || '').trim();
     return (
@@ -385,14 +399,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
           <p className="text-xs font-medium text-slate-600 truncate">{trimmed || 'Not provided'}</p>
         </div>
         {trimmed ? (
-          <a
-            href={trimmed}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            onClick={() => handleViewDocument(trimmed, label)}
             className="shrink-0 px-4 py-2 bg-white border border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all"
           >
             View
-          </a>
+          </button>
         ) : (
           <span className="shrink-0 px-4 py-2 bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl border border-slate-100">
             —
@@ -741,8 +753,8 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{guard.full_name}</h3>
                   <span className="bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md">Interview Ready</span>
                 </div>
-                <p className="text-sm font-medium text-slate-300 italic">"{guard.dossier_data?.interviewer_notes || 'No notes added.'}"</p>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-400">
+                <p className="text-sm font-medium text-white/80 italic">"{guard.dossier_data?.interviewer_notes || 'No notes added.'}"</p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-white/60">
                   <div>Company: <strong className="text-white">{companies.find(c => c.id === guard.company_id)?.name || '—'}</strong></div>
                   <div>Site: <strong className="text-white">{sites.find(s => s.id === guard.current_site_id)?.name || '—'}</strong></div>
                   <div>Supervisor: <strong className="text-white">{profiles.find(p => p.id === guard.assigned_supervisor_id)?.full_name || '—'}</strong></div>
@@ -1284,6 +1296,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
           </div>
         </div>
       )}
+      <DocumentViewerDialog
+        isOpen={viewer.isOpen}
+        onClose={() => setViewer(prev => ({ ...prev, isOpen: false }))}
+        url={viewer.url}
+        title={viewer.title}
+      />
     </div>
   );
 };
