@@ -63,6 +63,28 @@ const requireRefreshAuth = (req, res, next) => {
 };
 
 const app = express();
+
+// --- CRITICAL: STORAGE PERSISTENCE & MIDDLEWARE ORDER ---
+// Strictly use /app/uploads for production (Coolify persistent volume)
+const uploadsDir = process.env.NODE_ENV === 'production' ? '/app/uploads' : path.join(process.cwd(), 'uploads');
+
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  // Verify write permission
+  const testFile = path.join(uploadsDir, '.write_test');
+  fs.writeFileSync(testFile, 'ok');
+  fs.unlinkSync(testFile);
+  console.log(`UPLOADS: Directory "${uploadsDir}" is ready and writable.`);
+} catch (err) {
+  console.error(`UPLOADS ERROR: Cannot write to "${uploadsDir}". Check permissions/mounts.`, err.message);
+}
+
+// Serve static files at the VERY TOP to prevent routers or 404 handlers from intercepting
+app.use('/uploads', express.static(uploadsDir));
+app.use('/api/uploads', express.static(uploadsDir));
+
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -87,23 +109,6 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
-// --- File Uploads: ensure uploads directory and configure multer ---
-// Use absolute path /app/uploads for Docker/Coolify consistency, or process.cwd()/uploads for local dev
-const uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === 'production' ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
-try {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  // Verify write permission
-  const testFile = path.join(uploadsDir, '.write_test');
-  fs.writeFileSync(testFile, 'ok');
-  fs.unlinkSync(testFile);
-  console.log(`UPLOADS: Directory "${uploadsDir}" is ready and writable.`);
-} catch (err) {
-  console.error(`UPLOADS ERROR: Cannot write to "${uploadsDir}". Check permissions/mounts.`, err.message);
-}
-
-// Static middleware must be defined BEFORE any generic API routers or 404 handlers
-app.use('/uploads', express.static(uploadsDir));
-app.use('/api/uploads', express.static(uploadsDir));
 
 const sanitize = (name) => String(name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 const storage = multer.diskStorage({
