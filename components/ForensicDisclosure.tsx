@@ -71,13 +71,13 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
       const isSelfApplicant = role === 'applicant' && String(u?.id || '') === String(guard.id);
       if (isSelfApplicant) return true;
 
-      // Check for same company access: company_admin, company_hr, hr_officer, supervisor
+      // Check for same company access: company_admin, company_hr, hr_officer, supervisor, hr
       const isSameCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
-      const privilegedRoles = ['company_admin', 'company_hr', 'hr_officer', 'supervisor'];
+      const privilegedRoles = ['company_admin', 'company_hr', 'hr_officer', 'supervisor', 'hr'];
       if (privilegedRoles.includes(role) && isSameCompany) return true;
 
-      // If the guard is neutral (no company_id), allow certain roles to view
-      if (!guard.company_id && (role === 'company_admin' || role === 'company_hr' || role === 'hr_officer')) return true;
+      // If the guard is neutral (no company_id), allow certain roles to view (initial vetting)
+      if (!guard.company_id && privilegedRoles.includes(role)) return true;
 
       return false;
     } catch { return false; }

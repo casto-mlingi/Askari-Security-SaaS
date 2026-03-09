@@ -819,7 +819,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // 0) Try platform users table (super admin and other staff)
     try {
-      const { rows: uRows } = await pool.query('SELECT id, email, role, password, full_name FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
+      const { rows: uRows } = await pool.query('SELECT id, email, role, password, full_name, company_id FROM users WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
       const user = uRows[0];
       if (user) {
         console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Found user record for ${emailNorm} in users table. Verifying password...`);
@@ -853,7 +853,7 @@ app.post('/api/auth/login', async (req, res) => {
             full_name: user.full_name || 'User',
             role,
             email: user.email,
-            company_id: null,
+            company_id: user.company_id || null,
             is_active: true
           },
           expires_at: new Date(Date.now() + (isSuperAdmin ? 24 : 12) * 60 * 60 * 1000).toISOString()
