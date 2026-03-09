@@ -246,7 +246,7 @@ const InterviewReport: React.FC<InterviewReportProps> = ({ guards, companyId }) 
                     </td>
                     <td className="px-8 py-6">
                       {log.deployment_contract_url ? (
-                        <a href={log.deployment_contract_url} target="_blank" rel="noreferrer" className="text-xs font-black text-primary underline">View Contract</a>
+                        <a href={`https://api.amini.co.tz/uploads/${log.deployment_contract_url}`} target="_blank" rel="noreferrer" className="text-xs font-black text-primary underline">View Contract</a>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
