@@ -87,6 +87,42 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
+// --- File Uploads: ensure uploads directory and configure multer ---
+// Use absolute path /app/uploads for Docker/Coolify consistency, or process.cwd()/uploads for local dev
+const uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === 'production' ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
+try {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  // Verify write permission
+  const testFile = path.join(uploadsDir, '.write_test');
+  fs.writeFileSync(testFile, 'ok');
+  fs.unlinkSync(testFile);
+  console.log(`UPLOADS: Directory "${uploadsDir}" is ready and writable.`);
+} catch (err) {
+  console.error(`UPLOADS ERROR: Cannot write to "${uploadsDir}". Check permissions/mounts.`, err.message);
+}
+
+// Static middleware must be defined BEFORE any generic API routers or 404 handlers
+app.use('/uploads', express.static(uploadsDir));
+app.use('/api/uploads', express.static(uploadsDir));
+
+const sanitize = (name) => String(name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const provided = sanitize(req.body?.key || '');
+    const base = provided || `${Date.now()}_${sanitize(file.originalname || 'upload.bin')}`;
+    cb(null, base);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    const okType = file.mimetype?.startsWith('image/') || file.mimetype === 'application/pdf';
+    cb(okType ? null : new Error('Unsupported file type'), okType);
+  }
+});
+
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'https://api.amini.co.tz').replace(/\/+$/, '');
 
 // Root API probe to help developers verify correct port/proxy
@@ -212,39 +248,6 @@ try {
 
 // Removed obsolete BRELA settings endpoints
 
-// --- File Uploads: ensure uploads directory and configure multer ---
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
-// Use absolute path /app/uploads for Docker/Coolify consistency, or process.cwd()/uploads for local dev
-const uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === 'production' ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
-try {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  // Verify write permission
-  const testFile = path.join(uploadsDir, '.write_test');
-  fs.writeFileSync(testFile, 'ok');
-  fs.unlinkSync(testFile);
-  console.log(`UPLOADS: Directory "${uploadsDir}" is ready and writable.`);
-} catch (err) {
-  console.error(`UPLOADS ERROR: Cannot write to "${uploadsDir}". Check permissions/mounts.`, err.message);
-}
-const sanitize = (name) => String(name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const provided = sanitize(req.body?.key || '');
-    const base = provided || `${Date.now()}_${sanitize(file.originalname || 'upload.bin')}`;
-    cb(null, base);
-  }
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (_req, file, cb) => {
-    const okType = file.mimetype?.startsWith('image/') || file.mimetype === 'application/pdf';
-    cb(okType ? null : new Error('Unsupported file type'), okType);
-  }
-});
-app.use('/uploads', express.static(uploadsDir));
-app.use('/api/uploads', express.static(uploadsDir));
 
 // --- Standardized Database Error Handling ---
 function sendDbError(res, e, customMessage) {
