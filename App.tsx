@@ -266,10 +266,19 @@ const App: React.FC = () => {
     }
     if (userRole === UserRole.SUPER_ADMIN) return (guards || []);
     if (isGuard) return [user as Guard];
-    // Company HR visibility: only guards hired by their company
+
+    // Company HR/Admin visibility: 
+    // 1. Their own hired guards
+    // 2. Guards in marketplace (available for anyone)
+    // 3. Guards pending_approval (visibility for vetting)
     return guards
       .filter(Boolean)
-      .filter(g => g?.company_id === userCompanyId);
+      .filter(g => {
+        const status = String((g as any)?.status || '').toLowerCase();
+        const isMyGuard = g?.company_id === userCompanyId;
+        const isMarketplace = status === 'marketplace' || status === 'pending_approval';
+        return isMyGuard || isMarketplace;
+      });
   }, [guards, userRole, userCompanyId, isGuard, user, roleText]);
 
   const filteredSites = useMemo(() => {
