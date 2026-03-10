@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
-console.log('--- ASKARIA-BACKEND: STARTING (latest fix: resolve termination 500 error) ---');
+console.log('--- ASKARIA-BACKEND: STARTING (DIAGNOSTICS_V2) ---');
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
@@ -147,18 +147,30 @@ app.get('/api', (_req, res) => {
   });
 });
 
-app.get('/api/debug/uploads', (req, res) => {
+app.get(['/api/debug/uploads', '/debug/uploads'], (req, res) => {
   try {
     const files = fs.readdirSync(uploadsDir);
     res.json({
       uploadsDir,
       exists: fs.existsSync(uploadsDir),
       fileCount: files.length,
-      sampleFiles: files.slice(0, 50)
+      sampleFiles: files.slice(0, 50),
+      cwd: process.cwd(),
+      __dirname
     });
   } catch (e) {
     res.status(500).json({ error: e.message, uploadsDir });
   }
+});
+
+app.get(['/api/debug/env', '/debug/env'], (req, res) => {
+  res.json({
+    NODE_ENV: process.env.NODE_ENV,
+    PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL,
+    cwd: process.cwd(),
+    __dirname,
+    time: new Date().toISOString()
+  });
 });
 
 // --- Monitoring & Alerting (401/500 real-time detection) ---
