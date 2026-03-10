@@ -1167,7 +1167,8 @@ app.get('/api/guards', requireAuth, async (req, res) => {
           ...g,
           performance_score: (typeof perfNum === 'number' && !Number.isNaN(perfNum)) ? perfNum : (typeof ps === 'number' ? ps : null),
           guarantors: gMap[g.id] || [],
-          education_history: eMap[g.id] || []
+          education_history: eMap[g.id] || [],
+          work_history: wMap[g.id] || []
         };
       });
       return res.status(200).json(out);
@@ -1183,7 +1184,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       guardsRows = [];
     }
     const ids = guardsRows.map(g => g.id);
-    let gts = [], eds = [];
+    let gts = [], eds = [], whs = [];
     if (ids.length) {
       try {
         const { rows } = await pool.query('SELECT * FROM guarantors WHERE guard_id = ANY($1)', [ids]);
@@ -1197,6 +1198,12 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       } catch {
         eds = [];
       }
+      try {
+        const { rows: w2 } = await pool.query('SELECT * FROM work_experiences WHERE guard_id = ANY($1)', [ids]);
+        whs = w2 || [];
+      } catch {
+        whs = [];
+      }
     }
     const gMap = {};
     for (const g of gts) {
@@ -1207,6 +1214,11 @@ app.get('/api/guards', requireAuth, async (req, res) => {
     for (const e of eds) {
       if (!eMap[e.guard_id]) eMap[e.guard_id] = [];
       eMap[e.guard_id].push({ ...e, year: e.year ?? (e.graduation_year != null ? String(e.graduation_year) : null) });
+    }
+    const wMap = {};
+    for (const w of whs) {
+      if (!wMap[w.guard_id]) wMap[w.guard_id] = [];
+      wMap[w.guard_id].push(w);
     }
     const out = guardsRows.map(g => {
       const ps = g?.performance_score;
