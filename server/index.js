@@ -367,6 +367,12 @@ async function ensureSchema() {
     console.warn('[schema] disciplinary_records.evidence_url ensure failed:', e?.message || e);
   }
   try {
+    await pool.query('ALTER TABLE IF EXISTS guards ADD COLUMN IF NOT EXISTS guarantor_letter_url TEXT');
+    await pool.query('ALTER TABLE IF EXISTS guards ADD COLUMN IF NOT EXISTS bank_account_form_url TEXT');
+  } catch (e) {
+    console.warn('[schema] guards extra columns ensure failed:', e?.message || e);
+  }
+  try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS interview_logs (
         id UUID PRIMARY KEY,
@@ -867,7 +873,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     // 1) Try staff profiles first
-    const { rows: pRows } = await pool.query('SELECT * FROM profiles WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
+    const { rows: pRows } = await pool.query('SELECT id, email, role, password_hash, full_name, company_id, is_active FROM profiles WHERE lower(email) = lower($1) LIMIT 1', [emailNorm]);
     const profile = pRows[0];
     if (profile) {
       console.log(`[AUTH INFO ${attemptId}] [${timestamp}] Found profile record for ${emailNorm} in profiles table. Verifying password...`);
