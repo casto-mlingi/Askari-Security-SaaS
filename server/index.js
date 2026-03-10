@@ -10,6 +10,10 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 try {
@@ -68,7 +72,9 @@ const app = express();
 
 // --- CRITICAL: STORAGE PERSISTENCE & MIDDLEWARE ORDER ---
 // Strictly use /app/uploads for production (Coolify persistent volume)
-const uploadsDir = process.env.NODE_ENV === 'production' ? '/app/uploads' : path.join(process.cwd(), 'uploads');
+const uploadsDir = process.env.NODE_ENV === 'production'
+  ? '/app/uploads'
+  : path.resolve(__dirname, '..', 'uploads');
 
 try {
   if (!fs.existsSync(uploadsDir)) {
@@ -3108,6 +3114,9 @@ app.get('/api/health/db', async (req, res) => {
 });
 
 app.use((req, res) => {
+  if (req.path.startsWith('/uploads/') || req.path.startsWith('/api/uploads/')) {
+    console.error(`STATIC FILE 404: File not found on disk at "${path.join(uploadsDir, req.path.replace(/^\/(api\/)?uploads\//, ''))}"`);
+  }
   res.status(404).json({ error: 'Route not found', path: req.path });
 });
 
