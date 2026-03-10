@@ -881,39 +881,40 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
       {detailGuard && (
         <div className="fixed inset-0 z-[1190] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 md:p-6 animate-in fade-in zoom-in duration-300">
           <div className="bg-slate-50 w-full max-w-5xl rounded-[2rem] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-white/20">
-            {/* Premium Header */}
-            <div className="relative p-6 md:p-8 bg-slate-900 text-white overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[100px] -mr-32 -mt-32 pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 rounded-full blur-[80px] -ml-24 -mb-24 pointer-events-none"></div>
-
+            {/* Premium Header: Ultra-clean for maximum visibility */}
+            <div className="relative p-6 md:p-10 bg-slate-900 text-white border-b border-white/5">
               <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex items-center gap-5">
-                  <div className="relative">
-                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center overflow-hidden shadow-inner">
+                <div className="flex items-center gap-6">
+                  <div className="relative shrink-0">
+                    <div className="w-20 h-20 md:w-24 md:h-24 rounded-3xl bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden shadow-xl">
                       {detailGuard.passport_photo_url ? (
                         <AvatarImage src={detailGuard.passport_photo_url} alt={detailGuard.full_name} className="w-full h-full object-cover" />
                       ) : (
-                        <User className="w-10 h-10 text-white/40" />
+                        <User className="w-12 h-12 text-white/20" />
                       )}
                     </div>
-                    <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
-                      <Shield className="w-3 h-3 text-white" />
+                    <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-emerald-500 border-4 border-slate-900 flex items-center justify-center shadow-lg">
+                      <Shield className="w-4 h-4 text-white" />
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight">
+                    <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tight leading-none text-white">
                       {detailGuard.full_name}
                     </h3>
-                    <div className="flex flex-wrap items-center gap-3 mt-2">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white border border-white/20 uppercase tracking-widest leading-none">
-                        NIDA: {detailGuard.nida_number}
-                      </span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-widest leading-none ${detailGuard.status === 'active' ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' :
-                        detailGuard.status === 'interviewing' ? 'bg-blue-500/30 text-blue-300 border-blue-500/40' :
-                          'bg-slate-700/50 text-slate-300 border-slate-600'
+                    <div className="flex flex-wrap items-center gap-4 mt-4">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/10">
+                        <Fingerprint className="w-3 h-3 text-blue-400" />
+                        <span className="text-[11px] font-black uppercase tracking-widest text-white/90">
+                          NIDA: {detailGuard.nida_number}
+                        </span>
+                      </div>
+                      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border shadow-lg ${detailGuard.status === 'active' ? 'bg-emerald-600 border-emerald-500 text-white' :
+                          detailGuard.status === 'interviewing' ? 'bg-blue-600 border-blue-500 text-white' :
+                            'bg-slate-700 border-slate-600 text-white'
                         }`}>
+                        <Activity className="w-3 h-3" />
                         {String(detailGuard.status || 'Applied').replace('_', ' ')}
-                      </span>
+                      </div>
                     </div>
                   </div>
                 </div>
