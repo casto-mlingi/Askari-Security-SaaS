@@ -147,6 +147,20 @@ app.get('/api', (_req, res) => {
   });
 });
 
+app.get('/api/debug/uploads', (req, res) => {
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    res.json({
+      uploadsDir,
+      exists: fs.existsSync(uploadsDir),
+      fileCount: files.length,
+      sampleFiles: files.slice(0, 50)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message, uploadsDir });
+  }
+});
+
 // --- Monitoring & Alerting (401/500 real-time detection) ---
 function sendAlert(subject, text) {
   try {
