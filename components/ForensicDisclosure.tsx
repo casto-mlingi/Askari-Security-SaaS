@@ -10,15 +10,19 @@ interface ForensicDisclosureProps {
   incidents: IncidentReport[];
   disciplinaryCodes: DisciplinaryCode[];
   onClose: () => void;
+  onTerminate?: () => void;
 }
 
-const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes, onClose }) => {
+const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes, onClose, onTerminate }) => {
   const isInitiallyBlacklisted = (() => {
     const score = typeof guard.performance_score === 'number' ? guard.performance_score : undefined;
     const status = String((guard as any)?.status || '').toLowerCase();
     return (typeof score === 'number' && score <= 5) || status === 'blacklisted' || status === 'blacklist';
   })();
   const [activeTab, setActiveTab] = useState<'forensic' | 'incident'>(isInitiallyBlacklisted ? 'incident' : 'forensic');
+  const [isTerminating, setIsTerminating] = useState(false);
+  const [terminationReason, setTerminationReason] = useState('');
+  const [isProcessingTermination, setIsProcessingTermination] = useState(false);
 
   const guardIncidents = useMemo(
     () => incidents.filter(i => i.guard_id === guard.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
@@ -87,6 +91,23 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
   const countFromProp = incidents.filter(i => i.guard_id === guard.id).length;
   const countFromIncidentCount = typeof (guard as any)?.incident_count === 'number' ? (guard as any).incident_count : 0;
   const incidentCount = Math.max(countFromGuardArr, countFromProp, countFromIncidentCount);
+
+  const handleTerminateSubmit = async () => {
+    if (!terminationReason.trim()) return;
+    setIsProcessingTermination(true);
+    try {
+      const { api } = await import('../services/api');
+      await api.post(`/guards/${guard.id}/terminate`, { reason: terminationReason });
+      setIsTerminating(false);
+      setTerminationReason('');
+      onTerminate?.();
+    } catch (err) {
+      console.error('Termination failed:', err);
+      alert('Kushindwa kusitisha mkataba. Tafadhali jaribu tena.');
+    } finally {
+      setIsProcessingTermination(false);
+    }
+  };
 
   return (
     <Transition appear show={true} as={Fragment}>
@@ -189,12 +210,32 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                             <Briefcase className="w-4 h-4" />
                             <p className="text-[10px] font-black uppercase tracking-widest text-white">System Status</p>
                           </div>
-                          <p className="text-2xl font-black text-white uppercase break-words">
+                          <p className={`text-2xl font-black text-white uppercase break-words`}>
                             {isBlacklisted ? 'BLACKLISTED' : (!guard.company_id ? 'APPLICANT' : 'ACTIVE GUARD')}
                           </p>
                           <p className="text-[11px] font-bold text-white uppercase tracking-widest mt-1 opacity-80">Current</p>
                         </div>
                       </div>
+
+                      {/* Contract Termination Section - Only for Active Guards and Privileged Roles */}
+                      {guard.status === 'active' && canViewDocs && (
+                        <div className="bg-[#0A192F] rounded-xl shadow-lg border border-white/20 p-6 flex flex-col md:flex-row items-center justify-between gap-6 group hover:border-red-500/50 transition-all duration-500">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <ShieldAlert className="w-4 h-4 text-red-500" />
+                              <h3 className="text-xs font-black text-white uppercase tracking-widest">Deployment Control</h3>
+                            </div>
+                            <p className="text-[10px] font-bold text-white/60 uppercase tracking-tight">Active contract management and termination flow</p>
+                          </div>
+                          <button
+                            onClick={() => setIsTerminating(true)}
+                            className="w-full md:w-auto px-8 py-4 bg-red-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 border border-red-500/50 hover:shadow-red-500/20"
+                          >
+                            <AlertTriangle className="w-4 h-4" />
+                            Terminate Contract
+                          </button>
+                        </div>
+                      )}
 
                       {/* Personal Details */}
                       <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
@@ -522,6 +563,65 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                   title={viewer.title}
                 />
 
+                {/* Termination Confirmation Overlay */}
+                {isTerminating && (
+                  <div className="fixed inset-0 z-[10001] bg-[#0A192F]/95 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 md:p-10 animate-in zoom-in duration-300">
+                      <div className="flex items-center gap-4 mb-8 text-red-600">
+                        <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center">
+                          <AlertTriangle className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 leading-tight">Confirm<br />Termination</h3>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
+                        <p className="text-sm font-medium text-slate-600 leading-relaxed">
+                          You are about to terminate <strong className="text-slate-900">{guard.full_name}</strong>. This will:
+                        </p>
+                        <ul className="mt-3 space-y-2">
+                          <li className="flex items-start gap-2 text-xs font-bold text-slate-500 uppercase tracking-tight">
+                            <span className="text-red-500">•</span> Return guard to marketplace
+                          </li>
+                          <li className="flex items-start gap-2 text-xs font-bold text-slate-500 uppercase tracking-tight">
+                            <span className="text-red-500">•</span> Clear current site assignment
+                          </li>
+                          <li className="flex items-start gap-2 text-xs font-bold text-slate-500 uppercase tracking-tight">
+                            <span className="text-red-500">•</span> Preserve all historical performance
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div className="space-y-3 mb-10">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Reason for Termination</label>
+                        <textarea
+                          value={terminationReason}
+                          onChange={e => setTerminationReason(e.target.value)}
+                          className="w-full h-32 p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-500 text-sm font-medium transition-all"
+                          placeholder="E.g. Resignation, Project completion, Disciplinary issues..."
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                        <button
+                          onClick={handleTerminateSubmit}
+                          disabled={!terminationReason.trim() || isProcessingTermination}
+                          className="w-full py-4 bg-red-600 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-red-700 transition-all shadow-xl shadow-red-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isProcessingTermination ? 'Processing Termination...' : 'Confirm Termination'}
+                        </button>
+                        <button
+                          onClick={() => { setIsTerminating(false); setTerminationReason(''); }}
+                          disabled={isProcessingTermination}
+                          className="w-full py-4 bg-white border border-slate-200 text-slate-400 font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 transition-all active:scale-95"
+                        >
+                          Cancel Process
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </Dialog.Panel>
             </Transition.Child>
           </div>

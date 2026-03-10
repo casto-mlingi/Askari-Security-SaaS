@@ -2049,6 +2049,83 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    if (!reason) {
+      return res.status(400).json({ error: 'reason_required', detail: 'Reason for termination is required' });
+    }
+
+    await client.query('BEGIN');
+
+    const { rows } = await client.query('SELECT * FROM guards WHERE id = $1', [id]);
+    const guard = rows[0];
+
+    if (!guard) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'not_found' });
+    }
+
+    // Role check: super_admin, system_hr or company roles for the guard's company
+    let myCompanyId = actor.company_id || null;
+    if (!myCompanyId && actor?.sub) {
+      const { rows: meRows } = await client.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+      myCompanyId = meRows[0]?.company_id || null;
+    }
+
+    const isPrivileged = ['super_admin', 'system_hr'].includes(actor.role);
+    const isOwnerCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
+
+    if (!isPrivileged && !isOwnerCompany) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'forbidden', detail: 'Unauthorized to terminate this contract' });
+    }
+
+    // Return to marketplace and clear employment details
+    await client.query(
+      `UPDATE guards 
+       SET status = 'marketplace', 
+           company_id = NULL, 
+           current_site_id = NULL, 
+           assigned_supervisor_id = NULL,
+           agreed_salary = NULL,
+           contract_start_date = NULL,
+           contract_end_date = NULL,
+           has_signed_contract = false,
+           updated_at = now()
+       WHERE id = $1`,
+      [id]
+    );
+
+    // Log the termination event in interview_logs for historical audit
+    const uuid = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await client.query(
+      `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, created_at)
+       VALUES ($1, $2, $3, $4, 'terminated', $5::jsonb, now())`,
+      [
+        uuid,
+        id,
+        actor.sub || null,
+        guard.company_id || myCompanyId,
+        JSON.stringify({ termination_reason: reason })
+      ]
+    );
+
+    await client.query('COMMIT');
+    res.status(200).json({ success: true, message: 'Contract terminated successfully' });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { }
+    console.error('POST /api/guards/:id/terminate error', e);
+    res.status(500).json({ error: 'error', detail: e.message || String(e) });
+  } finally {
+    client.release();
+  }
+});
+
 // Update guard (partial). Also emits alert email when blacklisted.
 /* removed duplicate PATCH /api/guards/:id */
 
