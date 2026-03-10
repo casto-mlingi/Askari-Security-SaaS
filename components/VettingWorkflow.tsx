@@ -883,10 +883,10 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
           <div className="bg-slate-50 w-full max-w-5xl rounded-[2rem] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-white/20">
             {/* Premium Header */}
             <div className="relative p-6 md:p-8 bg-slate-900 text-white overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-3xl -mr-32 -mt-32"></div>
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -ml-24 -mb-24"></div>
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[100px] -mr-32 -mt-32 pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 rounded-full blur-[80px] -ml-24 -mb-24 pointer-events-none"></div>
 
-              <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div className="flex items-center gap-5">
                   <div className="relative">
                     <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center overflow-hidden shadow-inner">
@@ -901,16 +901,16 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight truncate">
+                    <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight">
                       {detailGuard.full_name}
                     </h3>
                     <div className="flex flex-wrap items-center gap-3 mt-2">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-white border border-white/10 uppercase tracking-widest leading-none">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white border border-white/20 uppercase tracking-widest leading-none">
                         NIDA: {detailGuard.nida_number}
                       </span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-widest leading-none ${detailGuard.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                        detailGuard.status === 'interviewing' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                          'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-widest leading-none ${detailGuard.status === 'active' ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' :
+                        detailGuard.status === 'interviewing' ? 'bg-blue-500/30 text-blue-300 border-blue-500/40' :
+                          'bg-slate-700/50 text-slate-300 border-slate-600'
                         }`}>
                         {String(detailGuard.status || 'Applied').replace('_', ' ')}
                       </span>
@@ -919,7 +919,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 </div>
                 <button
                   onClick={() => setDetailGuard(null)}
-                  className="absolute md:relative top-0 right-0 md:top-auto md:right-auto w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-all hover:rotate-90"
+                  className="absolute md:relative top-0 right-0 md:top-auto md:right-auto w-10 h-10 flex items-center justify-center bg-white/20 hover:bg-white/30 border border-white/20 rounded-xl text-white transition-all hover:rotate-90 shadow-lg"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -935,11 +935,11 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
                       <Fingerprint className="w-4 h-4" />
                     </div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Identity Info</h4>
+                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Identity Info</h4>
                   </div>
                   <div className="space-y-4 flex-1">
                     <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date of Birth</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date of Birth</p>
                       <p className="text-sm font-bold text-slate-900">{detailGuard.dob || '—'} ({safeAge(detailGuard.dob)} yrs)</p>
                     </div>
                     <div className="space-y-1">
@@ -962,7 +962,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
                       <Activity className="w-4 h-4" />
                     </div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ecosystem Metrics</h4>
+                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ecosystem Metrics</h4>
                   </div>
                   <div className="space-y-4 flex-1">
                     <div>
@@ -995,7 +995,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     <div className="p-2 bg-orange-50 rounded-xl text-orange-600">
                       <MapPin className="w-4 h-4" />
                     </div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Residence & Kin</h4>
+                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Residence & Kin</h4>
                   </div>
                   <div className="space-y-4 flex-1">
                     <div className="space-y-1">
@@ -1107,7 +1107,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                               ) : (
                                 <div key={li} className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 opacity-40 grayscale border border-slate-100">
                                   <FileText className="w-4 h-4" />
-                                  <span className="text-[8px] font-bold uppercase tracking-widest mt-1">N/A</span>
+                                  <span className="text-[8px] font-bold uppercase tracking-widest mt-1 text-slate-500">N/A</span>
                                 </div>
                               );
                             })}
@@ -1145,8 +1145,8 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                             <FileText className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs font-black text-slate-800 uppercase tracking-tight truncate">{doc.l}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{doc.u ? 'Ready for Audit' : 'Pending Upload'}</p>
+                            <p className="text-xs font-black text-slate-800 uppercase tracking-tight">{doc.l}</p>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{doc.u ? 'Ready for Audit' : 'Pending Upload'}</p>
                           </div>
                         </div>
                         {doc.u ? (
