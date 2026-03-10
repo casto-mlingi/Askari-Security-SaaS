@@ -51,6 +51,15 @@ const App: React.FC = () => {
       setIsInviteFlow(true);
     }
     const token = localStorage.getItem('amini_auth_token');
+    const savedUser = localStorage.getItem('amini_user');
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser);
+        setUser(u);
+      } catch (e) {
+        console.error('Failed to restore user session', e);
+      }
+    }
     setSession(token ? { access_token: token } : null);
   }, []);
 
@@ -386,6 +395,9 @@ const App: React.FC = () => {
     }
 
     setUser(finalUser);
+    if (finalUser) {
+      localStorage.setItem('amini_user', JSON.stringify(finalUser));
+    }
 
     if (finalUser && !('role' in finalUser)) {
       const g = finalUser as Guard;
@@ -445,6 +457,7 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       localStorage.removeItem('amini_auth_token');
+      localStorage.removeItem('amini_user');
     } catch { }
     setUser(null);
     setActiveTab('overview');

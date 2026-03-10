@@ -103,13 +103,20 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
     setIsProcessingTermination(true);
     try {
       const { api } = await import('../services/api');
-      await api.post(`/guards/${guard.id}/terminate`, { reason: terminationReason });
+      const res = await api.post(`/guards/${guard.id}/terminate`, { reason: terminationReason });
+
+      if (res.error) {
+        (window as any).showNotification?.('error', String(res.error));
+        return;
+      }
+
       setIsTerminating(false);
       setTerminationReason('');
+      (window as any).showNotification?.('success', 'Mkataba umesitishwa kwa ufanisi.');
       onTerminate?.();
     } catch (err) {
       console.error('Termination failed:', err);
-      alert('Kushindwa kusitisha mkataba. Tafadhali jaribu tena.');
+      (window as any).showNotification?.('error', 'Kushindwa kusitisha mkataba. Tafadhali jaribu tena.');
     } finally {
       setIsProcessingTermination(false);
     }
