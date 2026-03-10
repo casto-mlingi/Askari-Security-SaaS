@@ -192,45 +192,46 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 
     setIsProcessing(true);
 
-    let finalContractUrl = contractUrl || '';
     try {
-      if (contractUrl && contractUrl.startsWith('data:')) {
-        const parts = contractUrl.split(',');
-        const meta = parts[0] || '';
-        const b64 = parts[1] || '';
-        const contentTypeMatch = meta.match(/data:(.*?);/);
-        const contentType = (contentTypeMatch && contentTypeMatch[1]) || 'application/octet-stream';
-        const byteChars = atob(b64);
-        const byteNumbers = new Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: contentType });
-        const ext = contentType.includes('pdf') ? 'pdf' : (contentType.includes('png') ? 'png' : (contentType.includes('jpeg') ? 'jpg' : 'bin'));
-        const path = `contracts/${selectedGuard.id}-${Date.now()}.${ext}`;
-        finalContractUrl = finalContractUrl;
+      let finalContractUrl = contractUrl || '';
+      try {
+        if (contractUrl && contractUrl.startsWith('data:')) {
+          // Placeholder for future upload logic if needed, currently preserves URL
+          finalContractUrl = contractUrl;
+        }
+      } catch (e) {
+        console.warn("Contract URL processing failed:", e);
       }
-    } catch { }
 
-    const supervisorId = selectedSiteObj?.supervisor_id || deploymentSupervisor || '';
-    const terms = {
-      siteId: deploymentSite,
-      supervisorId,
-      salary: Number(salary),
-      startDate,
-      endDate,
-      contractUrl: finalContractUrl || 'generated_contract_v1.pdf',
-      signed: false,
-      interviewDate: hireInterviewDate || interviewDate || '',
-      interviewNotes: hireInterviewNotes || lockNote || ''
-    };
+      const supervisorId = selectedSiteObj?.supervisor_id || deploymentSupervisor || '';
+      const terms = {
+        siteId: deploymentSite,
+        supervisorId,
+        salary: Number(salary),
+        startDate,
+        endDate,
+        contractUrl: finalContractUrl || 'generated_contract_v1.pdf',
+        signed: false,
+        interviewDate: hireInterviewDate || interviewDate || '',
+        interviewNotes: hireInterviewNotes || lockNote || ''
+      };
 
-    await onFinalize(selectedGuard.id, 'pass', terms);
-    const siteName = selectedSiteObj?.name || 'Selected Site';
-    const supName = siteSupervisorProfile?.full_name || 'Assigned Supervisor';
-    (window as any).showNotification?.('success', `Guard successfully deployed to ${siteName} under Supervisor ${supName}.`);
-    setLastDeployment({ guard: selectedGuard, site: selectedSiteObj || null, supervisor: siteSupervisorProfile || null, contractUrl: finalContractUrl || '', interviewDate: terms.interviewDate, interviewNotes: terms.interviewNotes });
-    setHireSuccess(true);
-    setIsProcessing(false);
+      const success = await onFinalize(selectedGuard.id, 'pass', terms);
+
+      // If we got a return value from onFinalize, we can use it, otherwise assume handled by notifications
+      if (success !== false) {
+        const siteName = selectedSiteObj?.name || 'Selected Site';
+        const supName = siteSupervisorProfile?.full_name || 'Assigned Supervisor';
+        (window as any).showNotification?.('success', `Guard successfully deployed to ${siteName} under Supervisor ${supName}.`);
+        setLastDeployment({ guard: selectedGuard, site: selectedSiteObj || null, supervisor: siteSupervisorProfile || null, contractUrl: finalContractUrl || '', interviewDate: terms.interviewDate, interviewNotes: terms.interviewNotes });
+        setHireSuccess(true);
+      }
+    } catch (error) {
+      console.error("Error during hire submission:", error);
+      (window as any).showNotification?.('error', 'Deployment failed. Please check your connection and try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handlePrintDeploymentLetter = () => {

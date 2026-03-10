@@ -578,14 +578,14 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklisted', terms?: any, reason?: string) => {
+  const handleFinalizeVetting = async (guardId: string, result: 'pass' | 'fail' | 'blacklisted', terms?: any, reason?: string): Promise<boolean> => {
     try {
       try {
         const g = guards.find(x => x.id === guardId);
         const sc = Number((g as any)?.performance_score ?? 100);
         if (!Number.isNaN(sc) && sc < 5) {
           (window as any).showNotification?.('error', 'Blocked: Guard is blacklisted (score < 5).');
-          return;
+          return false;
         }
       } catch { }
       if (result === 'pass' && terms) {
@@ -593,7 +593,7 @@ const App: React.FC = () => {
         const siteId = terms.siteId || null;
         if (!siteId || !supervisorId) {
           (window as any).showNotification?.('error', 'Active requires Site and Supervisor');
-          return;
+          return false;
         }
         const computedCompanyId = dbCompanyId || userCompanyId || null;
         const updatePayload: any = {
@@ -612,12 +612,12 @@ const App: React.FC = () => {
         const result = await api.patch(`/guards/${guardId}`, updatePayload);
         if ((result as any)?.error) {
           (window as any).showNotification?.('error', String((result as any).error || 'Hire failed'));
-          return;
+          return false;
         }
         const data = result.data as any;
         if (!data) {
           (window as any).showNotification?.('error', 'Hire failed: No response from server');
-          return;
+          return false;
         } else {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
         }
@@ -637,6 +637,7 @@ const App: React.FC = () => {
         try {
           setSelectedGuardForAudit(null);
         } catch { }
+        return true;
       } else if (result === 'blacklisted') {
         const updatePayload = {
           status: 'blacklisted',
@@ -651,6 +652,7 @@ const App: React.FC = () => {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
           (window as any).showNotification?.('success', 'Applicant blacklisted.');
         }
+        return true;
       } else {
         const wantReinstate = String(reason || '').toLowerCase().includes('reinstate');
         const updatePayload = wantReinstate ? {
@@ -671,9 +673,11 @@ const App: React.FC = () => {
           setGuards(prev => prev.map(g => g.id === guardId ? { ...g, ...data } : g));
           (window as any).showNotification?.('success', wantReinstate ? 'Guard reinstated to Marketplace.' : 'Applicant returned to previous stage.');
         }
+        return true;
       }
     } catch (e) {
       console.error('Error finalizing vetting:', e);
+      return false;
     }
   };
 
