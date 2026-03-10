@@ -1021,6 +1021,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 </div>
               </div>
 
+
               {/* Education History Card */}
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
                 <div className="flex items-center gap-2 mb-6">
@@ -1059,6 +1060,50 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 ) : (
                   <div className="p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
                     <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">No academic records documented.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Professional Work History Card */}
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
+                    <Briefcase className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Professional Work History</h4>
+                </div>
+                {detailGuard.work_history?.length ? (
+                  <div className="space-y-4">
+                    {detailGuard.work_history.map((wh, idx) => (
+                      <div key={wh.id || idx} className="p-5 bg-slate-50 rounded-2xl border border-transparent hover:border-blue-200 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-400">
+                            <Briefcase className="w-5 h-5 opacity-40" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-slate-900 uppercase tracking-tight truncate">{wh.company_name || '—'}</p>
+                            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">{wh.role || '—'}</p>
+                            <div className="flex items-center gap-2 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              <Calendar className="w-3 h-3" />
+                              <span>{wh.start_date || '—'} – {wh.end_date || 'Present'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        {wh.recommendation_letter_url && (
+                          <button
+                            onClick={() => handleViewDocument(wh.recommendation_letter_url, `Recommendation Letter - ${wh.company_name}`)}
+                            className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm text-[10px] font-black uppercase text-slate-600 hover:text-blue-600 transition-all border border-slate-100"
+                          >
+                            <FileCheck className="w-4 h-4" />
+                            View Letter
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                    <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">No professional history documented.</p>
                   </div>
                 )}
               </div>
@@ -1186,42 +1231,72 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Decision Modal */}
-      {selectedGuard && (
-        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-            <div className="p-8 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <div>
-                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
-                  {decisionMode === 'hire' ? 'Deployment Contract' : decisionMode === 'reject' ? 'Rejection Process' : 'Applicant Review'}
-                </h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                  Target: {selectedGuard.full_name}
-                </p>
+      {
+        selectedGuard && (
+          <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+              <div className="p-8 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                    {decisionMode === 'hire' ? 'Deployment Contract' : decisionMode === 'reject' ? 'Rejection Process' : 'Applicant Review'}
+                  </h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                    Target: {selectedGuard.full_name}
+                  </p>
+                </div>
+                <button onClick={() => { setSelectedGuard(null); resetForm(); }} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors">✕</button>
               </div>
-              <button onClick={() => { setSelectedGuard(null); resetForm(); }} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors">✕</button>
-            </div>
 
-            <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
-              {decisionMode === 'view' && (
-                <div className="space-y-6">
-                  {isPrivileged && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Select Company</label>
-                        <select
-                          value={selectedCompanyId}
-                          onChange={e => setSelectedCompanyId(e.target.value)}
-                          className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary"
-                        >
-                          <option value="">-- Choose Company --</option>
-                          {companies.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+              <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
+                {decisionMode === 'view' && (
+                  <div className="space-y-6">
+                    {isPrivileged && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Select Company</label>
+                          <select
+                            value={selectedCompanyId}
+                            onChange={e => setSelectedCompanyId(e.target.value)}
+                            className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary"
+                          >
+                            <option value="">-- Choose Company --</option>
+                            {companies.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
+                          <input
+                            type="datetime-local"
+                            value={interviewDate}
+                            onChange={e => setInterviewDate(e.target.value)}
+                            className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                          />
+                        </div>
                       </div>
+                    )}
+                    <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                      <p className="text-sm font-bold text-blue-800 mb-2">Locking Policy</p>
+                      <p className="text-xs text-blue-600 leading-relaxed">
+                        By locking this applicant, you reserve them for your company's exclusive interview process.
+                        They will be removed from the public marketplace.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Internal Note (Optional)</label>
+                      <textarea
+                        value={lockNote}
+                        onChange={e => setLockNote(e.target.value)}
+                        className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary text-sm font-medium"
+                        placeholder="E.g. Candidate fits the profile for the Downtown Bank site..."
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
                         <input
@@ -1231,191 +1306,164 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                           className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
                         />
                       </div>
-                    </div>
-                  )}
-                  <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
-                    <p className="text-sm font-bold text-blue-800 mb-2">Locking Policy</p>
-                    <p className="text-xs text-blue-600 leading-relaxed">
-                      By locking this applicant, you reserve them for your company's exclusive interview process.
-                      They will be removed from the public marketplace.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Internal Note (Optional)</label>
-                    <textarea
-                      value={lockNote}
-                      onChange={e => setLockNote(e.target.value)}
-                      className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary text-sm font-medium"
-                      placeholder="E.g. Candidate fits the profile for the Downtown Bank site..."
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
-                      <input
-                        type="datetime-local"
-                        value={interviewDate}
-                        onChange={e => setInterviewDate(e.target.value)}
-                        className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Location</label>
-                      <input
-                        type="text"
-                        value={interviewLocation}
-                        onFocus={ensureDefaultLocation}
-                        onChange={e => setInterviewLocation(e.target.value)}
-                        className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
-                        placeholder={defaultCompanyAddress || 'Company Office'}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {decisionMode === 'hire' && (
-                <div className="space-y-6">
-                  {hireSuccess ? (
-                    <div className="space-y-4">
-                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-700 text-xs font-medium">
-                        Deployment completed successfully. You can now print the Deployment Letter.
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Assign Site</label>
-                          <select value={deploymentSite} onChange={e => setDeploymentSite(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary">
-                            <option value="">-- Select Site --</option>
-                            {(
-                              (isPrivileged || !selectedGuard?.company_id)
-                                ? sites
-                                : sites.filter(s => String(s.company_id || '') === String(selectedGuard.company_id || ''))
-                            ).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Supervisor</label>
-                          <select value={deploymentSupervisor} onChange={e => setDeploymentSupervisor(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary">
-                            <option value="">-- Select Supervisor --</option>
-                            {(
-                              (isPrivileged || !selectedGuard?.company_id)
-                                ? supervisors
-                                : supervisors.filter(p => String(p.company_id || '') === String(selectedGuard.company_id || ''))
-                            ).map(p => (
-                              <option key={p.id} value={p.id}>{p.full_name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Monthly Salary (TZS)</label>
-                          <input type="number" value={salary} onChange={e => setSalary(Number(e.target.value))} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Contract Start</label>
-                          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary" />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
-                          <input
-                            type="datetime-local"
-                            value={hireInterviewDate}
-                            onChange={e => setHireInterviewDate(e.target.value)}
-                            className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Notes</label>
-                          <textarea
-                            value={hireInterviewNotes}
-                            onChange={e => setHireInterviewNotes(e.target.value)}
-                            className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
-                            placeholder="Summary of interview outcome and remarks"
-                          />
-                        </div>
-                      </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Employment Contract</label>
-                        <FileUploader label="Upload Signed PDF" fileUrl={contractUrl} onUpload={setContractUrl} onRemove={() => setContractUrl('')} className="!h-24" />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Location</label>
+                        <input
+                          type="text"
+                          value={interviewLocation}
+                          onFocus={ensureDefaultLocation}
+                          onChange={e => setInterviewLocation(e.target.value)}
+                          className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                          placeholder={defaultCompanyAddress || 'Company Office'}
+                        />
                       </div>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {decisionMode === 'reject' && (
-                <div className="space-y-6">
-                  <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-xs font-medium">
-                    Rejecting this applicant will release them back to the Marketplace for other companies.
-                    Blacklisting will permanently ban them from the platform.
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Reason for Rejection</label>
-                    <textarea
-                      value={rejectionReason}
-                      onChange={e => setRejectionReason(e.target.value)}
-                      className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary text-sm font-medium"
-                      placeholder="E.g. Failed physical fitness test, incomplete documentation..."
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-              {decisionMode === 'view' ? (
-                <button onClick={handleLockSubmit} className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95">
-                  {isPrivileged ? 'Call for Interview' : 'Confirm Lock'}
-                </button>
-              ) : decisionMode === 'hire' ? (
-                <>
-                  {!hireSuccess ? (
-                    <button
-                      onClick={handleHireSubmit}
-                      disabled={isProcessing}
-                      className="w-full py-4 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-xl active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: '#2171B5' }}
-                    >
-                      {isProcessing ? 'Deploying…' : 'Hire & Deploy'}
-                    </button>
-                  ) : (
-                    <div className="flex gap-3 w-full">
-                      <button onClick={handlePrintDeploymentLetter} className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95">
-                        Print Deployment Letter
-                      </button>
-                      <button onClick={() => { setHireSuccess(false); setSelectedGuard(null); resetForm(); }} className="flex-1 py-4 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all">
-                        Close
-                      </button>
                     </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <button onClick={() => handleRejectSubmit(false)} className="flex-1 py-4 bg-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-300 transition-all">
-                    Release to Pool
+                  </div>
+                )}
+
+                {decisionMode === 'hire' && (
+                  <div className="space-y-6">
+                    {hireSuccess ? (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-700 text-xs font-medium">
+                          Deployment completed successfully. You can now print the Deployment Letter.
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Assign Site</label>
+                            <select value={deploymentSite} onChange={e => setDeploymentSite(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary">
+                              <option value="">-- Select Site --</option>
+                              {(
+                                (isPrivileged || !selectedGuard?.company_id)
+                                  ? sites
+                                  : sites.filter(s => String(s.company_id || '') === String(selectedGuard.company_id || ''))
+                              ).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Supervisor</label>
+                            <select value={deploymentSupervisor} onChange={e => setDeploymentSupervisor(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-primary">
+                              <option value="">-- Select Supervisor --</option>
+                              {(
+                                (isPrivileged || !selectedGuard?.company_id)
+                                  ? supervisors
+                                  : supervisors.filter(p => String(p.company_id || '') === String(selectedGuard.company_id || ''))
+                              ).map(p => (
+                                <option key={p.id} value={p.id}>{p.full_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Monthly Salary (TZS)</label>
+                            <input type="number" value={salary} onChange={e => setSalary(Number(e.target.value))} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Contract Start</label>
+                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Date</label>
+                            <input
+                              type="datetime-local"
+                              value={hireInterviewDate}
+                              onChange={e => setHireInterviewDate(e.target.value)}
+                              className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Interview Notes</label>
+                            <textarea
+                              value={hireInterviewNotes}
+                              onChange={e => setHireInterviewNotes(e.target.value)}
+                              className="w-full h-14 px-4 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-primary"
+                              placeholder="Summary of interview outcome and remarks"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Employment Contract</label>
+                          <FileUploader label="Upload Signed PDF" fileUrl={contractUrl} onUpload={setContractUrl} onRemove={() => setContractUrl('')} className="!h-24" />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {decisionMode === 'reject' && (
+                  <div className="space-y-6">
+                    <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-xs font-medium">
+                      Rejecting this applicant will release them back to the Marketplace for other companies.
+                      Blacklisting will permanently ban them from the platform.
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Reason for Rejection</label>
+                      <textarea
+                        value={rejectionReason}
+                        onChange={e => setRejectionReason(e.target.value)}
+                        className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary text-sm font-medium"
+                        placeholder="E.g. Failed physical fitness test, incomplete documentation..."
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
+                {decisionMode === 'view' ? (
+                  <button onClick={handleLockSubmit} className="w-full py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95">
+                    {isPrivileged ? 'Call for Interview' : 'Confirm Lock'}
                   </button>
-                  <button onClick={() => handleRejectSubmit(true)} className="flex-1 py-4 bg-red-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all shadow-xl">
-                    Blacklist Permanently
-                  </button>
-                </>
-              )}
+                ) : decisionMode === 'hire' ? (
+                  <>
+                    {!hireSuccess ? (
+                      <button
+                        onClick={handleHireSubmit}
+                        disabled={isProcessing}
+                        className="w-full py-4 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-xl active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                        style={{ backgroundColor: '#2171B5' }}
+                      >
+                        {isProcessing ? 'Deploying…' : 'Hire & Deploy'}
+                      </button>
+                    ) : (
+                      <div className="flex gap-3 w-full">
+                        <button onClick={handlePrintDeploymentLetter} className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95">
+                          Print Deployment Letter
+                        </button>
+                        <button onClick={() => { setHireSuccess(false); setSelectedGuard(null); resetForm(); }} className="flex-1 py-4 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all">
+                          Close
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => handleRejectSubmit(false)} className="flex-1 py-4 bg-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-300 transition-all">
+                      Release to Pool
+                    </button>
+                    <button onClick={() => handleRejectSubmit(true)} className="flex-1 py-4 bg-red-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all shadow-xl">
+                      Blacklist Permanently
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
       <DocumentViewerDialog
         isOpen={viewer.isOpen}
         onClose={() => setViewer(prev => ({ ...prev, isOpen: false }))}
         url={viewer.url}
         title={viewer.title}
       />
-    </div>
+    </div >
   );
 };
 

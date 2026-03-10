@@ -328,6 +328,39 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                         )}
                       </section>
 
+                      {/* Work History */}
+                      <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
+                        <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                          <div className="p-2 bg-[#0A192F]/5 rounded-lg text-[#0A192F]">
+                            <Briefcase className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black text-[#0A192F] uppercase tracking-[0.15em]">Work History</h3>
+                        </div>
+
+                        {Array.isArray(guard.work_history) && guard.work_history.length > 0 ? (
+                          <div className="space-y-4">
+                            {guard.work_history.map(wh => (
+                              <div key={wh.id} className="p-5 bg-slate-50 border border-slate-100 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                  <p className="text-sm font-bold text-slate-800 uppercase tracking-tight">{wh.company_name}</p>
+                                  <p className="text-xs font-medium text-slate-500 mt-1">{wh.role} • <span className="text-slate-700 font-bold">{wh.start_date || '—'} – {wh.end_date || 'Present'}</span></p>
+                                </div>
+                                {wh.recommendation_letter_url && (
+                                  <button
+                                    onClick={() => openViewer(wh.recommendation_letter_url!, `Rec. Letter: ${wh.company_name}`)}
+                                    className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline"
+                                  >
+                                    View Letter
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-medium text-slate-400 italic">No previous work history found.</p>
+                        )}
+                      </section>
+
                       {/* Documents Section */}
                       <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
                         <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
@@ -410,6 +443,18 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                                 </button>
                               </div>
                             ))}
+
+                            {guard.work_history?.map((wh) => wh.recommendation_letter_url && (
+                              <div key={wh.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Rec. Letter: ${wh.company_name}`}</span>
+                                <button
+                                  onClick={() => openViewer(wh.recommendation_letter_url!, `Rec. Letter: ${wh.company_name}`)}
+                                  className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
+                                >
+                                  View
+                                </button>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <div className="p-12 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center text-center">
@@ -482,7 +527,7 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
           </div>
         </div>
       </Dialog>
-    </Transition>
+    </Transition >
   );
 };
 
