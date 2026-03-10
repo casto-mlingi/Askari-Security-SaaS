@@ -72,9 +72,18 @@ const app = express();
 
 // --- CRITICAL: STORAGE PERSISTENCE & MIDDLEWARE ORDER ---
 // Strictly use /app/uploads for production (Coolify persistent volume)
-const uploadsDir = process.env.NODE_ENV === 'production'
-  ? '/app/uploads'
-  : path.resolve(__dirname, '..', 'uploads');
+const productionUploads = '/app/uploads';
+const localUploads = path.resolve(__dirname, '..', 'uploads');
+
+let uploadsDir = localUploads;
+if (process.env.NODE_ENV === 'production') {
+  if (fs.existsSync(productionUploads)) {
+    uploadsDir = productionUploads;
+  } else {
+    console.warn(`UPLOADS: ${productionUploads} not found, falling back to ${localUploads}`);
+    uploadsDir = localUploads;
+  }
+}
 
 try {
   if (!fs.existsSync(uploadsDir)) {
