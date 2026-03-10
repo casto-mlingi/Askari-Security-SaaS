@@ -455,108 +455,114 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   <div
                     key={guard.id}
                     onClick={() => setDetailGuard(guard)}
-                    className="text-left bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className="group relative flex flex-col bg-slate-950/60 backdrop-blur-3xl p-8 rounded-[3rem] border border-white/10 shadow-2xl hover:shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all duration-500 cursor-pointer overflow-hidden"
                   >
-                    <div className="flex justify-between items-start mb-6">
-                      <div className="flex items-center gap-4">
-                        <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-14 h-14 rounded-full object-cover border border-slate-200" />
+                    {/* Background Decorative Gradient */}
+                    <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/20 blur-[80px] rounded-full group-hover:bg-primary/30 transition-colors" />
+
+                    <div className="relative flex justify-between items-start mb-8">
+                      <div className="flex items-center gap-5">
+                        <div className="relative">
+                          <AvatarImage
+                            filename={guard.passport_photo_url}
+                            alt={guard.full_name}
+                            fallbackLetter={guard.full_name?.[0] || 'G'}
+                            className="w-16 h-16 rounded-3xl object-cover border-2 border-emerald-500/50 p-0.5 shadow-lg shadow-emerald-500/20"
+                          />
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-slate-950 flex items-center justify-center">
+                            <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                          </div>
+                        </div>
                         <div>
-                          <h4 className="font-black text-slate-900 uppercase tracking-tight text-lg leading-none">
+                          <h4 className="font-black text-white uppercase tracking-tight text-xl leading-tight group-hover:text-emerald-400 transition-colors">
                             {guard.full_name}
-                            {Array.isArray(guard.security_training) && guard.security_training.includes('k9_handler') && (
-                              <span className="ml-2" title="K-9 Handler">🐕</span>
-                            )}
-                            {Array.isArray(guard.security_training) && guard.security_training.includes('fire_safety') && (
-                              <span className="ml-1" title="Fire Safety">🔥</span>
-                            )}
                             {((guard.education_history || []).some(e => (e.level || '').toLowerCase().includes('military') || (e.level || '').toLowerCase().includes('police') || (e.level || '').toLowerCase().includes('jkt') || e.weapon_proficiency === 'pass')) && (
-                              <span className="ml-2" aria-hidden="true">🔫</span>
-                            )}
-                            {guard.security_level && (
-                              <span
-                                className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border ${(guard.security_level || '').toLowerCase() === 'armed'
-                                  ? 'bg-red-50 text-red-600 border-red-100'
-                                  : (guard.security_level || '').toLowerCase() === 'elite'
-                                    ? 'bg-purple-50 text-purple-600 border-purple-100'
-                                    : (guard.security_level || '').toLowerCase() === 'supervisor'
-                                      ? 'bg-blue-50 text-blue-600 border-blue-100'
-                                      : 'bg-slate-50 text-slate-600 border-slate-100'
-                                  }`}
-                              >
-                                {(guard.security_level || '').toString().toUpperCase()}
-                              </span>
+                              <span className="ml-2 text-sm" aria-hidden="true" title="Tactical Training">⚔️</span>
                             )}
                           </h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest text-white border" style={{ backgroundColor: '#2171B5', borderColor: '#2171B5' }}>
-                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 6L9 17l-5-5" strokeWidth="3" /></svg>
-                              Verified by System HR
-                            </span>
-                            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">Readiness</span>
-                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest ${((typeof guard.readiness_score === 'number' ? guard.readiness_score : 0) || 0) < 80 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                              {(typeof guard.readiness_score === 'number' ? guard.readiness_score : 0)}%
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-400/10 border border-emerald-400/20">
+                              <span className="w-1 h-1 bg-emerald-400 rounded-full" />
+                              System Verified
                             </span>
                           </div>
                         </div>
                       </div>
-                      <div className="relative">
-                        <div className="group/tt inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-50 text-slate-500 border border-slate-200">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" strokeWidth="2" /></svg>
-                        </div>
-                        <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-4 text-xs hidden group-hover/tt:block z-20">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Documents</p>
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between"><span>NIDA</span><span className={(guard.nida_front_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.nida_front_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Police Clearance</span><span className={(guard.police_clearance_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.police_clearance_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Medical Report</span><span className={((guard as any)?.medical_report_url || (guard as any)?.dossier_data?.medical_report_url ? 'text-emerald-600' : 'text-slate-400')}>{((guard as any)?.medical_report_url || (guard as any)?.dossier_data?.medical_report_url) ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Application Letter</span><span className={(guard.application_letter_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.application_letter_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Birth Certificate</span><span className={(guard.birth_cert_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.birth_cert_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Residence Letter</span><span className={(guard.residence_letter_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.residence_letter_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Passport Photo</span><span className={(guard.passport_photo_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.passport_photo_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>CV</span><span className={(guard.cv_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.cv_url ? '✓' : '—'}</span></div>
-                            <div className="flex items-center justify-between"><span>Previous Employer Letter</span><span className={(guard.previous_employer_letter_url ? 'text-emerald-600' : 'text-slate-400')}>{guard.previous_employer_letter_url ? '✓' : '—'}</span></div>
-                          </div>
+
+                      {/* Circular Readiness Indicator */}
+                      <div className="relative w-16 h-16 flex items-center justify-center shrink-0">
+                        <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
+                          <circle className="text-white/5" strokeWidth="8" stroke="currentColor" fill="transparent" r="40" cx="50" cy="50" />
+                          <circle
+                            className="text-emerald-500 transition-all duration-1000 ease-out"
+                            strokeWidth="8"
+                            strokeDasharray={251.2}
+                            strokeDashoffset={251.2 - (251.2 * (guard.readiness_score || 0)) / 100}
+                            strokeLinecap="round"
+                            stroke="currentColor"
+                            fill="transparent"
+                            r="40"
+                            cx="50"
+                            cy="50"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                          <span className="text-lg font-black text-white font-hud">{guard.readiness_score || 0}</span>
+                          <span className="text-[6px] font-black text-white/40 uppercase tracking-tighter">Readiness</span>
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-4 mb-8">
-                      <div className="flex justify-between border-b border-slate-50 py-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Age</span>
-                        <span className="text-xs font-bold text-slate-700">{safeAge(guard.dob)}</span>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-3 gap-3 mb-8">
+                      <div className="bg-white/5 p-4 rounded-3xl border border-white/5 flex flex-col items-center">
+                        <span className="text-[7px] font-black text-white/40 uppercase tracking-widest mb-1">Age</span>
+                        <span className="text-xs font-black text-white">{safeAge(guard.dob).replace(' Years', '')}</span>
                       </div>
-                      <div className="flex justify-between border-b border-slate-50 py-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Education</span>
-                        <span className="text-xs font-bold text-slate-700">{guard.education_history[0]?.level?.replace('_', ' ') || 'None'}</span>
+                      <div className="bg-white/5 p-4 rounded-3xl border border-white/5 flex flex-col items-center">
+                        <span className="text-[7px] font-black text-white/40 uppercase tracking-widest mb-1">Edu</span>
+                        <span className="text-[10px] font-black text-white truncate w-full text-center">{guard.education_history[0]?.level?.slice(0, 7) || 'None'}</span>
                       </div>
-                      <div className="flex justify-between border-b border-slate-50 py-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
-                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-2 py-0.5 rounded">Available</span>
+                      <div className="bg-white/5 p-4 rounded-3xl border border-white/5 flex flex-col items-center">
+                        <span className="text-[7px] font-black text-white/40 uppercase tracking-widest mb-1">Status</span>
+                        <span className="text-[8px] font-black text-emerald-400 uppercase">Available</span>
                       </div>
-                      <div className="flex justify-between py-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Documents</span>
-                        <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded">
-                          {[
-                            guard.application_letter_url,
-                            guard.nida_front_url,
-                            guard.birth_cert_url,
-                            guard.residence_letter_url
-                          ].filter(Boolean).length} core • {guard.education_history.filter(e => !!e.certificate_url).length} edu • {guard.guarantors.filter(g => g.letter_url && g.residence_letter_url).length} guarantors
+                    </div>
+
+                    {/* Certifications row */}
+                    <div className="flex flex-wrap gap-2 mb-8">
+                      {[
+                        { label: 'NIDA', ok: !!guard.nida_front_url },
+                        { label: 'Police', ok: !!guard.police_clearance_url },
+                        { label: 'Medical', ok: !!((guard as any)?.medical_report_url || (guard as any)?.dossier_data?.medical_report_url) },
+                        { label: 'CV', ok: !!guard.cv_url }
+                      ].filter(d => d.ok).map((d, idx) => (
+                        <span key={idx} className="px-2 py-1 bg-white/5 text-[7px] font-black text-white/60 uppercase tracking-widest rounded-lg border border-white/5">
+                          {d.label} ✓
                         </span>
-                      </div>
+                      ))}
+                      <span className="px-2 py-1 bg-white/5 text-[7px] font-black text-white/60 uppercase tracking-widest rounded-lg border border-white/5">
+                        {guard.guarantors.length} Guarantors
+                      </span>
                     </div>
-                    <div className="flex gap-3">
-                      <div
-                        onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
-                        className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95 text-center"
-                      >
-                        {isPrivileged ? 'Start Interview' : 'Review & Lock'}
-                      </div>
+
+                    <div className="flex flex-col gap-3 mt-auto">
                       <button
                         onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
-                        className="flex-1 py-4 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 text-center"
-                        style={{ backgroundColor: '#2171B5' }}
+                        className="group/btn relative w-full overflow-hidden py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] text-white transition-all shadow-xl shadow-emerald-500/10 active:scale-95"
                       >
-                        Hire & Deploy
+                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 group-hover/btn:from-emerald-500 group-hover/btn:to-teal-400" />
+                        <span className="relative flex items-center justify-center gap-2">
+                          Hire & Deploy Professional
+                          <svg className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" strokeWidth="3" /></svg>
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
+                        className="group/btnrelative w-full py-4 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-white/10 transition-all active:scale-95"
+                      >
+                        {isPrivileged ? 'Review & Interview' : 'Lock Account'}
                       </button>
                     </div>
                   </div>
@@ -572,12 +578,13 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   <div
                     key={guard.id}
                     onClick={() => setDetailGuard(guard)}
-                    className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 flex items-center justify-between gap-6 cursor-pointer"
+                    className="group w-full text-left bg-slate-950/60 backdrop-blur-2xl p-6 rounded-[2rem] border border-white/10 shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-between gap-6 cursor-pointer overflow-hidden relative"
                   >
+                    <div className="absolute inset-y-0 left-0 w-1 bg-emerald-500/50 group-hover:w-2 transition-all" />
                     <div className="flex items-center gap-4">
                       <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
                       <div>
-                        <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">
+                        <h4 className="font-black text-white uppercase tracking-tight leading-none group-hover:text-emerald-400 transition-colors">
                           {guard.full_name}
                           {((guard.education_history || []).some(e => (e.level || '').toLowerCase().includes('military') || (e.level || '').toLowerCase().includes('police') || (e.level || '').toLowerCase().includes('jkt') || e.weapon_proficiency === 'pass')) && (
                             <span className="ml-2" aria-hidden="true">🔫</span>
@@ -607,8 +614,8 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                               {(guard.security_level || '').toString().toUpperCase()}
                             </span>
                           )}
-                          <span className="text-emerald-600 bg-emerald-50 px-2 rounded">Available</span>
-                          <span className="text-slate-700 bg-slate-50 px-2 rounded">
+                          <span className="text-emerald-400 bg-emerald-400/10 px-2 rounded">Available</span>
+                          <span className="text-white/60 bg-white/5 px-2 rounded border border-white/5">
                             Docs {[
                               guard.application_letter_url,
                               guard.nida_front_url,
