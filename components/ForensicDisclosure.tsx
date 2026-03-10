@@ -150,15 +150,30 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                     <p className="text-xs font-mono font-medium text-white/70 mt-1 tracking-widest uppercase">
                       NIDA: {guard.nida_number || 'NOT DISCLOSED'}
                     </p>
+                    <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mt-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Forensic System Snapshot: {new Date().toLocaleString()}
+                    </p>
                   </div>
 
-                  <button
-                    onClick={onClose}
-                    className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors focus:outline-none"
-                    aria-label="Close dialog"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {guard.status === 'active' && canViewDocs && (
+                      <button
+                        onClick={() => setIsTerminating(true)}
+                        className="px-6 py-2.5 bg-red-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all shadow-lg active:scale-95 flex items-center gap-2 border border-red-500/50"
+                      >
+                        <AlertTriangle className="w-4 h-4" />
+                        Terminate Contract
+                      </button>
+                    )}
+                    <button
+                      onClick={onClose}
+                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors focus:outline-none"
+                      aria-label="Close dialog"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Tabs */}
@@ -217,25 +232,6 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                         </div>
                       </div>
 
-                      {/* Contract Termination Section - Only for Active Guards and Privileged Roles */}
-                      {guard.status === 'active' && canViewDocs && (
-                        <div className="bg-[#0A192F] rounded-xl shadow-lg border border-white/20 p-6 flex flex-col md:flex-row items-center justify-between gap-6 group hover:border-red-500/50 transition-all duration-500">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <ShieldAlert className="w-4 h-4 text-red-500" />
-                              <h3 className="text-xs font-black text-white uppercase tracking-widest">Deployment Control</h3>
-                            </div>
-                            <p className="text-[10px] font-bold text-white/60 uppercase tracking-tight">Active contract management and termination flow</p>
-                          </div>
-                          <button
-                            onClick={() => setIsTerminating(true)}
-                            className="w-full md:w-auto px-8 py-4 bg-red-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 border border-red-500/50 hover:shadow-red-500/20"
-                          >
-                            <AlertTriangle className="w-4 h-4" />
-                            Terminate Contract
-                          </button>
-                        </div>
-                      )}
 
                       {/* Personal Details */}
                       <section className="bg-white rounded-xl shadow-md border border-slate-200 p-6 md:p-8">
