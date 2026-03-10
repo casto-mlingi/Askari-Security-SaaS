@@ -228,6 +228,8 @@ export interface Guard {
   cv_url?: string;
   passport_photo_url?: string;
   previous_employer_letter_url?: string;
+  guarantor_letter_url?: string;
+  bank_account_form_url?: string;
 
   agreed_salary?: number;
   contract_start_date?: string;

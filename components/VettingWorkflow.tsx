@@ -6,6 +6,12 @@ import FileUploader from './FileUploader';
 import { api } from '../services/api';
 import AvatarImage from './AvatarImage';
 import DocumentViewerDialog from './DocumentViewerDialog';
+import {
+  X, User, Fingerprint, Calendar, MapPin, Phone,
+  Activity, Award, Shield, Users, FileText,
+  FileCheck, Info, ExternalLink, Briefcase, GraduationCap,
+  CreditCard, ClipboardCheck, AlertCircle
+} from 'lucide-react';
 
 interface VettingWorkflowProps {
   guards: Guard[];
@@ -390,29 +396,6 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     setViewer({ isOpen: true, url: fullUrl, title });
   };
 
-  const renderDocLink = (label: string, url?: string) => {
-    const trimmed = (url || '').trim();
-    return (
-      <div className="flex items-center justify-between gap-4 border-b border-slate-100 py-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-          <p className="text-xs font-medium text-slate-600 truncate">{trimmed || 'Not provided'}</p>
-        </div>
-        {trimmed ? (
-          <button
-            onClick={() => handleViewDocument(trimmed, label)}
-            className="shrink-0 px-4 py-2 bg-white border border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all"
-          >
-            View
-          </button>
-        ) : (
-          <span className="shrink-0 px-4 py-2 bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl border border-slate-100">
-            —
-          </span>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-24 animate-in fade-in duration-500">
@@ -896,179 +879,308 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 
       {/* Applicant Details Modal */}
       {detailGuard && (
-        <div className="fixed inset-0 z-[1190] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-            <div className="p-8 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <div className="min-w-0">
-                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter truncate">
-                  Applicant Details
-                </h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 truncate">
-                  {detailGuard.full_name} • {detailGuard.nida_number}
-                </p>
+        <div className="fixed inset-0 z-[1190] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 md:p-6 animate-in fade-in zoom-in duration-300">
+          <div className="bg-slate-50 w-full max-w-5xl rounded-[2rem] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-white/20">
+            {/* Premium Header */}
+            <div className="relative p-6 md:p-8 bg-slate-900 text-white overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-3xl -mr-32 -mt-32"></div>
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -ml-24 -mb-24"></div>
+
+              <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-5">
+                  <div className="relative">
+                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center overflow-hidden shadow-inner">
+                      {detailGuard.passport_photo_url ? (
+                        <AvatarImage src={detailGuard.passport_photo_url} alt={detailGuard.full_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-10 h-10 text-white/40" />
+                      )}
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
+                      <Shield className="w-3 h-3 text-white" />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight truncate">
+                      {detailGuard.full_name}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-3 mt-2">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-white border border-white/10 uppercase tracking-widest leading-none">
+                        NIDA: {detailGuard.nida_number}
+                      </span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-widest leading-none ${detailGuard.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                        detailGuard.status === 'interviewing' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                          'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                        }`}>
+                        {String(detailGuard.status || 'Applied').replace('_', ' ')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setDetailGuard(null)}
+                  className="absolute md:relative top-0 right-0 md:top-auto md:right-auto w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-all hover:rotate-90"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                onClick={() => setDetailGuard(null)}
-                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors"
-              >
-                ✕
-              </button>
             </div>
 
-            <div className="p-8 overflow-y-auto custom-scrollbar space-y-10">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Identity</h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.full_name}</span>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 space-y-8">
+              {/* Core Information Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Identity Card */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
+                      <Fingerprint className="w-4 h-4" />
                     </div>
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NIDA</span>
-                      <span className="text-xs font-bold text-slate-800 text-right font-mono">{detailGuard.nida_number}</span>
-                    </div>
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DOB / Age</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.dob || '—'} • {safeAge(detailGuard.dob)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Physical Address</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">
-                        {(detailGuard as any)?.physical_address || (detailGuard as any)?.dossier_data?.physical_address || '—'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.phone || '—'}</span>
-                    </div>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Identity Info</h4>
                   </div>
-                </div>
-
-                <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Status & Flags</h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Application</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{String((detailGuard as any)?.status || '').replace('_', ' ') || '—'}</span>
+                  <div className="space-y-4 flex-1">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date of Birth</p>
+                      <p className="text-sm font-bold text-slate-900">{detailGuard.dob || '—'} ({safeAge(detailGuard.dob)} yrs)</p>
                     </div>
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Score</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.profile_score}%</span>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gender</p>
+                      <p className="text-sm font-bold text-slate-900 uppercase">{detailGuard.gender || '—'}</p>
                     </div>
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Armed</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.is_armed ? 'Yes' : 'No'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Residence</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">
-                        {typeof detailGuard.residence_lat === 'number' && typeof detailGuard.residence_lng === 'number'
-                          ? `${detailGuard.residence_lat.toFixed(5)}, ${detailGuard.residence_lng.toFixed(5)}`
-                          : '—'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Next of Kin</h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Name</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.next_of_kin_name || '—'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4 border-b border-slate-100 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.next_of_kin_phone || '—'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4 py-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Relationship</span>
-                      <span className="text-xs font-bold text-slate-800 text-right">{detailGuard.next_of_kin_relationship || '—'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Education History</h4>
-                  {((detailGuard as any)?.education || detailGuard.education_history || [])?.length ? (
-                    <div className="overflow-hidden border border-slate-100 rounded-xl">
-                      <div className="grid grid-cols-5 gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100">
-                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">School Name</div>
-                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Qualification</div>
-                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Start Date</div>
-                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">End Date</div>
-                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Certificate</div>
+                    <div className="space-y-1 pt-2 border-t border-slate-50">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact Number</p>
+                      <div className="flex items-center gap-2 text-slate-900">
+                        <Phone className="w-3 h-3 text-slate-400" />
+                        <span className="text-sm font-bold">{detailGuard.phone || '—'}</span>
                       </div>
-                      {(((detailGuard as any)?.education as any[]) || detailGuard.education_history).map((e: any, idx: number) => (
-                        <div key={`${e.id || 'row'}-${idx}`} className="grid grid-cols-5 gap-2 px-4 py-3 border-b border-slate-100 last:border-b-0">
-                          <div className="text-xs font-bold text-slate-800 truncate">{e.institution_name || '—'}</div>
-                          <div className="text-xs font-bold text-slate-800 truncate">{e.qualification || (e.level ? String(e.level).replace('_', ' ') : '—')}</div>
-                          <div className="text-xs text-slate-700">{e.start_date || '—'}</div>
-                          <div className="text-xs text-slate-700">{e.end_date || e.year || '—'}</div>
-                          <div className="text-right">{renderDocLink('View Certificate', e.certificate_url)}</div>
-                        </div>
-                      ))}
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-500">No education records provided.</p>
-                  )}
+                  </div>
+                </div>
+
+                {/* Status & Scores Card */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                      <Activity className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ecosystem Metrics</h4>
+                  </div>
+                  <div className="space-y-4 flex-1">
+                    <div>
+                      <div className="flex justify-between items-end mb-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Performance Score</p>
+                        <p className="text-lg font-black text-slate-900 leading-none">{detailGuard.profile_score}%</p>
+                      </div>
+                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${detailGuard.profile_score}%` }}></div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-50">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Armed Ready</p>
+                        <p className={`text-xs font-black uppercase tracking-tight ${detailGuard.is_armed ? 'text-blue-600' : 'text-slate-500'}`}>
+                          {detailGuard.is_armed ? 'Certified' : 'No'}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Experience</p>
+                        <p className="text-xs font-black text-slate-900 uppercase tracking-tight">{detailGuard.previous_experience ? 'Verified' : 'Novice'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location Card */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="p-2 bg-orange-50 rounded-xl text-orange-600">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Residence & Kin</h4>
+                  </div>
+                  <div className="space-y-4 flex-1">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Address</p>
+                      <p className="text-xs font-bold text-slate-900 leading-relaxed">
+                        {(detailGuard as any)?.physical_address || (detailGuard as any)?.dossier_data?.physical_address || '—'}
+                      </p>
+                    </div>
+                    <div className="space-y-2 pt-2 border-t border-slate-50">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Next of Kin: {detailGuard.next_of_kin_relationship}</p>
+                      <div className="p-3 bg-slate-50 rounded-2xl flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-slate-900 uppercase tracking-tight truncate">{detailGuard.next_of_kin_name}</p>
+                          <p className="text-[10px] font-medium text-slate-500">{detailGuard.next_of_kin_phone}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Guarantors</h4>
-                {detailGuard.guarantors?.length ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {detailGuard.guarantors.map((g, idx) => (
-                      <div key={g.id || idx} className="border border-slate-100 rounded-xl p-5">
-                        <div className="flex items-start justify-between gap-4">
+              {/* Education History Card */}
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="p-2 bg-purple-50 rounded-xl text-purple-600">
+                    <GraduationCap className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Educational Background</h4>
+                </div>
+                {((detailGuard as any)?.education || detailGuard.education_history || [])?.length ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(((detailGuard as any)?.education as any[]) || detailGuard.education_history).map((e: any, idx: number) => (
+                      <div key={idx} className="group p-4 bg-slate-50 rounded-2xl border border-transparent hover:border-purple-200 transition-all">
+                        <div className="flex justify-between items-start gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-black text-slate-900 uppercase tracking-tight truncate">{g.name}</p>
-                            <p className="text-xs font-medium text-slate-500">{g.relationship} • {g.phone}</p>
-                            <p className="text-[11px] font-bold text-slate-600 mt-1">{g.occupation || '—'}</p>
-                            <p className="text-[11px] text-slate-500">{(g as any).address || (g as any).residence_address || '—'}</p>
+                            <p className="text-xs font-black text-slate-900 uppercase tracking-tight truncate">{e.institution_name || '—'}</p>
+                            <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mt-0.5">
+                              {e.qualification || (e.level ? String(e.level).replace('_', ' ') : '—')}
+                            </p>
                           </div>
+                          {e.certificate_url && (
+                            <button
+                              onClick={() => handleViewDocument(e.certificate_url, 'Education Certificate')}
+                              className="p-2 bg-white rounded-lg shadow-sm text-slate-400 hover:text-purple-600 transition-colors"
+                            >
+                              <FileCheck className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                        <div className="mt-4">
-                          {renderDocLink('Guarantor Letter', g.letter_url)}
-                          {renderDocLink('Residence Letter', g.residence_letter_url)}
-                          {renderDocLink('ID Copy', (g as any).id_copy_url)}
+                        <div className="flex items-center gap-2 mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          <Calendar className="w-3 h-3" />
+                          <span>{e.start_date || '—'} – {e.end_date || e.year || '—'}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500">No guarantors provided.</p>
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                    <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">No academic records documented.</p>
+                  </div>
                 )}
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Documents</h4>
-                <div className="space-y-1">
-                  {renderDocLink('Application Letter', detailGuard.application_letter_url)}
-                  {renderDocLink('NIDA (Front)', detailGuard.nida_front_url)}
-                  {renderDocLink('Birth Certificate', detailGuard.birth_cert_url)}
-                  {renderDocLink('Residence Letter', detailGuard.residence_letter_url)}
-                  {renderDocLink('Employment Contract (if any)', detailGuard.employment_contract_url)}
+              {/* Detailed Document & Guarantor Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Guarantors */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 px-2">
+                    <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                      <Briefcase className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trusted Guarantors</h4>
+                  </div>
+                  {detailGuard.guarantors?.length ? (
+                    <div className="space-y-3">
+                      {detailGuard.guarantors.map((g, idx) => (
+                        <div key={idx} className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex gap-4">
+                              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100">
+                                <User className="w-6 h-6" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{g.name}</p>
+                                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">{g.relationship} • {g.phone}</p>
+                                <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 font-medium">
+                                  <span>{g.occupation || 'Self Employed'}</span>
+                                  <span>•</span>
+                                  <span className="truncate">{(g as any).address || (g as any).residence_address || '—'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid grid-cols-3 gap-2">
+                            {['Guarantor Letter', 'Residence', 'ID Copy'].map((lbl, li) => {
+                              const url = li === 0 ? g.letter_url : li === 1 ? g.residence_letter_url : (g as any).id_copy_url;
+                              return url ? (
+                                <button
+                                  key={li}
+                                  onClick={() => handleViewDocument(url, `${lbl}: ${g.name}`)}
+                                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-100 transition-all group"
+                                >
+                                  <FileText className="w-4 h-4 text-indigo-400 group-hover:text-indigo-600" />
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">{lbl}</span>
+                                </button>
+                              ) : (
+                                <div key={li} className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 opacity-40 grayscale border border-slate-100">
+                                  <FileText className="w-4 h-4" />
+                                  <span className="text-[8px] font-bold uppercase tracking-widest mt-1">N/A</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                      <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">No guarantors verified.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Main Documents */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 px-2">
+                    <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
+                      <FileCheck className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Compliance Dossier</h4>
+                  </div>
+                  <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                    {[
+                      { l: 'Application Letter', u: detailGuard.application_letter_url },
+                      { l: 'NIDA Certification', u: detailGuard.nida_front_url },
+                      { l: 'Birth Certificate', u: detailGuard.birth_cert_url },
+                      { l: 'Residence Certificate', u: detailGuard.residence_letter_url },
+                      { l: 'Draft Contract', u: detailGuard.employment_contract_url },
+                      { l: 'Bank Details', u: (detailGuard as any).bank_account_form_url },
+                    ].map((doc, di) => (
+                      <div key={di} className="px-6 py-4 flex items-center justify-between gap-4 border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`p-2 rounded-lg ${doc.u ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-300'}`}>
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-slate-800 uppercase tracking-tight truncate">{doc.l}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{doc.u ? 'Ready for Audit' : 'Pending Upload'}</p>
+                          </div>
+                        </div>
+                        {doc.u ? (
+                          <button
+                            onClick={() => handleViewDocument(doc.u!, doc.l)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                          >
+                            <ExternalLink className="w-5 h-5" />
+                          </button>
+                        ) : (
+                          <div className="p-2 text-slate-300">
+                            <AlertCircle className="w-5 h-5" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="p-8 bg-slate-50 border-t border-slate-100 flex flex-col md:flex-row gap-3">
+            <div className="p-6 md:p-8 bg-slate-100/50 backdrop-blur-sm border-t border-slate-200 flex flex-col md:flex-row gap-4">
               <button
                 onClick={() => { setSelectedGuard(detailGuard); setDecisionMode('view'); setDetailGuard(null); }}
-                className="flex-1 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-xl active:scale-95"
+                className="flex-1 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl hover:bg-primary transition-all shadow-xl hover:shadow-primary/20 active:scale-95 flex items-center justify-center gap-3 group"
               >
-                Review & Lock
+                <ClipboardCheck className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                Initialize Full Audit
               </button>
               <button
                 onClick={() => setDetailGuard(null)}
-                className="px-8 py-4 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all"
+                className="px-8 py-4 bg-white border border-slate-200 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-slate-50 transition-all active:scale-95"
               >
-                Close
+                Exit View
               </button>
             </div>
           </div>
