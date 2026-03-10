@@ -72,35 +72,25 @@ const app = express();
 
 // --- CRITICAL: STORAGE PERSISTENCE & MIDDLEWARE ORDER ---
 // Strictly use /app/uploads for production (Coolify persistent volume)
-const productionUploads = '/app/uploads';
-const localUploads = path.resolve(__dirname, '..', 'uploads');
-
-let uploadsDir = localUploads;
-if (process.env.NODE_ENV === 'production') {
-  if (fs.existsSync(productionUploads)) {
-    uploadsDir = productionUploads;
-  } else {
-    console.warn(`UPLOADS: ${productionUploads} not found, falling back to ${localUploads}`);
-    uploadsDir = localUploads;
-  }
-}
+const UPLOADS_DIR = process.env.NODE_ENV === 'production' ? '/app/uploads' : path.resolve(__dirname, '..', 'uploads');
+const uploadsDir = UPLOADS_DIR; // Keep alias for compatibility
 
 try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
   // Verify write permission
-  const testFile = path.join(uploadsDir, '.write_test');
+  const testFile = path.join(UPLOADS_DIR, '.write_test');
   fs.writeFileSync(testFile, 'ok');
   fs.unlinkSync(testFile);
-  console.log(`UPLOADS: Directory "${uploadsDir}" is ready and writable.`);
+  console.log(`UPLOADS: Directory "${UPLOADS_DIR}" is ready and writable.`);
 } catch (err) {
-  console.error(`UPLOADS ERROR: Cannot write to "${uploadsDir}". Check permissions/mounts.`, err.message);
+  console.error(`UPLOADS ERROR: Cannot write to "${UPLOADS_DIR}". Check permissions/mounts.`, err.message);
 }
 
 // Serve static files at the VERY TOP to prevent routers or 404 handlers from intercepting
-app.use('/uploads', express.static(uploadsDir));
-app.use('/api/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/api/uploads', express.static(UPLOADS_DIR));
 
 const allowedOrigins = new Set([
   'http://localhost:5173',
@@ -127,13 +117,12 @@ app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
 
-const sanitize = (name) => String(name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
-    const provided = sanitize(req.body?.key || '');
-    const base = provided || `${Date.now()}_${sanitize(file.originalname || 'upload.bin')}`;
-    cb(null, base);
+    const provided = req.body?.key ? String(req.body.key).replace(/[^a-zA-Z0-9._-]/g, '_') : '';
+    const uniqueSuffix = Date.now() + '_' + file.originalname.replace(/\s+/g, '_');
+    cb(null, provided || uniqueSuffix);
   }
 });
 const upload = multer({
@@ -542,8 +531,10 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'no_file' });
     const url = `${PUBLIC_BASE_URL}/uploads/${req.file.filename}`;
+    console.log(`UPLOAD SUCCESS: ${req.file.filename} saved to ${UPLOADS_DIR}`);
     return res.status(200).json({ url, file_url: url, key: req.file.filename });
   } catch (e) {
+    console.error('UPLOAD CRITICAL ERROR:', e);
     const code = e?.message?.includes('Unsupported') ? 415 : 500;
     return res.status(code).json({ error: 'upload_failed', message: e?.message || 'Unknown error' });
   }
