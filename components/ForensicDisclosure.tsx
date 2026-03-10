@@ -157,15 +157,6 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                   </div>
 
                   <div className="flex items-center gap-3">
-                    {guard.status === 'active' && canViewDocs && (
-                      <button
-                        onClick={() => setIsTerminating(true)}
-                        className="px-6 py-2.5 bg-red-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all shadow-lg active:scale-95 flex items-center gap-2 border border-red-500/50"
-                      >
-                        <AlertTriangle className="w-4 h-4" />
-                        Terminate Contract
-                      </button>
-                    )}
                     <button
                       onClick={onClose}
                       className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors focus:outline-none"
@@ -192,6 +183,16 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
                   >
                     Incident Report
                   </button>
+
+                  {guard.status === 'active' && canViewDocs && (
+                    <button
+                      onClick={() => setIsTerminating(true)}
+                      className="my-auto ml-auto px-4 py-1.5 bg-red-600 text-white font-black text-[9px] uppercase tracking-widest rounded-lg hover:bg-red-700 transition-all shadow-lg active:scale-95 flex items-center gap-2 border border-red-500/50"
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      Terminate Contract
+                    </button>
+                  )}
                 </div>
 
                 {/* Content Body */}
