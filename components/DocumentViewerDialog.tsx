@@ -20,7 +20,7 @@ const DocumentViewerDialog: React.FC<DocumentViewerDialogProps> = ({ isOpen, onC
     const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url);
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300">
             <div className="relative w-full max-w-5xl h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
                 {/* Header */}
