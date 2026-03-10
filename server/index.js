@@ -1124,7 +1124,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
         guardsRows = [];
       }
       const ids = guardsRows.map(g => g.id);
-      let gts = [], eds = [];
+      let gts = [], eds = [], whs = [];
       if (ids.length) {
         try {
           const { rows } = await pool.query('SELECT * FROM guarantors WHERE guard_id = ANY($1)', [ids]);
@@ -1138,6 +1138,12 @@ app.get('/api/guards', requireAuth, async (req, res) => {
         } catch {
           eds = [];
         }
+        try {
+          const { rows: w2 } = await pool.query('SELECT * FROM work_experiences WHERE guard_id = ANY($1)', [ids]);
+          whs = w2 || [];
+        } catch {
+          whs = [];
+        }
       }
       const gMap = {};
       for (const g of gts) {
@@ -1148,6 +1154,11 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       for (const e of eds) {
         if (!eMap[e.guard_id]) eMap[e.guard_id] = [];
         eMap[e.guard_id].push({ ...e, year: e.year ?? (e.graduation_year != null ? String(e.graduation_year) : null) });
+      }
+      const wMap = {};
+      for (const w of whs) {
+        if (!wMap[w.guard_id]) wMap[w.guard_id] = [];
+        wMap[w.guard_id].push(w);
       }
       const out = guardsRows.map(g => {
         const ps = g?.performance_score;
@@ -1204,7 +1215,8 @@ app.get('/api/guards', requireAuth, async (req, res) => {
         ...g,
         performance_score: (typeof perfNum === 'number' && !Number.isNaN(perfNum)) ? perfNum : (typeof ps === 'number' ? ps : null),
         guarantors: gMap[g.id] || [],
-        education_history: eMap[g.id] || []
+        education_history: eMap[g.id] || [],
+        work_history: wMap[g.id] || []
       };
     });
     res.status(200).json(out);
@@ -1876,7 +1888,8 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
       education_history: scrubbedEdu,
       education: scrubbedEdu,
       documents: canSeeDocs ? docsRows.map(d => ({ ...d, url: fixUrl(d.url || d.file_url || d.path || null), file_url: fixUrl(d.file_url) })) : [],
-      incidents: Array.isArray(incidents) ? incidents : []
+      incidents: Array.isArray(incidents) ? incidents : [],
+      work_history: workHistory || []
     });
   } catch {
     res.status(500).json({ error: 'error' });
@@ -2085,7 +2098,28 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'forbidden', detail: 'Unauthorized to terminate this contract' });
     }
 
-    // Return to marketplace and clear employment details
+    // 1. Fetch current employment info for automated Work History
+    let companyName = 'Former Employer';
+    if (guard.company_id) {
+      const { rows: compRows } = await client.query('SELECT name FROM companies WHERE id = $1 LIMIT 1', [guard.company_id]);
+      if (compRows[0]) companyName = compRows[0].name;
+    }
+
+    // 2. Automated Work Experience Entry
+    const workExpId = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await client.query(
+      `INSERT INTO work_experiences (id, guard_id, company_name, role, start_date, end_date, created_at)
+       VALUES ($1, $2, $3, $4, $5, now(), now())`,
+      [
+        workExpId,
+        id,
+        companyName,
+        'Security Guard', // Default role for terminated contract
+        guard.contract_start_date || guard.deployment_date || guard.created_at
+      ]
+    );
+
+    // 3. Return to marketplace and clear employment details
     await client.query(
       `UPDATE guards 
        SET status = 'marketplace', 
@@ -2101,7 +2135,7 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
       [id]
     );
 
-    // Log the termination event in interview_logs for historical audit
+    // 4. Log the termination event in interview_logs for historical audit
     const uuid = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await client.query(
       `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, created_at)
