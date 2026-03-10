@@ -130,7 +130,7 @@ export interface Guarantor {
   name: string;
   phone: string;
   relationship: string;
-  intro_letter_url?: string;
+  guarantor_letter_url?: string;
   id_copy_url?: string;
   residence_letter_url?: string;
   created_at?: string;

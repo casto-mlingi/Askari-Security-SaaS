@@ -8,7 +8,7 @@ export const guardService = {
   async getGuards(): Promise<ApiResponse<Guard[]>> {
     try {
       console.log('Super Admin API Call:', getApiBase() + '/guards');
-    } catch {}
+    } catch { }
     const result = await api.get<Guard[]>('/guards');
     if (result.error) {
       const local = JSON.parse(localStorage.getItem('guards_local') || '[]');
@@ -196,7 +196,7 @@ export const guardService = {
         phone: g.phone,
         relationship: g.relationship,
         id_copy_url: (g as any)?.id_copy_url || null,
-        guarantor_letter_url: (g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || null,
+        guarantor_letter_url: g.guarantor_letter_url || null,
         residence_letter_url: (g as any)?.residence_letter_url || null
       })) : [];
       await api.post(`/guards/${guardId}/guarantors`, payload);

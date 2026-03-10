@@ -340,7 +340,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           })) || [];
           dataToSave.guarantors = dataToSave.guarantors.map(g => ({
             ...g,
-            intro_letter_url: isHeavy((g as any).intro_letter_url) ? '' : (g as any).intro_letter_url,
+            guarantor_letter_url: isHeavy(g.guarantor_letter_url) ? '' : g.guarantor_letter_url,
             id_copy_url: isHeavy((g as any).id_copy_url) ? '' : (g as any).id_copy_url,
             residence_letter_url: isHeavy((g as any).residence_letter_url) ? '' : (g as any).residence_letter_url
           }));
@@ -543,7 +543,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           console.error(`GUARANTOR_VALIDATION_FAILED [Index: ${idx}]: g_rel - Relationship is required.`);
         }
 
-        const hasLetter = (g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url;
+        const hasLetter = g.guarantor_letter_url;
         if (!hasLetter) {
           newErrors[`g_guarantor_letter_${idx}`] = 'This field is required.';
           console.error(`GUARANTOR_VALIDATION_FAILED [Index: ${idx}]: g_guarantor_letter - Letter is missing.`);
@@ -615,7 +615,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         formData.guarantors.forEach((g, idx) => {
           if (!g.name) newErrors[`g_name_${idx}`] = 'This field is required.';
           if (!g.relationship) newErrors[`g_rel_${idx}`] = 'This field is required.';
-          if (!(g as any)?.guarantor_letter_url && !(g as any)?.intro_letter_url) newErrors[`g_guarantor_letter_${idx}`] = 'This field is required.';
+          if (!g.guarantor_letter_url) newErrors[`g_guarantor_letter_${idx}`] = 'This field is required.';
           if (!(g as any)?.id_copy_url) newErrors[`g_id_copy_${idx}`] = 'This field is required.';
           if (!(g as any)?.residence_letter_url) newErrors[`g_residence_letter_${idx}`] = 'This field is required.';
           if (!g.phone || !isTZPhone(g.phone)) newErrors[`g_phone_${idx}`] = 'Please enter a valid Tanzanian phone number (e.g., 0755123456).';
@@ -1319,7 +1319,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
                   <InputField label="Relationship" name={`g_rel_${index}`} value={g.relationship} onChange={(e) => updateGuarantor(index, 'relationship', e.target.value)} error={errors[`g_rel_${index}`]} disabled={isReadOnly} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <FileUploader label="Guarantor Letter" fileUrl={(g as any)?.guarantor_letter_url || (g as any)?.intro_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'guarantor_letter_url', url)} onRemove={() => updateGuarantor(index, 'guarantor_letter_url', '')} className="h-24" disabled={isReadOnly} />
+                  <FileUploader label="Guarantor Letter" fileUrl={g.guarantor_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'guarantor_letter_url', url)} onRemove={() => updateGuarantor(index, 'guarantor_letter_url', '')} className="h-24" disabled={isReadOnly} />
                   <FileUploader label="ID Copy" fileUrl={(g as any)?.id_copy_url || ''} onUpload={(url) => updateGuarantor(index, 'id_copy_url', url)} onRemove={() => updateGuarantor(index, 'id_copy_url', '')} className="h-24" disabled={isReadOnly} />
                   <FileUploader label="Residence Letter (Serikali ya Mtaa)" fileUrl={(g as any)?.residence_letter_url || ''} onUpload={(url) => updateGuarantor(index, 'residence_letter_url', url)} onRemove={() => updateGuarantor(index, 'residence_letter_url', '')} className="h-24" disabled={isReadOnly} />
                 </div>

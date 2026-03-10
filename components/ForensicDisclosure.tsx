@@ -447,11 +447,11 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
 
                             {guard.guarantors?.map((g, i) => (
                               <Fragment key={g.id}>
-                                {((g as any).guarantor_letter_url || (g as any).letter_url) && (
+                                {g.guarantor_letter_url && (
                                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
                                     <span className="text-xs font-bold text-slate-700 uppercase truncate pr-4">{`Guarantor #${i + 1} Letter`}</span>
                                     <button
-                                      onClick={() => openViewer(((g as any).guarantor_letter_url || (g as any).letter_url), `Guarantor #${i + 1} Letter`)}
+                                      onClick={() => openViewer(g.guarantor_letter_url!, `Guarantor #${i + 1} Letter`)}
                                       className="text-xs font-bold text-[#0A192F] uppercase tracking-widest hover:underline whitespace-nowrap"
                                     >
                                       View

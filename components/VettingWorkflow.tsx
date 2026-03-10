@@ -1159,7 +1159,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                             </div>
                             <div className="mt-4 grid grid-cols-3 gap-2">
                               {['Guarantor Letter', 'Residence', 'ID Copy'].map((lbl, li) => {
-                                const url = li === 0 ? g.letter_url : li === 1 ? g.residence_letter_url : (g as any).id_copy_url;
+                                const url = li === 0 ? g.guarantor_letter_url : li === 1 ? g.residence_letter_url : (g as any).id_copy_url;
                                 return url ? (
                                   <button
                                     key={li}

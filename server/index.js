@@ -737,7 +737,7 @@ app.post('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
       if (!full_name || !phone || !relationship) continue;
       const occupation = it.occupation || null;
       const idCopy = it.id_copy_url || null;
-      const letter = it.guarantor_letter_url || it.intro_letter_url || it.letter_url || null;
+      const letter = it.guarantor_letter_url || null;
       const residence = it.residence_letter_url || null;
       let row;
       try {
@@ -793,7 +793,7 @@ app.patch('/api/guards/:id/guarantors', requireAuth, async (req, res) => {
       if (it.relationship != null) { fields.push(`relationship = $${idx++}`); values.push(it.relationship); }
       if (it.phone != null) { fields.push(`phone = $${idx++}`); values.push(it.phone); }
       if (it.guarantor_letter_url !== undefined) { fields.push(`guarantor_letter_url = $${idx++}`); values.push(it.guarantor_letter_url); }
-      else if (it.letter_url !== undefined || it.intro_letter_url !== undefined) { fields.push(`letter_url = $${idx++}`); values.push(it.intro_letter_url ?? it.letter_url); }
+      else if (it.guarantor_letter_url !== undefined) { fields.push(`guarantor_letter_url = $${idx++}`); values.push(it.guarantor_letter_url); }
       if (it.id_copy_url !== undefined) { fields.push(`id_copy_url = $${idx++}`); values.push(it.id_copy_url); }
       if (it.residence_letter_url !== undefined) { fields.push(`residence_letter_url = $${idx++}`); values.push(it.residence_letter_url); }
       if (!fields.length) continue;
@@ -2029,7 +2029,7 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
     const scrubbedGuarantors = canSeeDocs ? normGuarantors : normGuarantors.map(x => ({
       ...x,
       letter_url: null,
-      intro_letter_url: null,
+      guarantor_letter_url: null,
       id_copy_url: null,
       residence_letter_url: null
     }));
