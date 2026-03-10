@@ -375,6 +375,17 @@ async function ensureSchema() {
     console.warn('[schema] guards extra columns ensure failed:', e?.message || e);
   }
   try {
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS company_id UUID');
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS outcome TEXT');
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS comments TEXT');
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS score INTEGER');
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS interview_date TIMESTAMPTZ');
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS interview_notes TEXT');
+    await pool.query('ALTER TABLE IF EXISTS interview_logs ADD COLUMN IF NOT EXISTS deployment_contract_url TEXT');
+  } catch (e) {
+    console.warn('[schema] interview_logs columns ensure failed:', e?.message || e);
+  }
+  try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS interview_logs (
         id UUID PRIMARY KEY,
