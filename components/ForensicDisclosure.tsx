@@ -1,7 +1,7 @@
 import React, { useMemo, useState, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { X, ShieldAlert, FileText, UserCircle, Briefcase, BookOpen, AlertTriangle } from 'lucide-react';
-import { Guard, IncidentReport, DisciplinaryCode } from '../types';
+import { Guard, IncidentReport, DisciplinaryCode, Profile } from '../types';
 import { getPerfCategory } from '../utils/performance';
 import DocumentViewerDialog from './DocumentViewerDialog';
 
@@ -11,9 +11,10 @@ interface ForensicDisclosureProps {
   disciplinaryCodes: DisciplinaryCode[];
   onClose: () => void;
   onTerminate?: () => void;
+  currentUser?: Profile | null;
 }
 
-const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes, onClose, onTerminate }) => {
+const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incidents, disciplinaryCodes, onClose, onTerminate, currentUser }) => {
   const isInitiallyBlacklisted = (() => {
     const score = typeof guard.performance_score === 'number' ? guard.performance_score : undefined;
     const status = String((guard as any)?.status || '').toLowerCase();
@@ -62,9 +63,14 @@ const ForensicDisclosure: React.FC<ForensicDisclosureProps> = ({ guard, incident
 
   const canViewDocs = useMemo(() => {
     try {
-      const raw = localStorage.getItem('amini_user') || '';
-      if (!raw) return false;
-      const u = JSON.parse(raw) || {};
+      // Use currentUser prop if provided, otherwise fallback to localStorage
+      let u = currentUser;
+      if (!u) {
+        const raw = localStorage.getItem('amini_user') || '';
+        if (raw) u = JSON.parse(raw);
+      }
+
+      if (!u) return false;
       const role = String(u?.role || '').toLowerCase();
       const myCompanyId = String(u?.company_id || '');
 

@@ -1481,6 +1481,7 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
           guard={detailGuard}
           incidents={incidents}
           disciplinaryCodes={disciplinaryCodes}
+          currentUser={currentUser}
           onClose={() => { setDetailGuard(null); setViewingForensic(false); }}
           onTerminate={() => {
             setDetailGuard(null);
