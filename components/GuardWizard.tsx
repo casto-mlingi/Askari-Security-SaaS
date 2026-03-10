@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { EducationRecord, Guard, ApplicationStatus, UserRole, Guarantor, SecurityTraining } from '../types';
+import { EducationRecord, Guard, ApplicationStatus, UserRole, Guarantor, SecurityTraining, WorkExperience } from '../types';
 import FileUploader from './FileUploader';
 import { guardService } from '../services/guardService';
 import { api } from '../services/api';
 import { validateEducationRecords } from '../utils/validation';
+import { Plus, Trash2, Briefcase, FileCheck, Shield, FileText } from 'lucide-react';
 
 interface WizardData {
   full_name: string;
@@ -38,6 +39,7 @@ interface WizardData {
   emergency_contact?: string;
   uniform_shirt_size?: string;
   uniform_boot_size?: string;
+  work_history: WorkExperience[];
 }
 
 type ValidationErrors = {
@@ -130,7 +132,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       district: dd.district || '',
       emergency_contact: ((g as any)?.emergency_contact ?? dd.emergency_contact) || '',
       uniform_shirt_size: dd.uniform_shirt_size || '',
-      uniform_boot_size: dd.uniform_boot_size || ''
+      uniform_boot_size: dd.uniform_boot_size || '',
+      work_history: Array.isArray(g.work_history) ? g.work_history : []
     };
   };
 
@@ -167,6 +170,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     emergency_contact: (initialData as any)?.emergency_contact || (initialData as any)?.dossier_data?.emergency_contact || '',
     uniform_shirt_size: (initialData as any)?.dossier_data?.uniform_shirt_size || '',
     uniform_boot_size: (initialData as any)?.dossier_data?.uniform_boot_size || '',
+    work_history: (initialData as any)?.work_history || [],
   };
 
   const [securityTraining, setSecurityTraining] = useState<SecurityTraining[]>(
@@ -310,7 +314,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     s += formData.next_of_kin_relationship ? 5 : 0;
     s += formData.next_of_kin_phone ? 5 : 0;
     s += formData.previous_experience ? 5 : 0;
-    s += (formData.previous_experience && formData.nssf_number) ? 10 : 0;
+    s += (formData.previous_experience && formData.work_history.length > 0) ? 10 : 0;
     s += formData.bank_account_number ? 5 : 0;
     s += formData.education_records.length ? 5 : 0;
     s += formData.guarantors.length ? 5 : 0;
@@ -407,7 +411,41 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     if (errors[field as string]) {
       setErrors(prev => { const newErrors = { ...prev }; delete newErrors[field as string]; return newErrors; });
     }
+  };
 
+  const handleWorkHistoryChange = (index: number, field: keyof WorkExperience, value: any) => {
+    setFormData(prev => {
+      const next = [...(prev.work_history || [])];
+      if (next[index]) {
+        next[index] = { ...next[index], [field]: value };
+      }
+      return { ...prev, work_history: next };
+    });
+  };
+
+  const addWorkExperience = () => {
+    setFormData(prev => ({
+      ...prev,
+      work_history: [
+        ...(prev.work_history || []),
+        {
+          id: (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
+          guard_id: initialData?.id || '',
+          company_name: '',
+          role: '',
+          start_date: '',
+          end_date: '',
+          recommendation_letter_url: ''
+        }
+      ]
+    }));
+  };
+
+  const removeWorkExperience = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      work_history: (prev.work_history || []).filter((_, i) => i !== index)
+    }));
   };
 
   const getAllErrors = (): ValidationErrors => {
@@ -429,6 +467,19 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     if (!formData.police_clearance_url) newErrors.police_clearance_url = 'This field is required.';
     if (!formData.cv_url) newErrors.cv_url = 'This field is required.';
     if (!formData.residence_letter_url) newErrors.residence_letter_url = 'This field is required.';
+
+    if (formData.previous_experience) {
+      if (!formData.work_history.length) {
+        newErrors.work_history = 'At least one work experience is required if you have previous experience.';
+      } else {
+        formData.work_history.forEach((ex, idx) => {
+          if (!ex.company_name) newErrors[`wh_company_${idx}`] = 'Company name is required.';
+          if (!ex.role) newErrors[`wh_role_${idx}`] = 'Role is required.';
+          if (!ex.recommendation_letter_url) newErrors[`wh_letter_${idx}`] = 'Recommendation letter is required.';
+        });
+      }
+    }
+
     try {
       const eduErrors = validateEducationRecords(formData.education_records || []);
       // PRODUCTION HOTFIX: Even if validateEducationRecords returns errors (though it shouldn't now),
@@ -690,7 +741,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
 
       // 1. Separate core guard data from related arrays (guarantors, education)
       // We must strip these arrays because 'guards' table doesn't have these columns.
-      const { guarantors, education_records, ...coreGuardData } = formData;
+      const { guarantors, education_records, work_history, ...coreGuardData } = formData;
       const eduForPayload = (Array.isArray(education_records) && education_records.length)
         ? education_records
         : (((formData as any).education_history || []) as any[]);
@@ -749,6 +800,13 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
           id_copy_url: (g as any).id_copy_url || null,
           guarantor_letter_url: (g as any).guarantor_letter_url || (g as any).intro_letter_url || null,
           residence_letter_url: (g as any).residence_letter_url || null
+        })),
+        work_history: (work_history || []).map(wh => ({
+          company_name: wh.company_name || null,
+          role: wh.role || null,
+          start_date: wh.start_date || null,
+          end_date: wh.end_date || null,
+          recommendation_letter_url: wh.recommendation_letter_url || null
         }))
       };
       try { console.log('FORM DATA:', JSON.parse(JSON.stringify(formData))); } catch { console.log('FORM DATA (stringify failed)'); }
@@ -772,7 +830,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         medical_report_url: '',
         police_clearance_url: '',
         cv_url: '',
-        previous_employer_letter_url: ''
+        previous_employer_letter_url: '',
+        work_history: []
       } as any));
       (window as any).showNotification?.('success', 'Mlinzi amesajiliwa kikamilifu');
       setHasSubmitted(true);
@@ -798,6 +857,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         residence_letter_url: '',
         education_records: [],
         is_armed: false,
+        work_history: [],
         residence_lat: undefined,
         residence_lng: undefined,
         bank_account_number: '',
@@ -1039,10 +1099,114 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
               </div>
             </label>
           </div>
+
           {formData.previous_experience && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <InputField label="NSSF Number" name="nssf_number" value={formData.nssf_number || ''} onChange={handleChange} placeholder="NSSF-XXXX" disabled={isReadOnly} />
-              <FileUploader label="Letter from Previous Employer" fileUrl={formData.previous_employer_letter_url || ''} onUpload={(url) => handleFileChange('previous_employer_letter_url', url)} onRemove={() => handleFileChange('previous_employer_letter_url', '')} disabled={isReadOnly} />
+            <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                    <Briefcase className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Professional Work History</h4>
+                </div>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={addWorkExperience}
+                    className="text-[10px] font-black uppercase bg-primary text-white px-4 py-2 rounded-xl hover:bg-primary/90 transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <Plus className="w-3 h-3" /> Add Employer
+                  </button>
+                )}
+              </div>
+
+              {formData.work_history.length === 0 ? (
+                <div className="p-12 border-2 border-dashed border-slate-200 rounded-3xl text-center bg-white/50">
+                  <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Briefcase className="w-6 h-6 text-slate-300" />
+                  </div>
+                  <p className="text-sm font-black text-slate-400 uppercase tracking-widest">No history added</p>
+                  <p className="text-xs text-slate-400 mt-2 max-w-[200px] mx-auto leading-relaxed">Document your professional journey by adding previous employers</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {formData.work_history.map((ex, idx) => (
+                    <div key={ex.id || idx} className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-6 relative group border-l-4 border-l-primary/30">
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => removeWorkExperience(idx)}
+                          className="absolute top-4 right-4 p-2 text-slate-300 hover:text-red-500 transition-colors bg-slate-50 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                        <InputField
+                          label="Company Name"
+                          name={`wh_company_${idx}`}
+                          value={ex.company_name}
+                          onChange={(e) => handleWorkHistoryChange(idx, 'company_name', e.target.value)}
+                          placeholder="e.g. SGA Security"
+                          disabled={isReadOnly}
+                          error={errors[`wh_company_${idx}`]}
+                        />
+                        <InputField
+                          label="Role / Designation"
+                          name={`wh_role_${idx}`}
+                          value={ex.role}
+                          onChange={(e) => handleWorkHistoryChange(idx, 'role', e.target.value)}
+                          placeholder="e.g. Senior Guard"
+                          disabled={isReadOnly}
+                          error={errors[`wh_role_${idx}`]}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-2 gap-4">
+                          <InputField
+                            label="Employment From"
+                            type="date"
+                            name={`wh_start_${idx}`}
+                            value={ex.start_date || ''}
+                            onChange={(e) => handleWorkHistoryChange(idx, 'start_date', e.target.value)}
+                            disabled={isReadOnly}
+                          />
+                          <InputField
+                            label="Employment To"
+                            type="date"
+                            name={`wh_end_${idx}`}
+                            value={ex.end_date || ''}
+                            onChange={(e) => handleWorkHistoryChange(idx, 'end_date', e.target.value)}
+                            disabled={isReadOnly}
+                          />
+                        </div>
+                        <FileUploader
+                          label="Recommendation Letter"
+                          fileUrl={ex.recommendation_letter_url || ''}
+                          onUpload={(url) => handleWorkHistoryChange(idx, 'recommendation_letter_url', url)}
+                          onRemove={() => handleWorkHistoryChange(idx, 'recommendation_letter_url', '')}
+                          disabled={isReadOnly}
+                          error={!!errors[`wh_letter_${idx}`]}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-slate-100">
+                <InputField
+                  label="NSSF Number"
+                  name="nssf_number"
+                  value={formData.nssf_number || ''}
+                  onChange={handleChange}
+                  placeholder="NSSF-XXXX"
+                  disabled={isReadOnly}
+                  error={errors.nssf_number}
+                />
+              </div>
             </div>
           )}
         </div>

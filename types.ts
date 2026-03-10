@@ -112,6 +112,18 @@ export interface EducationRecord {
   updated_at?: string;
 }
 
+export interface WorkExperience {
+  id: string;
+  guard_id: string;
+  company_name: string;
+  role: string;
+  start_date?: string;
+  end_date?: string;
+  recommendation_letter_url?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Guarantor {
   id: string;
   guard_id: string;
@@ -247,6 +259,7 @@ export interface Guard {
   bank_account_number?: string;
   experience_years?: number;
   previous_experience?: boolean;
+  work_history: WorkExperience[];
   created_at: string;
   updated_at?: string;
 

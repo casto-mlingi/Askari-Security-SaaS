@@ -8,6 +8,7 @@ import nodemailer from 'nodemailer';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 dotenv.config();
 try {
@@ -389,6 +390,22 @@ async function ensureSchema() {
       )`);
   } catch (e) {
     console.warn('[schema] interview_logs ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS work_experiences (
+        id UUID PRIMARY KEY,
+        guard_id UUID REFERENCES guards(id) ON DELETE CASCADE,
+        company_name TEXT NOT NULL,
+        role TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        recommendation_letter_url TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+  } catch (e) {
+    console.warn('[schema] work_experiences ensure failed:', e?.message || e);
   }
 }
 ensureSchema().catch(() => { });
@@ -1338,6 +1355,18 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       const { rows } = await client.query(sql, fields.map(k => guardData[k]));
       const guard = rows[0];
       try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch { }
+
+      // Insert work experiences if provided
+      const safeWorkHistory = Array.isArray(body?.work_history) ? body.work_history : (Array.isArray(body?.work_experience) ? body.work_experience : []);
+      for (const ex of safeWorkHistory) {
+        if (!ex || !ex.company_name) continue;
+        const exId = ex.id && isValidUuid(ex.id) ? ex.id : crypto.randomUUID();
+        await client.query(
+          `INSERT INTO work_experiences (id, guard_id, company_name, role, start_date, end_date, recommendation_letter_url, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())`,
+          [exId, guard.id, ex.company_name, ex.role || null, ex.start_date || null, ex.end_date || null, ex.recommendation_letter_url || null]
+        );
+      }
       // NOTE: next_of_kin insertion moved to line ~1310 for unified schema alignment
       // Insert education records if provided: map certificate_scan -> certificate_url and ensure integer graduation_year
       // PRODUCTION HOTFIX: Ensure education_records is handled even if null/undefined
@@ -1760,6 +1789,16 @@ app.get('/api/guards/:id', requireAuth, async (req, res) => {
     } catch {
       docsRows = [];
     }
+
+    let workHistory = [];
+    try {
+      const { rows: whRows } = await pool.query('SELECT * FROM work_experiences WHERE guard_id = $1 ORDER BY created_at DESC', [id]);
+      workHistory = whRows || [];
+    } catch (err) {
+      workHistory = [];
+      try { console.warn('work_experiences fetch failed:', (err && err.message) || String(err)); } catch { }
+    }
+
     let kinship = null;
     try {
       const { rows: nRows } = await pool.query('SELECT * FROM next_of_kin WHERE guard_id = $1 LIMIT 1', [id]);
