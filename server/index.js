@@ -2081,6 +2081,10 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body || {};
 
+    if (!isValidUuid(id)) {
+      return res.status(400).json({ error: 'bad_request', detail: 'Invalid guard ID format' });
+    }
+
     if (!reason) {
       return res.status(400).json({ error: 'reason_required', detail: 'Reason for termination is required' });
     }
@@ -2112,13 +2116,18 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
 
     // 1. Fetch current employment info for automated Work History
     let companyName = 'Former Employer';
-    if (guard.company_id) {
-      const { rows: compRows } = await client.query('SELECT name FROM companies WHERE id = $1 LIMIT 1', [guard.company_id]);
-      if (compRows[0]) companyName = compRows[0].name;
+    if (guard.company_id && isValidUuid(guard.company_id)) {
+      try {
+        const { rows: compRows } = await client.query('SELECT name FROM companies WHERE id = $1 LIMIT 1', [guard.company_id]);
+        if (compRows[0]) companyName = compRows[0].name;
+      } catch { }
     }
 
     // 2. Automated Work Experience Entry
     const workExpId = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const startDate = guard.contract_start_date || guard.deployment_date || guard.created_at;
+    const startDateStr = startDate instanceof Date ? startDate.toISOString().split('T')[0] : String(startDate || '');
+
     await client.query(
       `INSERT INTO work_experiences (id, guard_id, company_name, role, start_date, end_date, created_at)
        VALUES ($1, $2, $3, $4, $5, now(), now())`,
@@ -2127,7 +2136,7 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
         id,
         companyName,
         'Security Guard', // Default role for terminated contract
-        guard.contract_start_date || guard.deployment_date || guard.created_at
+        startDateStr
       ]
     );
 
@@ -2151,12 +2160,12 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
     const uuid = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await client.query(
       `INSERT INTO interview_logs (id, guard_id, interviewer_id, company_id, outcome, comments, created_at)
-       VALUES ($1, $2, $3, $4, 'terminated', $5::jsonb, now())`,
+       VALUES ($1, $2, $3, $4, 'terminated', $5, now())`,
       [
         uuid,
         id,
-        actor.sub || null,
-        guard.company_id || myCompanyId,
+        actor.sub && isValidUuid(actor.sub) ? actor.sub : null,
+        guard.company_id && isValidUuid(guard.company_id) ? guard.company_id : (myCompanyId && isValidUuid(myCompanyId) ? myCompanyId : null),
         JSON.stringify({ termination_reason: reason })
       ]
     );
