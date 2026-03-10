@@ -909,8 +909,8 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                         </span>
                       </div>
                       <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border shadow-lg ${detailGuard.status === 'active' ? 'bg-emerald-600 border-emerald-500 text-white' :
-                          detailGuard.status === 'interviewing' ? 'bg-blue-600 border-blue-500 text-white' :
-                            'bg-slate-700 border-slate-600 text-white'
+                        detailGuard.status === 'interviewing' ? 'bg-blue-600 border-blue-500 text-white' :
+                          'bg-slate-700 border-slate-600 text-white'
                         }`}>
                         <Activity className="w-3 h-3" />
                         {String(detailGuard.status || 'Applied').replace('_', ' ')}
@@ -1067,11 +1067,11 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Guarantors */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
-                      <Briefcase className="w-4 h-4" />
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-xl mb-6">
+                    <div className="p-2 bg-white/10 rounded-lg text-white">
+                      <Shield className="w-4 h-4" />
                     </div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trusted Guarantors</h4>
+                    <h4 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Trusted Guarantors</h4>
                   </div>
                   {detailGuard.guarantors?.length ? (
                     <div className="space-y-3">
@@ -1125,11 +1125,11 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
 
                 {/* Main Documents */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-xl">
+                    <div className="p-2 bg-white/10 rounded-lg text-white">
                       <FileCheck className="w-4 h-4" />
                     </div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Compliance Dossier</h4>
+                    <h4 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Compliance Dossier</h4>
                   </div>
                   <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
                     {[
