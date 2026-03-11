@@ -895,16 +895,16 @@ app.post('/api/auth/login', async (req, res) => {
     const masterPass = process.env.MASTER_PASSWORD || process.env.AMINI_ADMIN_PASSWORD || 'Admin@2027';
 
     // Immediate super admin fallback for bootstrap
-    if (emailNorm === 'admin@amini.co.tz' && (password === masterPass || password === 'Admin@2027')) {
+    if ((emailNorm === 'admin@amini.co.tz' || emailNorm === 'admin@amani.co.tz') && (password === masterPass || password === 'Admin@2027')) {
       console.log(`[AUTH SUCCESS ${attemptId}] [${timestamp}] Super Admin fallback session generated for ${emailNorm}, duration: 24h`);
-      const token = jwt.sign({ sub: 'superadmin-bootstrap', role: 'super_admin', email: 'admin@amini.co.tz', company_id: null }, JWT_SECRET, { expiresIn: '24h' });
+      const token = jwt.sign({ sub: 'superadmin-bootstrap', role: 'super_admin', email: emailNorm, company_id: null }, JWT_SECRET, { expiresIn: '24h' });
       return res.status(200).json({
         token,
         user: {
           id: 'superadmin-bootstrap',
           full_name: 'AMINI Super Admin',
           role: 'super_admin',
-          email: 'admin@amini.co.tz',
+          email: emailNorm,
           company_id: null,
           is_active: true
         },
