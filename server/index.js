@@ -2263,7 +2263,10 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
 app.get('/api/disciplinary/records', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    const queryCompanyId = String(req.query.company_id || '').trim() || null;
+    let queryCompanyId = String(req.query.company_id || '').trim() || null;
+    if (queryCompanyId === 'undefined' || queryCompanyId === 'null') {
+      queryCompanyId = null;
+    }
     let myCompanyId = actor.company_id || null;
     if (!myCompanyId && actor?.sub) {
       const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);

@@ -225,7 +225,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const fetchDisciplinaryRecords = async () => {
-      if (!userCompanyId) return;
+      if (!userCompanyId || userCompanyId === 'undefined' || userCompanyId === 'null') return;
       try {
         const res = await api.get('/disciplinary/records?company_id=' + userCompanyId);
         if (res && res.data) {
