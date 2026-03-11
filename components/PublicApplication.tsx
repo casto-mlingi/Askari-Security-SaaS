@@ -203,22 +203,6 @@ const PublicApplication: React.FC<PublicApplicationProps> = ({ onBack, onSubmit 
 
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">NIDA Number</label>
-                  <input
-                    required
-                    className={`w-full h-14 px-5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-primary/5 focus:border-primary outline-none font-mono font-bold transition-all text-base placeholder:text-base placeholder:text-slate-400 ${errors.nida_number ? 'border-red-500' : ''}`}
-                    inputMode="numeric"
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    title="Enter 20 digits (YYYYMMDD000000000000) or formatted: YYYYMMDD-00000-00000-00"
-                    placeholder="19900101-00000-00000-00"
-                    value={formData.nida_number}
-                    onChange={e => handleFieldChange('nida_number', e.target.value)}
-                  />
-                  {errors.nida_number && <p className="text-red-600 text-xs font-bold mt-1">{errors.nida_number}</p>}
-                </div>
-                <div className="space-y-1.5">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Phone Number</label>
                   <input
                     required
