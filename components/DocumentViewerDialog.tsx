@@ -54,8 +54,8 @@ const DocumentViewerDialog: React.FC<DocumentViewerDialogProps> = ({ isOpen, onC
                     </div>
 
                     <div className="flex items-center gap-3">
-                        {/* Control Actions */}
-                        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/50">
+                        {/* Control Actions - Hidden or simplified on very small screens */}
+                        <div className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/50">
                             <button
                                 onClick={() => setIsMaximized(!isMaximized)}
                                 className="p-2.5 text-slate-500 hover:text-slate-900 hover:bg-white rounded-xl transition-all duration-300 active:scale-90"
@@ -75,12 +75,20 @@ const DocumentViewerDialog: React.FC<DocumentViewerDialogProps> = ({ isOpen, onC
                             </a>
                         </div>
 
+                        {/* Standard Close Button - Large and prominent */}
                         <button
                             onClick={onClose}
-                            className="group p-3 bg-slate-900 hover:bg-red-600 text-white rounded-2xl transition-all duration-500 shadow-xl shadow-slate-900/10 hover:shadow-red-600/20 active:scale-90"
+                            className="group p-4 md:p-3 bg-slate-900 hover:bg-red-600 text-white rounded-2xl md:rounded-2xl transition-all duration-500 shadow-xl shadow-slate-900/10 hover:shadow-red-600/20 active:scale-90 border border-white/10"
                         >
                             <X className="w-6 h-6 group-hover:rotate-90 transition-transform duration-500" />
                         </button>
+                    </div>
+                </div>
+
+                {/* Mobile-Only Floating Badge for easier identification */}
+                <div className="md:hidden absolute top-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+                    <div className="px-4 py-1.5 bg-white/80 backdrop-blur-xl border border-white/50 rounded-full shadow-lg">
+                        <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Tap document to interact</p>
                     </div>
                 </div>
 
