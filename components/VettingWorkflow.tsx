@@ -374,6 +374,35 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
     resetForm();
   };
 
+  const handleApproveApplicant = async (guardId: string) => {
+    if (!confirm('Are you sure you want to approve this applicant to the marketplace?')) return;
+    try {
+      const res = await api.post(`/guards/${guardId}/approve`, {});
+      if (res.error) throw new Error(res.error);
+      (window as any).showNotification?.('success', 'Applicant approved to marketplace!');
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e: any) {
+      (window as any).showNotification?.('error', e.message || 'Failed to approve');
+    }
+  };
+
+  const handleRequestImprovement = async (guardId: string) => {
+    const reason = prompt('Please enter the reason for requesting improvement:');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert("A reason is required to request improvements.");
+      return;
+    }
+    try {
+      const res = await api.post(`/guards/${guardId}/request-improvement`, { reason });
+      if (res.error) throw new Error(res.error);
+      (window as any).showNotification?.('success', 'Requested improvements from applicant!');
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e: any) {
+      (window as any).showNotification?.('error', e.message || 'Failed to request improvement');
+    }
+  };
+
   const resetForm = () => {
     setDeploymentSite('');
     setDeploymentSupervisor('');
@@ -696,7 +725,8 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Review</button>
-                  <button onClick={() => { setSelectedGuard(guard); setDecisionMode('hire'); }} className="px-4 py-2 text-white text-[10px] font-black uppercase tracking-widest rounded-xl" style={{ backgroundColor: '#2171B5' }}>Hire</button>
+                  <button onClick={() => handleApproveApplicant(guard.id)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Approve</button>
+                  <button onClick={() => handleRequestImprovement(guard.id)} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Return</button>
                 </div>
               </div>
             )) : (

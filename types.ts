@@ -16,11 +16,13 @@ export enum SubscriptionStatus {
   TRIALING = 'trialing'
 }
 
-export type LifecycleStatus = 'draft' | 'submitted_application' | 'marketplace' | 'interviewing' | 'active' | 'blacklisted';
+export type LifecycleStatus = 'draft' | 'submitted_application' | 'pending_approval' | 'improvement_required' | 'marketplace' | 'interviewing' | 'active' | 'blacklisted';
 
 export enum ApplicationStatus {
   DRAFT = 'draft',
   SUBMITTED_APPLICATION = 'submitted_application',
+  PENDING_APPROVAL = 'pending_approval',
+  IMPROVEMENT_REQUIRED = 'improvement_required',
   MARKETPLACE = 'marketplace',
   INTERVIEWING = 'interviewing',
   ACTIVE = 'active',

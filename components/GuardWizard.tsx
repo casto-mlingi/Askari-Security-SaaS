@@ -208,7 +208,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   const [profileScore, setProfileScore] = useState(0);
 
   const statusValue = ((initialData as any)?.status || '') as string;
-  const isLockedByStatus = !!statusValue && String(statusValue).toLowerCase() !== 'draft';
+  const isLockedByStatus = !!statusValue && !['draft', 'improvement_required'].includes(String(statusValue).toLowerCase());
   const isLocked = !!readOnlyProp || isLockedByStatus || hasSubmitted;
   const isReadOnly = isLocked;
 

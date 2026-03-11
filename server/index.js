@@ -1160,8 +1160,8 @@ app.get('/api/guards', requireAuth, async (req, res) => {
         guardsRows = rows || [];
       } else if (myCompanyId) {
         const { rows } = await pool.query(
-          'SELECT * FROM guards WHERE nida_number = $1 AND (company_id = $2 OR status IN ($3,$4)) ORDER BY created_at DESC',
-          [searchNida, myCompanyId, 'marketplace', 'pending_approval']
+          'SELECT * FROM guards WHERE nida_number = $1 AND (company_id = $2 OR status = $3) ORDER BY created_at DESC',
+          [searchNida, myCompanyId, 'marketplace']
         );
         guardsRows = rows || [];
       } else {
@@ -1222,7 +1222,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
       const { rows } = await pool.query('SELECT * FROM guards ORDER BY created_at DESC');
       guardsRows = rows || [];
     } else if (myCompanyId) {
-      const { rows } = await pool.query('SELECT * FROM guards WHERE company_id = $1 OR status IN ($2,$3) ORDER BY created_at DESC', [myCompanyId, 'marketplace', 'pending_approval']);
+      const { rows } = await pool.query('SELECT * FROM guards WHERE company_id = $1 OR status = $2 ORDER BY created_at DESC', [myCompanyId, 'marketplace']);
       guardsRows = rows || [];
     } else {
       guardsRows = [];
@@ -2417,6 +2417,52 @@ app.post('/api/admin/data-cleanup', requireAuth, async (req, res) => {
     }
   } catch (e) {
     res.status(500).json({ error: 'error', detail: e?.message || String(e) });
+  }
+});
+
+app.post('/api/guards/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    if (actor.role !== 'super_admin' && actor.role !== 'system_hr') {
+      return res.status(403).json({ error: 'forbidden', message: 'Only System HR can approve applicants.' });
+    }
+    const guardId = req.params.id;
+    const { rows } = await pool.query(
+      "UPDATE guards SET status = 'marketplace', updated_at = now() WHERE id = $1 AND status = 'pending_approval' RETURNING id",
+      [guardId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found', message: 'Guard not found or not pending approval' });
+    res.status(200).json({ ok: true, id: rows[0].id });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: e?.message });
+  }
+});
+
+app.post('/api/guards/:id/request-improvement', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    if (actor.role !== 'super_admin' && actor.role !== 'system_hr') {
+      return res.status(403).json({ error: 'forbidden', message: 'Only System HR can request improvements.' });
+    }
+    const guardId = req.params.id;
+    const { reason } = req.body || {};
+    const { rows } = await pool.query(
+      "UPDATE guards SET status = 'improvement_required', updated_at = now() WHERE id = $1 AND status = 'pending_approval' RETURNING id, dossier_data",
+      [guardId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found', message: 'Guard not found or not pending approval' });
+
+    // Also unlock the dossier_data if it exists
+    const currentDossier = rows[0].dossier_data || {};
+    currentDossier.intake_locked = false;
+    currentDossier.allow_edit = true;
+    currentDossier.improvement_reason = reason || 'Please review and improve your application';
+
+    await pool.query('UPDATE guards SET dossier_data = $1 WHERE id = $2', [currentDossier, guardId]);
+
+    res.status(200).json({ ok: true, id: rows[0].id });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: e?.message });
   }
 });
 
