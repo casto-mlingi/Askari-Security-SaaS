@@ -171,6 +171,34 @@ app.get(['/api/debug/env', '/debug/env'], (req, res) => {
   });
 });
 
+app.get('/api/debug/db', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT pg_get_constraintdef(c.oid) AS constraint_def
+      FROM pg_constraint c
+      JOIN pg_class t ON c.conrelid = t.oid
+      WHERE t.relname = 'guards' AND c.conname = 'guards_status_check';
+    `);
+
+    // Also grab disciplinary schema just in case
+    const discRes = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'disciplinary_records';
+    `);
+
+    const dbName = await pool.query("SELECT current_database()");
+
+    res.json({
+      db: dbName.rows[0],
+      constraint: rows[0]?.constraint_def || 'NOT_FOUND',
+      disciplinary_cols: discRes.rows.map(r => r.column_name)
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // --- Monitoring & Alerting (401/500 real-time detection) ---
 function sendAlert(subject, text) {
   try {
