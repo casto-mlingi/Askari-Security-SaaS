@@ -1143,19 +1143,24 @@ app.post('/api/public/signup', async (req, res) => {
   }
 });
 
+// Helper for safely getting company_id without triggering 22P02 UUID Postgres crashes
+const getActorCompanyId = async (actor) => {
+  if (!actor) return null;
+  if (actor.company_id) return actor.company_id;
+  if (actor.sub && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor.sub)) {
+    try {
+      const { rows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
+      return rows[0]?.company_id || null;
+    } catch { return null; }
+  }
+  return null;
+};
+
 const canViewGuardFull = async (actor, guard) => {
   if (actor?.sub && String(actor.sub) === String(guard.id)) {
     return { allowed: true, isSameCompany: false, anasulId: 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b' };
   }
-  let myCompanyId = null;
-  if (actor?.sub) {
-    try {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
-    } catch {
-      myCompanyId = null;
-    }
-  }
+  let myCompanyId = await getActorCompanyId(actor);
   const anasulId = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
   const isSameCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
   const allowed =
@@ -1171,15 +1176,7 @@ app.get('/api/guards', requireAuth, async (req, res) => {
   try {
     await processInterviewTimeouts();
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch {
-        myCompanyId = null;
-      }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     const searchNida = String(req.query?.nida_number || '').trim();
     if (searchNida) {
       let guardsRows = [];
@@ -1347,11 +1344,7 @@ app.post('/api/guards/:id/terminate', requireAuth, async (req, res) => {
     }
 
     // Role check: super_admin, system_hr or company roles for the guard's company
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
-    }
+    let myCompanyId = await getActorCompanyId(actor);
 
     const isPrivileged = ['super_admin', 'system_hr'].includes(actor.role);
     const isOwnerCompany = myCompanyId && guard.company_id && String(myCompanyId) === String(guard.company_id);
@@ -1507,15 +1500,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     if (payload['assigned_supervisor_id'] === '') payload['assigned_supervisor_id'] = null;
     if (!payload['status']) payload['status'] = 'draft';
     // Company association: if HR user, force company_id to their company
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch {
-        myCompanyId = null;
-      }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId) {
       payload['company_id'] = myCompanyId;
     }
@@ -1742,11 +1727,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
 app.get('/api/guards/blacklisted', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     const baseGuardSql = `
       SELECT g.*
       FROM guards g
@@ -1797,10 +1778,7 @@ app.get('/api/interview-logs', requireAuth, async (req, res) => {
 
     // Resolve company_id if not on token or query
     if (!companyId && actor?.sub) {
-      try {
-        const { rows: pr } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        companyId = pr[0]?.company_id || null;
-      } catch { }
+      companyId = await getActorCompanyId(actor);
     }
 
     await client.query('BEGIN');
@@ -2099,15 +2077,7 @@ app.patch('/api/guards/:id', requireAuth, async (req, res) => {
     const { performance_score: _ps_ignored, score: _score_ignored, ...payload } = incoming;
     const actor = req.user || {};
     // Resolve actor's company for HR roles
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch {
-        myCompanyId = null;
-      }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     let current = null;
     if (isValidUuid(id)) {
       const { rows: currentRows } = await pool.query(
@@ -2267,11 +2237,7 @@ app.get('/api/disciplinary/records', requireAuth, async (req, res) => {
     if (queryCompanyId === 'undefined' || queryCompanyId === 'null') {
       queryCompanyId = null;
     }
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-      myCompanyId = meRows[0]?.company_id || null;
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
       if (queryCompanyId) {
@@ -2500,15 +2466,7 @@ app.post('/api/guards/:id/request-improvement', requireAuth, async (req, res) =>
 app.get('/api/sites', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch {
-        myCompanyId = null;
-      }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
       const { rows: r } = await pool.query('SELECT * FROM sites ORDER BY created_at DESC');
@@ -2532,15 +2490,7 @@ app.get('/api/sites', requireAuth, async (req, res) => {
 app.get('/api/profiles', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch {
-        myCompanyId = null;
-      }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
       const { rows: r } = await pool.query('SELECT * FROM profiles ORDER BY created_at DESC');
@@ -2565,15 +2515,7 @@ app.get('/api/companies', requireAuth, async (req, res) => {
       const { rows: r } = await pool.query('SELECT * FROM companies ORDER BY created_at DESC');
       rows = r || [];
     } else if (actor?.sub || actor.company_id) {
-      let myCompanyId = actor.company_id || null;
-      if (!myCompanyId && actor?.sub) {
-        try {
-          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-          myCompanyId = meRows[0]?.company_id || null;
-        } catch {
-          myCompanyId = null;
-        }
-      }
+      let myCompanyId = await getActorCompanyId(actor);
       if (myCompanyId) {
         const { rows: r } = await pool.query('SELECT * FROM companies WHERE id = $1 LIMIT 1', [myCompanyId]);
         rows = r || [];
@@ -2603,15 +2545,7 @@ app.get('/api/inventory/items', requireAuth, async (req, res) => {
         rows = r || [];
       }
     } else {
-      let myCompanyId = actor.company_id || null;
-      if (!myCompanyId && actor?.sub) {
-        try {
-          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-          myCompanyId = meRows[0]?.company_id || null;
-        } catch {
-          myCompanyId = null;
-        }
-      }
+      let myCompanyId = await getActorCompanyId(actor);
       if (!myCompanyId) return res.status(200).json([]);
       const { rows: r } = await pool.query('SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC', [myCompanyId]);
       rows = r || [];
@@ -2659,15 +2593,7 @@ app.get('/api/inventory/custody', requireAuth, async (req, res) => {
         rows = r || [];
       }
     } else {
-      let myCompanyId = actor.company_id || null;
-      if (!myCompanyId && actor?.sub) {
-        try {
-          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-          myCompanyId = meRows[0]?.company_id || null;
-        } catch {
-          myCompanyId = null;
-        }
-      }
+      let myCompanyId = await getActorCompanyId(actor);
       if (!myCompanyId) return res.status(200).json([]);
       const { rows: r } = await pool.query('SELECT * FROM inventory_custody WHERE company_id = $1 ORDER BY issued_at DESC NULLS LAST, created_at DESC', [myCompanyId]);
       rows = r || [];
@@ -2702,15 +2628,7 @@ app.delete('/api/inventory/custody/:id', requireAuth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'not_found' });
     const actor = req.user || {};
     if (!(actor.role === 'super_admin' || actor.role === 'system_hr')) {
-      let myCompanyId = actor.company_id || null;
-      if (!myCompanyId && actor?.sub) {
-        try {
-          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-          myCompanyId = meRows[0]?.company_id || null;
-        } catch {
-          myCompanyId = null;
-        }
-      }
+      let myCompanyId = await getActorCompanyId(actor);
       if (!myCompanyId || String(myCompanyId) !== String(row.company_id)) {
         return res.status(403).json({ error: 'forbidden' });
       }
@@ -2736,15 +2654,7 @@ app.get('/api/inventory/logs', requireAuth, async (req, res) => {
         rows = r || [];
       }
     } else {
-      let myCompanyId = actor.company_id || null;
-      if (!myCompanyId && actor?.sub) {
-        try {
-          const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-          myCompanyId = meRows[0]?.company_id || null;
-        } catch {
-          myCompanyId = null;
-        }
-      }
+      let myCompanyId = await getActorCompanyId(actor);
       if (!myCompanyId) return res.status(200).json([]);
       const { rows: r } = await pool.query('SELECT * FROM inventory_logs WHERE company_id = $1 ORDER BY created_at DESC', [myCompanyId]);
       rows = r || [];
@@ -2798,13 +2708,7 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
 app.get('/api/disciplinary-codes', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch { }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
 
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
@@ -2868,13 +2772,7 @@ app.delete('/api/disciplinary-codes/:code', requireAuth, async (req, res) => {
 app.get('/api/ops/incidents', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: pr } = await pool.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = pr[0]?.company_id || null;
-      } catch { }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
 
     const baseSelect = `
       SELECT
@@ -3000,12 +2898,16 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     let myCompanyId = actor.company_id || null;
-    if (!myCompanyId && actor?.sub) {
+    let mySiteId = null;
+
+    if (!myCompanyId && actor?.sub && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor.sub)) {
       try {
         const { rows: meRows } = await pool.query('SELECT company_id, current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
         myCompanyId = meRows[0]?.company_id || null;
+        mySiteId = meRows[0]?.current_site_id || null;
       } catch { }
     }
+
     const qSiteId = String(req.query?.site_id || '').trim() || null;
     const qStart = String(req.query?.start || '').trim() || null;
     const qEnd = String(req.query?.end || '').trim() || null;
@@ -3016,12 +2918,8 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
     }
     if (qSiteId) {
       await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(qSiteId)]);
-    } else if (actor?.sub) {
-      try {
-        const { rows: sRows } = await pool.query('SELECT current_site_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        const sid = sRows[0]?.current_site_id || null;
-        if (sid) await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(sid)]);
-      } catch { }
+    } else if (mySiteId) { // Use resolved mySiteId if qSiteId is not provided
+      await client.query("SELECT set_config('app.current_site_id', $1, true)", [String(mySiteId)]);
     }
     let rows = [];
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
@@ -3072,14 +2970,7 @@ app.get('/api/rosters', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const actor = req.user || {};
-    let myCompanyId = actor.company_id || null;
-
-    if (!myCompanyId && actor?.sub) {
-      try {
-        const { rows: meRows } = await client.query('SELECT company_id FROM profiles WHERE id = $1 LIMIT 1', [actor.sub]);
-        myCompanyId = meRows[0]?.company_id || null;
-      } catch { }
-    }
+    let myCompanyId = await getActorCompanyId(actor);
 
     const qSiteId = (req.query?.site_id || '').trim() || null;
     const qStart = (req.query?.start || '').trim() || null;
