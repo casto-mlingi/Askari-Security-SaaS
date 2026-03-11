@@ -12,7 +12,6 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     full_name: '',
-    nida_number: '',
     phone: '',
     email: '',
     password: '',
@@ -20,23 +19,9 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
     dob: '',
   });
 
-  const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [showScrollTop, setShowScrollTop] = useState(false);
   const draftKey = 'guard_application_draft_v1';
-
-  useEffect(() => {
-    const clean = (formData.nida_number || '').replace(/[^0-9]/g, '');
-    if (clean.length >= 8) {
-      const yyyy = clean.substring(0,4);
-      const mm = clean.substring(4,6);
-      const dd = clean.substring(6,8);
-      const derived = `${yyyy}-${mm}-${dd}`;
-      const d = new Date(derived);
-      if (!isNaN(d.getTime())) {
-        setFormData(prev => ({ ...prev, dob: derived }));
-      }
-    }
-  }, [formData.nida_number]);
 
   useEffect(() => {
     try {
@@ -47,21 +32,20 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           setFormData(prev => ({
             ...prev,
             full_name: parsed.full_name || '',
-            nida_number: parsed.nida_number || '',
             phone: parsed.phone || '',
             email: parsed.email || '',
             dob: parsed.dob || '',
           }));
         }
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
     try {
       const { password, confirm_password, ...safe } = formData;
       localStorage.setItem(draftKey, JSON.stringify(safe));
-    } catch {}
+    } catch { }
   }, [formData]);
 
   // Handle scroll visibility
@@ -83,15 +67,9 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
   };
 
   const validateForm = () => {
-    const newErrors: {[key: string]: string} = {};
+    const newErrors: { [key: string]: string } = {};
 
     if (!formData.full_name.trim()) newErrors.full_name = 'Full name is required';
-    if (!formData.nida_number.trim()) {
-      newErrors.nida_number = 'NIDA number is required';
-    } else {
-      const digits = formData.nida_number.replace(/[^0-9]/g, '');
-      if (digits.length !== 20) newErrors.nida_number = 'NIDA must be exactly 20 digits';
-    }
     if (!formData.phone.trim()) {
       newErrors.phone = 'Phone number is required';
     } else {
@@ -109,7 +87,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
     return Object.keys(newErrors).length === 0;
   };
 
-  useEffect(() => {}, []);
+  useEffect(() => { }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,7 +98,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
       try {
         const newGuard: Partial<Guard> = {
           full_name: formData.full_name,
-          nida_number: formData.nida_number,
+          nida_number: '',
           phone: formData.phone,
           dob: formData.dob || '2000-01-01',
           email: formData.email,
@@ -148,7 +126,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
           savedGuard = {
             id: `g-${Date.now()}`,
             full_name: formData.full_name,
-            nida_number: formData.nida_number,
+            nida_number: '',
             phone: formData.phone,
             dob: formData.dob || '2000-01-01',
             email: formData.email,
@@ -185,7 +163,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
         }));
         try {
           localStorage.removeItem(draftKey);
-        } catch {}
+        } catch { }
 
         onComplete(savedGuard);
 
@@ -207,12 +185,6 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
     let msg = '';
     if (field === 'full_name') {
       if (!value.trim()) msg = 'Full name is required';
-    }
-    if (field === 'nida_number') {
-      const digits = value.replace(/[^0-9]/g, '');
-      if (digits.length > 20) msg = 'NIDA cannot exceed 20 digits';
-      else if (digits.length < 20) msg = 'NIDA must be exactly 20 digits';
-      else msg = '';
     }
     if (field === 'phone') {
       const raw = value.replace(/\s+/g, '');
@@ -246,8 +218,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
   };
 
   const inputClass = (hasError: boolean) =>
-    `w-full h-11 px-4 bg-surface-secondary border-2 rounded-xl font-medium outline-none transition-all text-sm ${
-      hasError ? 'border-error' : 'border-border-light focus:border-primary'
+    `w-full h-11 px-4 bg-surface-secondary border-2 rounded-xl font-medium outline-none transition-all text-sm ${hasError ? 'border-error' : 'border-border-light focus:border-primary'
     }`;
   const labelClass = 'text-xs font-semibold text-text-secondary uppercase tracking-wider block mb-1';
 
@@ -308,7 +279,7 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className={labelClass}>Full Name</label>
-                  <input 
+                  <input
                     required
                     className={inputClass(!!errors.full_name)}
                     placeholder="E.G. JUMA ABDUL SALIM"
@@ -320,25 +291,8 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className={labelClass}>NIDA Number</label>
-                    <input 
-                      required
-                      className={`${inputClass(!!errors.nida_number)} font-mono`}
-                      inputMode="numeric"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      title="Enter 20 digits (YYYYMMDD000000000000) or formatted: YYYYMMDD-00000-00000-00"
-                      placeholder="19900101-00000-00000-00"
-                      value={formData.nida_number}
-                      onChange={e => handleInputChange('nida_number', e.target.value)}
-                    />
-                    <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Enter 20-digit NIDA (or YYYYMMDD-00000-00000-00). DOB auto-fills.</p>
-                    {errors.nida_number && <p className="text-red-600 text-xs font-bold mt-1">{errors.nida_number}</p>}
-                  </div>
-                  <div className="space-y-1.5">
                     <label className={labelClass}>Phone Number</label>
-                    <input 
+                    <input
                       required
                       type="tel"
                       className={inputClass(!!errors.phone)}
@@ -355,47 +309,47 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
                 <div className="mt-6 pt-5 border-t border-border-light" />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className={labelClass}>Email Address (for login)</label>
-                      <input 
-                        required
-                        type="email"
-                        className={inputClass(!!errors.email)}
-                        placeholder="name@email.com"
-                        value={formData.email}
-                        onChange={e => handleInputChange('email', e.target.value)}
-                      />
-                      {errors.email && <p className="text-red-600 text-xs font-bold mt-1">{errors.email}</p>}
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className={labelClass}>Create Password</label>
-                      <input 
-                        required
-                        type="password"
-                        className={inputClass(!!errors.password)}
-                        title="Password must be at least 8 characters"
-                        placeholder="••••••••"
-                        value={formData.password}
-                        onChange={e => handleInputChange('password', e.target.value)}
-                      />
-                      {errors.password && <p className="text-red-600 text-xs font-bold mt-1">{errors.password}</p>}
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className={labelClass}>Confirm Password</label>
-                      <input 
-                        required
-                        type="password"
-                        className={inputClass(!!errors.confirm_password)}
-                        placeholder="••••••••"
-                        value={formData.confirm_password}
-                        onChange={e => handleInputChange('confirm_password', e.target.value)}
-                      />
-                      {errors.confirm_password && <p className="text-red-600 text-xs font-bold mt-1">{errors.confirm_password}</p>}
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClass}>Email Address (for login)</label>
+                    <input
+                      required
+                      type="email"
+                      className={inputClass(!!errors.email)}
+                      placeholder="name@email.com"
+                      value={formData.email}
+                      onChange={e => handleInputChange('email', e.target.value)}
+                    />
+                    {errors.email && <p className="text-red-600 text-xs font-bold mt-1">{errors.email}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClass}>Create Password</label>
+                    <input
+                      required
+                      type="password"
+                      className={inputClass(!!errors.password)}
+                      title="Password must be at least 8 characters"
+                      placeholder="••••••••"
+                      value={formData.password}
+                      onChange={e => handleInputChange('password', e.target.value)}
+                    />
+                    {errors.password && <p className="text-red-600 text-xs font-bold mt-1">{errors.password}</p>}
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className={labelClass}>Confirm Password</label>
+                    <input
+                      required
+                      type="password"
+                      className={inputClass(!!errors.confirm_password)}
+                      placeholder="••••••••"
+                      value={formData.confirm_password}
+                      onChange={e => handleInputChange('confirm_password', e.target.value)}
+                    />
+                    {errors.confirm_password && <p className="text-red-600 text-xs font-bold mt-1">{errors.confirm_password}</p>}
                   </div>
                 </div>
+              </div>
 
-              <button 
+              <button
                 type="submit"
                 disabled={isSubmitting}
                 className="w-full py-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mt-6 transition-all active:scale-[0.98] cursor-pointer"
@@ -405,17 +359,17 @@ const GuardApplication: React.FC<GuardApplicationProps> = ({ onComplete, onBackT
                 ) : (
                   <>
                     Create Account
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" strokeWidth="3"/></svg>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" strokeWidth="3" /></svg>
                   </>
                 )}
               </button>
 
-              <button 
+              <button
                 type="button"
                 onClick={onBackToLogin}
                 className="w-full text-xs font-black text-primary uppercase tracking-widest hover:text-primary-dark transition-colors py-2 flex items-center justify-center gap-2"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 7l-5 5m0 0l5 5m-5-5h12" strokeWidth="2.5"/></svg>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 7l-5 5m0 0l5 5m-5-5h12" strokeWidth="2.5" /></svg>
                 Return to Login
               </button>
             </form>
