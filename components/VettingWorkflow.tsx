@@ -715,7 +715,11 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
         {isPrivileged && activeTab === 'submitted' && (
           <div className="space-y-4">
             {submittedApplicants.length ? submittedApplicants.map(guard => (
-              <div key={guard.id} className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-6">
+              <div
+                key={guard.id}
+                onClick={() => setDetailGuard(guard)}
+                className="w-full text-left bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all flex items-center justify-between gap-6 cursor-pointer"
+              >
                 <div className="flex items-center gap-4">
                   <AvatarImage filename={guard.passport_photo_url} alt={guard.full_name} fallbackLetter={guard.full_name?.[0] || 'G'} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
                   <div>
@@ -724,9 +728,9 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Review</button>
-                  <button onClick={() => handleApproveApplicant(guard.id)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Approve</button>
-                  <button onClick={() => handleRequestImprovement(guard.id)} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Return</button>
+                  <button onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-800 transition-colors">Review</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleApproveApplicant(guard.id); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Approve</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleRequestImprovement(guard.id); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Return</button>
                 </div>
               </div>
             )) : (
