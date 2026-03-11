@@ -1060,7 +1060,7 @@ app.post('/api/public/signup', async (req, res) => {
       password,
       dossier_data
     } = body;
-    if (!full_name || !nida_number || !phone || !email || !password) {
+    if (!full_name || !phone || !email || !password) {
       return res.status(400).json({ error: 'bad_request' });
     }
     const emailNorm = String(email).toLowerCase().trim();
