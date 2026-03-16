@@ -2507,6 +2507,62 @@ app.get('/api/profiles', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/profiles', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const { email, password, full_name, role, company_id } = req.body;
+
+    if (!email || !password || !full_name || !role) {
+      return res.status(400).json({ error: 'bad_request', message: 'Missing required fields' });
+    }
+
+    // Only allow supervisors to be added for now via this specific endpoint if desired, 
+    // or allow other roles if the actor has permission.
+    if (role !== 'supervisor' && actor.role !== 'super_admin') {
+      return res.status(403).json({ error: 'forbidden', message: 'Only supervisor role can be added' });
+    }
+
+    const emailNorm = String(email).toLowerCase().trim();
+    const hash = await bcrypt.hash(String(password), 10);
+    const targetCompanyId = company_id || await getActorCompanyId(actor);
+
+    // Generate UUID
+    const uuid = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+    await client.query('BEGIN');
+
+    // 1) Insert into users table
+    await client.query(
+      `INSERT INTO users (id, email, role, password, full_name, company_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [uuid, emailNorm, role, hash, full_name, targetCompanyId]
+    );
+
+    // 2) Insert into profiles table
+    const { rows: pRows } = await client.query(
+      `INSERT INTO profiles (id, email, role, password_hash, full_name, company_id, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, true, now(), now())
+       RETURNING *`,
+      [uuid, emailNorm, role, hash, full_name, targetCompanyId]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json(pRows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/profiles error:', e);
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'conflict', message: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'server_error', detail: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+
 app.get('/api/companies', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
