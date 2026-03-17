@@ -2487,6 +2487,40 @@ app.get('/api/sites', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/sites', requireAuth, async (req, res) => {
+  try {
+    const actor = req.user || {};
+    // Only admins may create sites
+    const allowed = ['super_admin', 'system_hr', 'company_admin'];
+    if (!allowed.includes(actor.role)) {
+      return res.status(403).json({ error: 'forbidden', message: 'Insufficient permissions to create a site' });
+    }
+
+    const { name, lat, lng, geofence_radius_meters, supervisor_id } = req.body;
+    // Use the company_id from the request body, or fall back to the actor's own company
+    let company_id = req.body.company_id || null;
+    if (!company_id) {
+      company_id = await getActorCompanyId(actor);
+    }
+
+    if (!name) {
+      return res.status(400).json({ error: 'bad_request', message: 'Site name is required' });
+    }
+    if (!company_id) {
+      return res.status(400).json({ error: 'bad_request', message: 'company_id is required' });
+    }
+
+    const result = await pool.query(
+      'INSERT INTO sites (name, lat, lng, geofence_radius_meters, supervisor_id, company_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now(), now()) RETURNING *',
+      [name, lat || null, lng || null, geofence_radius_meters || 100, supervisor_id || null, company_id]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('POST /api/sites error:', err);
+    res.status(500).json({ error: 'Failed to create site', detail: err?.message || String(err) });
+  }
+});
+
 app.get('/api/profiles', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
