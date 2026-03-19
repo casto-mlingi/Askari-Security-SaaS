@@ -2795,19 +2795,21 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
 });
 
 // POST /api/inventory/stock-in
-// Records incoming stock: creates or updates an inventory_items row, then logs the transaction.
+// Frontend sends: { company_id, items: [{ name, qty, unitCost, condition }] }
 app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const actor = req.user || {};
     const b = req.body || {};
 
-    // Resolve company_id: prefer session, fallback to body (super_admin override)
+    // ── company_id resolution ──────────────────────────────────────────────
+    // 1. Trust the JWT session first (prevents cross-tenant writes)
+    // 2. Fall back to getActorCompanyId (DB lookup for users without embedded company_id)
+    // 3. Super-admin may override with body.company_id
     let company_id = actor.company_id || null;
-    if (!company_id || !(actor.role === 'super_admin' || actor.role === 'system_hr')) {
+    if (!company_id) {
       company_id = await getActorCompanyId(actor);
     }
-    // Allow super_admin to target a specific company via body
     if ((actor.role === 'super_admin' || actor.role === 'system_hr') && b.company_id) {
       company_id = b.company_id;
     }
@@ -2816,68 +2818,84 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'bad_request', message: 'company_id could not be determined from session' });
     }
 
-    const item_name = String(b.item_name || b.name || '').trim();
-    const quantity = Number(b.quantity);
-    const unit_price = b.unit_price != null ? Number(b.unit_price) : null;
+    // ── payload: items array ───────────────────────────────────────────────
+    // Frontend shape: { name, qty, unitCost, condition }
+    const rawItems = Array.isArray(b.items) ? b.items : [];
+    const items = rawItems
+      .map(v => ({
+        name: String(v.name || '').trim(),
+        quantity: Number(v.qty || v.quantity) || 0,
+        unit_price: v.unitCost != null ? Number(v.unitCost) : (v.unit_price != null ? Number(v.unit_price) : null),
+        condition: String(v.condition || 'good').toLowerCase()
+      }))
+      .filter(v => v.name && v.quantity > 0);
 
-    if (!item_name) {
-      return res.status(400).json({ error: 'bad_request', message: 'item_name is required' });
-    }
-    if (!quantity || quantity <= 0) {
-      return res.status(400).json({ error: 'bad_request', message: 'quantity must be a positive number' });
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'bad_request', message: 'items array is empty or all rows are invalid (name and qty > 0 required)' });
     }
 
     await client.query('BEGIN');
 
-    // Upsert: if the item already exists for this company, increment stock; otherwise insert new row
-    const { rows: existing } = await client.query(
-      `SELECT id, stock_quantity FROM inventory_items WHERE company_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-      [company_id, item_name]
-    );
+    const results = [];
 
-    let item;
-    if (existing[0]) {
-      const newQty = (Number(existing[0].stock_quantity) || 0) + quantity;
-      const updateFields = [`stock_quantity = $1`, `updated_at = now()`];
-      const updateVals = [newQty, existing[0].id];
-      if (unit_price != null) {
-        updateFields.splice(1, 0, `cost_per_unit = $2`);
-        updateVals.splice(1, 0, unit_price);
-        updateVals[updateVals.length - 1] = existing[0].id; // fix id position
-        // rebuild with correct param indices
-        const { rows: r } = await client.query(
-          `UPDATE inventory_items SET stock_quantity = $1, cost_per_unit = $2, updated_at = now() WHERE id = $3 RETURNING *`,
-          [newQty, unit_price, existing[0].id]
-        );
-        item = r[0];
+    for (const entry of items) {
+      const { name, quantity, unit_price, condition } = entry;
+
+      // Upsert inventory_items: increment if exists, insert if new
+      const { rows: existing } = await client.query(
+        `SELECT id, stock_quantity FROM inventory_items WHERE company_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+        [company_id, name]
+      );
+
+      let item;
+      if (existing[0]) {
+        const newQty = (Number(existing[0].stock_quantity) || 0) + quantity;
+        if (unit_price != null) {
+          const { rows: r } = await client.query(
+            `UPDATE inventory_items
+             SET stock_quantity = $1, cost_per_unit = $2, condition = $3, updated_at = now()
+             WHERE id = $4 RETURNING *`,
+            [newQty, unit_price, condition, existing[0].id]
+          );
+          item = r[0];
+        } else {
+          const { rows: r } = await client.query(
+            `UPDATE inventory_items
+             SET stock_quantity = $1, condition = $2, updated_at = now()
+             WHERE id = $3 RETURNING *`,
+            [newQty, condition, existing[0].id]
+          );
+          item = r[0];
+        }
       } else {
         const { rows: r } = await client.query(
-          `UPDATE inventory_items SET stock_quantity = $1, updated_at = now() WHERE id = $2 RETURNING *`,
-          [newQty, existing[0].id]
+          `INSERT INTO inventory_items (company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING *`,
+          [company_id, name, quantity, unit_price, condition]
         );
         item = r[0];
       }
-    } else {
-      const { rows: r } = await client.query(
-        `INSERT INTO inventory_items (company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'good', now(), now()) RETURNING *`,
-        [company_id, item_name, quantity, unit_price]
-      );
-      item = r[0];
+
+      // Log the stock-in action
+      try {
+        await client.query(
+          `INSERT INTO inventory_logs (action, company_id, item_id, quantity, created_at)
+           VALUES ('stock_in', $1, $2, $3, now())`,
+          [company_id, item.id, quantity]
+        );
+      } catch (logErr) {
+        console.warn('[stock-in] inventory_logs insert failed (non-fatal):', logErr.message);
+      }
+
+      results.push(item);
     }
 
-    // Record the stock-in transaction in inventory_logs
-    await client.query(
-      `INSERT INTO inventory_logs (action, company_id, item_id, quantity, created_at)
-       VALUES ('stock_in', $1, $2, $3, now())`,
-      [company_id, item.id, quantity]
-    );
-
     await client.query('COMMIT');
-    return res.status(200).json({ ok: true, item });
+    console.log(`[stock-in] OK: ${results.length} item(s) upserted for company ${company_id}`);
+    return res.status(200).json({ ok: true, items: results });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch { }
-    console.error('POST /api/inventory/stock-in error:', e.message, e.detail || '');
+    console.error('POST /api/inventory/stock-in error:', e.message, e.detail || '', e.stack);
     return sendDbError(res, e, 'Failed to record stock-in');
   } finally {
     client.release();
