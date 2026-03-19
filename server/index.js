@@ -477,6 +477,53 @@ async function ensureSchema() {
   } catch (e) {
     console.warn('[schema] work_experiences ensure failed:', e?.message || e);
   }
+  // ── Inventory tables ────────────────────────────────────────────────────
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS inventory_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID,
+        name TEXT NOT NULL,
+        stock_quantity INTEGER NOT NULL DEFAULT 0,
+        cost_per_unit NUMERIC,
+        condition TEXT DEFAULT 'good',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+  } catch (e) {
+    console.warn('[schema] inventory_items ensure failed:', e?.message || e);
+  }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS inventory_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        action TEXT NOT NULL,
+        company_id UUID,
+        guard_id UUID,
+        item_id UUID,
+        item_name TEXT,
+        quantity INTEGER NOT NULL DEFAULT 0,
+        return_condition TEXT,
+        amount_owed NUMERIC,
+        payment_status TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        paid_at TIMESTAMPTZ
+      )`);
+  } catch (e) {
+    console.warn('[schema] inventory_logs ensure failed:', e?.message || e);
+  }
+  // Backfill item_name column if table already exists without it
+  try {
+    await pool.query('ALTER TABLE IF EXISTS inventory_logs ADD COLUMN IF NOT EXISTS item_name TEXT');
+  } catch (e) {
+    console.warn('[schema] inventory_logs.item_name ensure failed:', e?.message || e);
+  }
+  // Backfill item_id nullable if table already exists with NOT NULL constraint
+  try {
+    await pool.query('ALTER TABLE IF EXISTS inventory_logs ALTER COLUMN item_id DROP NOT NULL');
+  } catch (e) {
+    console.warn('[schema] inventory_logs.item_id nullable ensure failed:', e?.message || e);
+  }
 }
 ensureSchema().catch(() => { });
 
@@ -2625,24 +2672,74 @@ app.get('/api/inventory/items', requireAuth, async (req, res) => {
   try {
     const actor = req.user || {};
     const qCompanyId = String(req.query.company_id || '').trim() || null;
-    let rows = [];
+
+    // Determine which company to query
+    let targetCompanyId = null;
     if (actor.role === 'super_admin' || actor.role === 'system_hr') {
-      if (qCompanyId) {
-        const { rows: r } = await pool.query('SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC', [qCompanyId]);
-        rows = r || [];
-      } else {
-        const { rows: r } = await pool.query('SELECT * FROM inventory_items ORDER BY updated_at DESC NULLS LAST, created_at DESC');
-        rows = r || [];
-      }
+      targetCompanyId = qCompanyId || null; // null = all companies
     } else {
-      let myCompanyId = await getActorCompanyId(actor);
-      if (!myCompanyId) return res.status(200).json([]);
-      const { rows: r } = await pool.query('SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC', [myCompanyId]);
-      rows = r || [];
+      targetCompanyId = actor.company_id || await getActorCompanyId(actor);
+      if (!targetCompanyId) return res.status(200).json([]);
     }
-    res.status(200).json(rows);
+
+    // Aggregate stock from inventory_logs:
+    // current_stock = SUM(stock_in qty) - SUM(issue qty) + SUM(return qty)
+    const companyFilter = targetCompanyId ? 'WHERE company_id = $1' : '';
+    const params = targetCompanyId ? [targetCompanyId] : [];
+
+    const { rows: logRows } = await pool.query(`
+      SELECT
+        COALESCE(item_name, item_id::text, 'Unknown') AS name,
+        item_id,
+        item_name,
+        company_id,
+        SUM(CASE WHEN action = 'stock_in' THEN quantity ELSE 0 END) AS total_in,
+        SUM(CASE WHEN action = 'issue'    THEN quantity ELSE 0 END) AS total_issued,
+        SUM(CASE WHEN action = 'return'   THEN quantity ELSE 0 END) AS total_returned,
+        SUM(CASE WHEN action = 'stock_in' THEN quantity ELSE 0 END)
+          - SUM(CASE WHEN action = 'issue'  THEN quantity ELSE 0 END)
+          + SUM(CASE WHEN action = 'return' THEN quantity ELSE 0 END) AS stock_quantity,
+        MAX(created_at) AS updated_at
+      FROM inventory_logs
+      ${companyFilter}
+      GROUP BY COALESCE(item_name, item_id::text, 'Unknown'), item_id, item_name, company_id
+      ORDER BY MAX(created_at) DESC
+    `, params);
+
+    // Also pull rows from inventory_items for items that have no logs yet
+    let itemRows = [];
+    try {
+      const { rows: r } = await pool.query(
+        targetCompanyId
+          ? 'SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY updated_at DESC NULLS LAST'
+          : 'SELECT * FROM inventory_items ORDER BY updated_at DESC NULLS LAST',
+        targetCompanyId ? [targetCompanyId] : []
+      );
+      itemRows = r || [];
+    } catch { }
+
+    // Merge: prefer log-aggregated data, fall back to inventory_items for items with no logs
+    const logNames = new Set(logRows.map(r => String(r.name || '').toLowerCase()));
+    const extraItems = itemRows.filter(i => !logNames.has(String(i.name || '').toLowerCase()));
+
+    const merged = [
+      ...logRows.map(r => ({
+        id: r.item_id || null,
+        name: r.item_name || r.name,
+        company_id: r.company_id,
+        stock_quantity: Number(r.stock_quantity) || 0,
+        total_in: Number(r.total_in) || 0,
+        total_issued: Number(r.total_issued) || 0,
+        total_returned: Number(r.total_returned) || 0,
+        updated_at: r.updated_at
+      })),
+      ...extraItems.map(i => ({ ...i, total_in: i.stock_quantity, total_issued: 0, total_returned: 0 }))
+    ];
+
+    res.status(200).json(merged);
   } catch (e) {
-    res.status(500).json({ error: 'error' });
+    console.error('[GET /api/inventory/items] error:', e.message);
+    res.status(500).json({ error: 'error', message: e.message });
   }
 });
 
@@ -2796,6 +2893,7 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
 
 // POST /api/inventory/stock-in
 // Frontend sends: { company_id, items: [{ name, qty, unitCost, condition }] }
+// SOURCE OF TRUTH: inventory_logs. We write there FIRST, then sync inventory_items as a cache.
 app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -2803,99 +2901,109 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
     const b = req.body || {};
 
     // ── company_id resolution ──────────────────────────────────────────────
-    // 1. Trust the JWT session first (prevents cross-tenant writes)
-    // 2. Fall back to getActorCompanyId (DB lookup for users without embedded company_id)
-    // 3. Super-admin may override with body.company_id
     let company_id = actor.company_id || null;
     if (!company_id) {
       company_id = await getActorCompanyId(actor);
     }
+    // Super/system-admin can override with an explicit body.company_id
     if ((actor.role === 'super_admin' || actor.role === 'system_hr') && b.company_id) {
       company_id = b.company_id;
     }
-
     if (!company_id) {
       return res.status(400).json({ error: 'bad_request', message: 'company_id could not be determined from session' });
     }
 
-    // ── payload: items array ───────────────────────────────────────────────
-    // Frontend shape: { name, qty, unitCost, condition }
+    // ── validate payload ───────────────────────────────────────────────────
     const rawItems = Array.isArray(b.items) ? b.items : [];
-    const items = rawItems
+    const validItems = rawItems
       .map(v => ({
-        name: String(v.name || '').trim(),
-        quantity: Number(v.qty || v.quantity) || 0,
+        name:       String(v.name || '').trim(),
+        quantity:   Number(v.qty || v.quantity) || 0,
         unit_price: v.unitCost != null ? Number(v.unitCost) : (v.unit_price != null ? Number(v.unit_price) : null),
-        condition: String(v.condition || 'good').toLowerCase()
+        condition:  String(v.condition || 'good').toLowerCase()
       }))
       .filter(v => v.name && v.quantity > 0);
 
-    if (items.length === 0) {
-      return res.status(400).json({ error: 'bad_request', message: 'items array is empty or all rows are invalid (name and qty > 0 required)' });
+    if (validItems.length === 0) {
+      return res.status(400).json({
+        error: 'bad_request',
+        message: 'items array is empty or all rows invalid — each item needs name and qty > 0'
+      });
     }
 
     await client.query('BEGIN');
 
     const results = [];
 
-    for (const entry of items) {
+    for (const entry of validItems) {
       const { name, quantity, unit_price, condition } = entry;
 
-      // Upsert inventory_items: increment if exists, insert if new
-      const { rows: existing } = await client.query(
-        `SELECT id, stock_quantity FROM inventory_items WHERE company_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-        [company_id, name]
+      // ── STEP 1: Write to inventory_logs (source of truth, no FK dependency) ──
+      const { rows: logRows } = await client.query(
+        `INSERT INTO inventory_logs
+           (action, company_id, item_id, item_name, quantity, created_at)
+         VALUES ('stock_in', $1, NULL, $2, $3, now())
+         RETURNING *`,
+        [company_id, name, quantity]
       );
+      const logRow = logRows[0];
 
-      let item;
-      if (existing[0]) {
-        const newQty = (Number(existing[0].stock_quantity) || 0) + quantity;
-        if (unit_price != null) {
-          const { rows: r } = await client.query(
-            `UPDATE inventory_items
-             SET stock_quantity = $1, cost_per_unit = $2, condition = $3, updated_at = now()
-             WHERE id = $4 RETURNING *`,
-            [newQty, unit_price, condition, existing[0].id]
-          );
-          item = r[0];
-        } else {
-          const { rows: r } = await client.query(
-            `UPDATE inventory_items
-             SET stock_quantity = $1, condition = $2, updated_at = now()
-             WHERE id = $3 RETURNING *`,
-            [newQty, condition, existing[0].id]
-          );
-          item = r[0];
-        }
-      } else {
-        const { rows: r } = await client.query(
-          `INSERT INTO inventory_items (company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING *`,
-          [company_id, name, quantity, unit_price, condition]
-        );
-        item = r[0];
-      }
-
-      // Log the stock-in action
+      // ── STEP 2: Sync inventory_items cache (optional, non-fatal) ──────────
+      let itemId = null;
       try {
-        await client.query(
-          `INSERT INTO inventory_logs (action, company_id, item_id, quantity, created_at)
-           VALUES ('stock_in', $1, $2, $3, now())`,
-          [company_id, item.id, quantity]
+        const { rows: existing } = await client.query(
+          `SELECT id FROM inventory_items WHERE company_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+          [company_id, name]
         );
-      } catch (logErr) {
-        console.warn('[stock-in] inventory_logs insert failed (non-fatal):', logErr.message);
+        if (existing[0]) {
+          // Update stock_quantity as SUM from logs for this item
+          const { rows: sumRows } = await client.query(
+            `SELECT
+               SUM(CASE WHEN action = 'stock_in' THEN quantity ELSE 0 END)
+               - SUM(CASE WHEN action = 'issue'   THEN quantity ELSE 0 END)
+               + SUM(CASE WHEN action = 'return'  THEN quantity ELSE 0 END) AS net_qty
+             FROM inventory_logs
+             WHERE company_id = $1 AND LOWER(item_name) = LOWER($2)`,
+            [company_id, name]
+          );
+          const netQty = Number(sumRows[0]?.net_qty) || 0;
+          const updateParams = unit_price != null
+            ? [netQty, unit_price, condition, existing[0].id]
+            : [netQty, condition, existing[0].id];
+          const updateSql = unit_price != null
+            ? `UPDATE inventory_items SET stock_quantity=$1, cost_per_unit=$2, condition=$3, updated_at=now() WHERE id=$4`
+            : `UPDATE inventory_items SET stock_quantity=$1, condition=$2, updated_at=now() WHERE id=$3`;
+          await client.query(updateSql, updateParams);
+          itemId = existing[0].id;
+        } else {
+          const { rows: ins } = await client.query(
+            `INSERT INTO inventory_items (company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING id`,
+            [company_id, name, quantity, unit_price, condition]
+          );
+          itemId = ins[0]?.id || null;
+        }
+        // Back-fill item_id on the log row we just inserted
+        if (itemId) {
+          await client.query(
+            `UPDATE inventory_logs SET item_id = $1 WHERE id = $2`,
+            [itemId, logRow.id]
+          );
+        }
+      } catch (syncErr) {
+        // Non-fatal: inventory_logs is already written, cache sync can fail
+        console.warn('[stock-in] inventory_items sync failed (non-fatal):', syncErr.message);
       }
 
-      results.push(item);
+      results.push({ log_id: logRow.id, item_id: itemId, name, quantity, unit_price, condition });
     }
 
     await client.query('COMMIT');
-    console.log(`[stock-in] OK: ${results.length} item(s) upserted for company ${company_id}`);
+    console.log(`[stock-in] OK: ${results.length} item(s) logged for company ${company_id}`);
     return res.status(200).json({ ok: true, items: results });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch { }
-    console.error('POST /api/inventory/stock-in error:', e.message, e.detail || '', e.stack);
+    console.error('[stock-in] FATAL:', e.message, e.detail || '', e.stack);
     return sendDbError(res, e, 'Failed to record stock-in');
   } finally {
     client.release();
