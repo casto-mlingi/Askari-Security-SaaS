@@ -53,8 +53,12 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
   const [issueGuardId, setIssueGuardId] = useState<string>('');
   const [issueRows, setIssueRows] = useState<Array<{ itemId: string; qty: number; condition: 'new' | 'good' | 'fair' }>>([{ itemId: '', qty: 1, condition: 'new' }]);
   const [returnOpen, setReturnOpen] = useState(false);
-  const [returnCustody, setReturnCustody] = useState<InventoryCustody | null>(null);
-  const [returnCondition, setReturnCondition] = useState<'good' | 'damaged' | 'lost' | 'bad' | 'worse'>('good');
+  const [returnGuardId, setReturnGuardId] = useState<string | null>(null);
+  const [returnRows, setReturnRows] = useState<Array<{ custodyId: string, returnCondition: 'good' | 'damaged' | 'lost' | 'bad' | 'worse' }>>([]);
+
+  const returnGuardCustody = useMemo(() => {
+    return custody.filter(c => c.guard_id === returnGuardId);
+  }, [custody, returnGuardId]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [liabilityDebugRelax, setLiabilityDebugRelax] = useState(false);
   const issueDraftKey = useMemo(() => `procurement_issue_draft:${companyId || 'anon'}`, [companyId]);
@@ -339,22 +343,12 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
 
   const confirmReturn = async () => {
     console.log('🚀 Action Started: confirmReturn');
-    if (!returnCustody) {
-      console.warn('❌ Validation Failed:', 'Missing returnCustody');
+    const validRows = returnRows.filter(r => r.custodyId);
+    if (!returnGuardId || validRows.length === 0) {
+      console.warn('❌ Validation Failed:', 'Missing returnGuardId or valid returnRows', { returnGuardId, returnRows });
       return;
     }
-    const item = items.find(i => i.id === returnCustody.item_id);
-    if (!item) {
-      console.warn('❌ Validation Failed:', 'Item for custody not found', { returnCustody });
-      return;
-    }
-    console.log('📦 Payload:', { custodyId: returnCustody.id, returnCondition, itemId: item.id });
-    setIsSyncing(true);
-    let updateStock = item.stock_quantity;
-    if (returnCondition === 'good') updateStock = item.stock_quantity + returnCustody.quantity;
-    await api.patch('/inventory/items/' + item.id, { stock_quantity: updateStock });
-    const badOrWorse = returnCondition === 'bad' || returnCondition === 'worse';
-    const amount = (returnCondition === 'damaged' || returnCondition === 'lost' || badOrWorse) ? item.cost_per_unit * returnCustody.quantity : 0;
+
     const TENANT_COMPANY_ID = 'f2ffa67e-c5fc-4cb5-a81f-7cb0074eff4b';
     let effectiveCompanyId = TENANT_COMPANY_ID;
     try {
@@ -363,39 +357,50 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
     } catch {
       effectiveCompanyId = TENANT_COMPANY_ID;
     }
-    const paymentStatus = returnCondition === 'good' ? 'n/a' : 'unpaid';
-    console.log('Final Payload with Company ID:', {
-      company_id: effectiveCompanyId,
-      guard_id: returnCustody.guard_id,
-      item_id: item.id,
-      quantity: returnCustody.quantity,
-      action: 'return',
-      payment_status: paymentStatus,
-      return_condition: returnCondition,
-      amount_owed: amount
-    });
-    const logRes = await api.post('/inventory/logs', {
-      action: 'return',
-      company_id: effectiveCompanyId,
-      guard_id: returnCustody.guard_id,
-      item_id: item.id,
-      quantity: returnCustody.quantity,
-      return_condition: returnCondition,
-      amount_owed: amount,
-      payment_status: paymentStatus,
-      created_at: new Date().toISOString(),
-    });
-    await api.delete('/inventory/custody/' + returnCustody.id);
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, stock_quantity: updateStock } : i));
-    setCustody(prev => prev.filter(c => c.id !== returnCustody.id));
-    if ((logRes as any)?.data) {
-      setLogs(prev => [((logRes as any).data as InventoryLog), ...prev]);
-    } else {
-      setLogs(prev => [{ id: `log-${Date.now()}`, action: 'return', guard_id: returnCustody.guard_id, item_id: item.id, quantity: returnCustody.quantity, return_condition: returnCondition, amount_owed: amount, payment_status: paymentStatus, created_at: new Date().toISOString() } as InventoryLog, ...prev]);
+
+    setIsSyncing(true);
+
+    for (const row of validRows) {
+      const custItem = returnGuardCustody.find(c => c.id === row.custodyId);
+      if (!custItem) continue;
+
+      const item = items.find(i => i.id === custItem.item_id);
+      if (!item) continue;
+
+      let updateStock = item.stock_quantity;
+      if (row.returnCondition === 'good') updateStock = item.stock_quantity + custItem.quantity;
+      await api.patch('/inventory/items/' + item.id, { stock_quantity: updateStock });
+      
+      const badOrWorse = row.returnCondition === 'bad' || row.returnCondition === 'worse';
+      const amount = (row.returnCondition === 'damaged' || row.returnCondition === 'lost' || badOrWorse) ? item.cost_per_unit * custItem.quantity : 0;
+      const paymentStatus = row.returnCondition === 'good' ? 'n/a' : 'unpaid';
+      
+      const logRes = await api.post('/inventory/logs', {
+        action: 'return',
+        company_id: effectiveCompanyId,
+        guard_id: custItem.guard_id,
+        item_id: item.id,
+        quantity: custItem.quantity,
+        return_condition: row.returnCondition,
+        amount_owed: amount,
+        payment_status: paymentStatus,
+        created_at: new Date().toISOString(),
+      });
+      await api.delete('/inventory/custody/' + custItem.id);
+
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, stock_quantity: updateStock } : i));
+      setCustody(prev => prev.filter(c => c.id !== custItem.id));
+      if ((logRes as any)?.data) {
+        setLogs(prev => [((logRes as any).data as InventoryLog), ...prev]);
+      } else {
+        setLogs(prev => [{ id: `log-${Date.now()}`, action: 'return', guard_id: custItem.guard_id, item_id: item.id, quantity: custItem.quantity, return_condition: row.returnCondition, amount_owed: amount, payment_status: paymentStatus, created_at: new Date().toISOString() } as InventoryLog, ...prev]);
+      }
     }
+
     setIsSyncing(false);
     setReturnOpen(false);
-    setReturnCustody(null);
+    setReturnGuardId(null);
+    setReturnRows([]);
   };
 
   return (
@@ -511,7 +516,7 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Condition at Issue: {row.custody.condition_at_issue}</p>
                   ) : null}
                 </div>
-                <button onClick={() => { setReturnCustody(row.custody); setReturnOpen(true); }} disabled={false} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">Return</button>
+                <button onClick={() => { setReturnGuardId(row.custody.guard_id); setReturnRows([{ custodyId: row.custody.id, returnCondition: 'good' }]); setReturnOpen(true); }} disabled={false} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl disabled:opacity-50">Return</button>
               </div>
             ))}
             {issuedWithNames.length === 0 && (
@@ -638,42 +643,80 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
 
       {returnOpen && (
         <div className="fixed inset-0 z-[1200] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl border border-white/20 overflow-hidden">
+          <div className="bg-white w-full max-w-2xl rounded-[1.5rem] shadow-2xl border border-white/20 overflow-hidden">
             <div className="px-6 py-5 bg-[#1868A8] flex justify-between items-center text-white">
-              <h3 className="text-[13px] font-black uppercase tracking-widest">Return Item</h3>
+              <h3 className="text-[13px] font-black uppercase tracking-widest">Return Items</h3>
               <button onClick={() => setReturnOpen(false)} className="text-white hover:text-white/80 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
-            <div className="p-6 space-y-6">
-              <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                Condition at Issue: {returnCustody?.condition_at_issue || 'Unknown'}
-              </p>
-              
-              <div className="space-y-2">
-                <label htmlFor="return-condition" className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                  Return Condition
-                </label>
-                <select id="return-condition" name="returnCondition" value={returnCondition} onChange={e => setReturnCondition(e.target.value as any)} 
-                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-0 focus:border-slate-300">
-                  <option value="good">Good</option>
-                  <option value="damaged">Damaged</option>
-                  <option value="lost">Lost</option>
-                  <option value="bad">Bad</option>
-                  <option value="worse">Worse</option>
-                </select>
+            <div className="p-6 space-y-4">
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                {returnRows.map((row, idx) => {
+                  const selectedCustody = returnGuardCustody.find(c => c.id === row.custodyId);
+                  return (
+                    <div key={idx} className="grid grid-cols-12 gap-3 items-end p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                      <div className="col-span-12 md:col-span-6">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Item to Return</label>
+                        <select 
+                          value={row.custodyId} 
+                          onChange={e => setReturnRows(prev => prev.map((r, i) => i === idx ? { ...r, custodyId: e.target.value } : r))} 
+                          className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm"
+                        >
+                          <option value="">Select Item</option>
+                          {returnGuardCustody.map(c => {
+                            const iName = items.find(itm => itm.id === c.item_id)?.name || 'Unknown';
+                            return <option key={c.id} value={c.id}>{iName} ({c.quantity} issued)</option>;
+                          })}
+                        </select>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2 ml-2">
+                          Condition at Issue: {selectedCustody?.condition_at_issue || 'Unknown'}
+                        </p>
+                      </div>
+                      <div className="col-span-12 md:col-span-4">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Return Condition</label>
+                        <select 
+                          value={row.returnCondition} 
+                          onChange={e => setReturnRows(prev => prev.map((r, i) => i === idx ? { ...r, returnCondition: e.target.value as any } : r))} 
+                          className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm"
+                        >
+                          <option value="good">Good</option>
+                          <option value="damaged">Damaged</option>
+                          <option value="lost">Lost</option>
+                          <option value="bad">Bad</option>
+                          <option value="worse">Worse</option>
+                        </select>
+                      </div>
+                      <div className="col-span-12 md:col-span-2">
+                        <button 
+                          onClick={() => setReturnRows(prev => prev.filter((_, i) => i !== idx))}
+                          disabled={returnRows.length === 1}
+                          className="w-full h-12 bg-white border border-slate-200 text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-xl text-[10px] font-black uppercase transition-colors disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {returnRows.length < returnGuardCustody.length && (
+                  <button 
+                    onClick={() => {
+                      const unusedCustody = returnGuardCustody.find(c => !returnRows.some(r => r.custodyId === c.id));
+                      setReturnRows(prev => [...prev, { custodyId: unusedCustody?.id || '', returnCondition: 'good' }]);
+                    }} 
+                    className="w-full py-3 border-2 border-dashed border-slate-200 text-slate-400 hover:text-[#1868A8] hover:border-[#1868A8] hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors"
+                  >
+                    + Add Another Item
+                  </button>
+                )}
               </div>
-
-              <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                Comparison: Issue {returnCustody?.condition_at_issue?.toUpperCase() || 'UNKNOWN'} vs Return {returnCondition.toUpperCase()}
-              </p>
-              
               <button 
                 onClick={() => confirmReturn()} 
-                disabled={isSyncing} 
-                className="w-full py-3.5 bg-[#1868A8] text-white font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-[#145a90] transition-colors"
+                disabled={isSyncing || returnRows.filter(r => r.custodyId).length === 0} 
+                className="w-full py-4 mt-2 bg-[#1868A8] text-white font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-[#145a90] disabled:bg-slate-300 transition-colors"
                >
-                {isSyncing ? 'Processing...' : 'Confirm'}
+                {isSyncing ? 'Processing...' : `Confirm Return${returnRows.length > 1 ? 's' : ''}`}
               </button>
             </div>
           </div>
