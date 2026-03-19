@@ -637,26 +637,44 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       )}
 
       {returnOpen && (
-        <div className="fixed inset-0 z-[1200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl border border-white/20 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Return Item</h3>
-              <button onClick={() => setReturnOpen(false)} className="w-8 h-8 bg-white border border-slate-200 rounded-full">✕</button>
+        <div className="fixed inset-0 z-[1200] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl border border-white/20 overflow-hidden">
+            <div className="px-6 py-5 bg-[#1868A8] flex justify-between items-center text-white">
+              <h3 className="text-[13px] font-black uppercase tracking-widest">Return Item</h3>
+              <button onClick={() => setReturnOpen(false)} className="text-white hover:text-white/80 transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
             </div>
-            <div className="p-6 space-y-4">
-              {returnCustody?.condition_at_issue ? (
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Condition at Issue: {returnCustody.condition_at_issue}</p>
-              ) : null}
-              <label htmlFor="return-condition" className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Return Condition</label>
-              <select id="return-condition" name="returnCondition" value={returnCondition} onChange={e => setReturnCondition(e.target.value as any)} className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl">
-                <option value="good">Good</option>
-                <option value="damaged">Damaged</option>
-                <option value="lost">Lost</option>
-                <option value="bad">Bad</option>
-                <option value="worse">Worse</option>
-              </select>
-              <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">Comparison: Issue {returnCustody?.condition_at_issue || '—'} vs Return {returnCondition}</p>
-              <button onClick={() => confirmReturn()} disabled={isSyncing} className="w-full py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl">{isSyncing ? 'Processing...' : 'Confirm'}</button>
+            <div className="p-6 space-y-6">
+              <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
+                Condition at Issue: {returnCustody?.condition_at_issue || 'Unknown'}
+              </p>
+              
+              <div className="space-y-2">
+                <label htmlFor="return-condition" className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
+                  Return Condition
+                </label>
+                <select id="return-condition" name="returnCondition" value={returnCondition} onChange={e => setReturnCondition(e.target.value as any)} 
+                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-0 focus:border-slate-300">
+                  <option value="good">Good</option>
+                  <option value="damaged">Damaged</option>
+                  <option value="lost">Lost</option>
+                  <option value="bad">Bad</option>
+                  <option value="worse">Worse</option>
+                </select>
+              </div>
+
+              <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
+                Comparison: Issue {returnCustody?.condition_at_issue?.toUpperCase() || 'UNKNOWN'} vs Return {returnCondition.toUpperCase()}
+              </p>
+              
+              <button 
+                onClick={() => confirmReturn()} 
+                disabled={isSyncing} 
+                className="w-full py-3.5 bg-[#1868A8] text-white font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-[#145a90] transition-colors"
+               >
+                {isSyncing ? 'Processing...' : 'Confirm'}
+              </button>
             </div>
           </div>
         </div>

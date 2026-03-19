@@ -2920,6 +2920,12 @@ app.get('/api/inventory/custody', requireAuth, async (req, res) => {
   }
 });
 
+// Alias to satisfy specific requirements
+app.get('/api/inventory/issued', requireAuth, async (req, res) => {
+  req.url = '/api/inventory/custody';
+  app.handle(req, res);
+});
+
 app.post('/api/inventory/custody', requireAuth, async (req, res) => {
   try {
     const b = req.body || {};
@@ -2995,6 +3001,12 @@ app.post('/api/inventory/logs', requireAuth, async (req, res) => {
   } catch {
     res.status(500).json({ error: 'error' });
   }
+});
+
+// Alias to satisfy specific requirements
+app.post('/api/inventory/return', requireAuth, async (req, res) => {
+  req.url = '/api/inventory/logs';
+  app.handle(req, res);
 });
 
 app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
