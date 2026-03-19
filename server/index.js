@@ -2742,17 +2742,16 @@ app.post('/api/profiles', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'bad_request', message: 'Missing required fields' });
     }
 
-    // Allow supervisors and reg_officers to be added for now via this specific endpoint if desired, 
-    // or allow other roles if the actor has permission.
-    const allowedRolesForHR = ['supervisor', 'reg_officer'];
-    const isAuthorized = actor.role === 'super_admin' || actor.role === 'company_admin' || actor.role === 'company_hr' || actor.role === 'hr_officer';
-    
-    if (!isAuthorized) {
+    // Roles that are completely forbidden from creating other users
+    const blockedActorRoles = ['guard', 'reg_officer', 'applicant'];
+    if (blockedActorRoles.includes(actor.role)) {
       return res.status(403).json({ error: 'forbidden', message: 'Unauthorized actor role' });
     }
-    
-    if (actor.role !== 'super_admin' && !allowedRolesForHR.includes(role)) {
-      return res.status(403).json({ error: 'forbidden', message: 'Only supervisor or reg_officer roles can be added by tenant admins' });
+
+    // For non-super-admins, restrict which target roles they can create
+    const tenantCreatableRoles = ['supervisor', 'reg_officer', 'hr_officer', 'procurement'];
+    if (actor.role !== 'super_admin' && !tenantCreatableRoles.includes(role)) {
+      return res.status(403).json({ error: 'forbidden', message: `Role '${role}' can only be created by a Super Admin` });
     }
 
     const emailNorm = String(email).toLowerCase().trim();
