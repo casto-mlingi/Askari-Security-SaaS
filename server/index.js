@@ -2794,6 +2794,96 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/inventory/stock-in
+// Records incoming stock: creates or updates an inventory_items row, then logs the transaction.
+app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const b = req.body || {};
+
+    // Resolve company_id: prefer session, fallback to body (super_admin override)
+    let company_id = actor.company_id || null;
+    if (!company_id || !(actor.role === 'super_admin' || actor.role === 'system_hr')) {
+      company_id = await getActorCompanyId(actor);
+    }
+    // Allow super_admin to target a specific company via body
+    if ((actor.role === 'super_admin' || actor.role === 'system_hr') && b.company_id) {
+      company_id = b.company_id;
+    }
+
+    if (!company_id) {
+      return res.status(400).json({ error: 'bad_request', message: 'company_id could not be determined from session' });
+    }
+
+    const item_name = String(b.item_name || b.name || '').trim();
+    const quantity = Number(b.quantity);
+    const unit_price = b.unit_price != null ? Number(b.unit_price) : null;
+
+    if (!item_name) {
+      return res.status(400).json({ error: 'bad_request', message: 'item_name is required' });
+    }
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({ error: 'bad_request', message: 'quantity must be a positive number' });
+    }
+
+    await client.query('BEGIN');
+
+    // Upsert: if the item already exists for this company, increment stock; otherwise insert new row
+    const { rows: existing } = await client.query(
+      `SELECT id, stock_quantity FROM inventory_items WHERE company_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+      [company_id, item_name]
+    );
+
+    let item;
+    if (existing[0]) {
+      const newQty = (Number(existing[0].stock_quantity) || 0) + quantity;
+      const updateFields = [`stock_quantity = $1`, `updated_at = now()`];
+      const updateVals = [newQty, existing[0].id];
+      if (unit_price != null) {
+        updateFields.splice(1, 0, `cost_per_unit = $2`);
+        updateVals.splice(1, 0, unit_price);
+        updateVals[updateVals.length - 1] = existing[0].id; // fix id position
+        // rebuild with correct param indices
+        const { rows: r } = await client.query(
+          `UPDATE inventory_items SET stock_quantity = $1, cost_per_unit = $2, updated_at = now() WHERE id = $3 RETURNING *`,
+          [newQty, unit_price, existing[0].id]
+        );
+        item = r[0];
+      } else {
+        const { rows: r } = await client.query(
+          `UPDATE inventory_items SET stock_quantity = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+          [newQty, existing[0].id]
+        );
+        item = r[0];
+      }
+    } else {
+      const { rows: r } = await client.query(
+        `INSERT INTO inventory_items (company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'good', now(), now()) RETURNING *`,
+        [company_id, item_name, quantity, unit_price]
+      );
+      item = r[0];
+    }
+
+    // Record the stock-in transaction in inventory_logs
+    await client.query(
+      `INSERT INTO inventory_logs (action, company_id, item_id, quantity, created_at)
+       VALUES ('stock_in', $1, $2, $3, now())`,
+      [company_id, item.id, quantity]
+    );
+
+    await client.query('COMMIT');
+    return res.status(200).json({ ok: true, item });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { }
+    console.error('POST /api/inventory/stock-in error:', e.message, e.detail || '');
+    return sendDbError(res, e, 'Failed to record stock-in');
+  } finally {
+    client.release();
+  }
+});
+
 // --- Settings: Disciplinary Codes ---
 app.get('/api/disciplinary-codes', requireAuth, async (req, res) => {
   try {
