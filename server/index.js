@@ -478,10 +478,17 @@ async function ensureSchema() {
     console.warn('[schema] work_experiences ensure failed:', e?.message || e);
   }
   // ── Inventory tables ────────────────────────────────────────────────────
+  // Enable pgcrypto so gen_random_uuid() is available (idempotent)
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+  } catch (e) {
+    console.warn('[schema] pgcrypto extension ensure failed (non-fatal):', e?.message || e);
+  }
+  // inventory_items: use TEXT id to avoid UUID-default compatibility issues
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS inventory_items (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id TEXT PRIMARY KEY,
         company_id UUID,
         name TEXT NOT NULL,
         stock_quantity INTEGER NOT NULL DEFAULT 0,
@@ -493,14 +500,15 @@ async function ensureSchema() {
   } catch (e) {
     console.warn('[schema] inventory_items ensure failed:', e?.message || e);
   }
+  // inventory_logs: TEXT id so we always supply UUID from Node crypto
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS inventory_logs (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id TEXT PRIMARY KEY,
         action TEXT NOT NULL,
         company_id UUID,
         guard_id UUID,
-        item_id UUID,
+        item_id TEXT,
         item_name TEXT,
         quantity INTEGER NOT NULL DEFAULT 0,
         return_condition TEXT,
@@ -512,13 +520,13 @@ async function ensureSchema() {
   } catch (e) {
     console.warn('[schema] inventory_logs ensure failed:', e?.message || e);
   }
-  // Backfill item_name column if table already exists without it
+  // Backfill item_name column if table already existed without it
   try {
     await pool.query('ALTER TABLE IF EXISTS inventory_logs ADD COLUMN IF NOT EXISTS item_name TEXT');
   } catch (e) {
     console.warn('[schema] inventory_logs.item_name ensure failed:', e?.message || e);
   }
-  // Backfill item_id nullable if table already exists with NOT NULL constraint
+  // Make item_id nullable in case old definition had NOT NULL
   try {
     await pool.query('ALTER TABLE IF EXISTS inventory_logs ALTER COLUMN item_id DROP NOT NULL');
   } catch (e) {
@@ -2938,17 +2946,30 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
     for (const entry of validItems) {
       const { name, quantity, unit_price, condition } = entry;
 
-      // ── STEP 1: Write to inventory_logs (source of truth, no FK dependency) ──
-      const { rows: logRows } = await client.query(
-        `INSERT INTO inventory_logs
-           (action, company_id, item_id, item_name, quantity, created_at)
-         VALUES ('stock_in', $1, NULL, $2, $3, now())
-         RETURNING *`,
-        [company_id, name, quantity]
-      );
-      const logRow = logRows[0];
+      // ── STEP 1: Write to inventory_logs first (source of truth) ──────────
+      // Generate UUIDs in Node — never rely on DB extension (pgcrypto/gen_random_uuid)
+      const logId = crypto.randomUUID();
+      console.log(`[stock-in] Inserting inventory_logs: action=stock_in company_id=${company_id} item_name=${name} qty=${quantity}`);
+      try {
+        await client.query(
+          `INSERT INTO inventory_logs
+             (id, action, company_id, item_id, item_name, quantity, created_at)
+           VALUES ($1, 'stock_in', $2, NULL, $3, $4, now())`,
+          [logId, company_id, name, quantity]
+        );
+      } catch (logInsertErr) {
+        // Log the exact Postgres error so it's visible in Coolify
+        console.error('[stock-in] FAILED to insert into inventory_logs:', {
+          message: logInsertErr.message,
+          code:    logInsertErr.code,
+          detail:  logInsertErr.detail,
+          hint:    logInsertErr.hint,
+          table:   logInsertErr.table,
+        });
+        throw logInsertErr; // re-throw so the transaction rolls back cleanly
+      }
 
-      // ── STEP 2: Sync inventory_items cache (optional, non-fatal) ──────────
+      // ── STEP 2: Sync inventory_items cache (non-fatal) ────────────────────
       let itemId = null;
       try {
         const { rows: existing } = await client.query(
@@ -2956,7 +2977,7 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
           [company_id, name]
         );
         if (existing[0]) {
-          // Update stock_quantity as SUM from logs for this item
+          // Recompute net stock from all logs
           const { rows: sumRows } = await client.query(
             `SELECT
                SUM(CASE WHEN action = 'stock_in' THEN quantity ELSE 0 END)
@@ -2966,36 +2987,40 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
              WHERE company_id = $1 AND LOWER(item_name) = LOWER($2)`,
             [company_id, name]
           );
-          const netQty = Number(sumRows[0]?.net_qty) || 0;
-          const updateParams = unit_price != null
-            ? [netQty, unit_price, condition, existing[0].id]
-            : [netQty, condition, existing[0].id];
-          const updateSql = unit_price != null
-            ? `UPDATE inventory_items SET stock_quantity=$1, cost_per_unit=$2, condition=$3, updated_at=now() WHERE id=$4`
-            : `UPDATE inventory_items SET stock_quantity=$1, condition=$2, updated_at=now() WHERE id=$3`;
-          await client.query(updateSql, updateParams);
+          const netQty = Math.max(Number(sumRows[0]?.net_qty) || 0, 0);
+          if (unit_price != null) {
+            await client.query(
+              `UPDATE inventory_items SET stock_quantity=$1, cost_per_unit=$2, condition=$3, updated_at=now() WHERE id=$4`,
+              [netQty, unit_price, condition, existing[0].id]
+            );
+          } else {
+            await client.query(
+              `UPDATE inventory_items SET stock_quantity=$1, condition=$2, updated_at=now() WHERE id=$3`,
+              [netQty, condition, existing[0].id]
+            );
+          }
           itemId = existing[0].id;
         } else {
-          const { rows: ins } = await client.query(
-            `INSERT INTO inventory_items (company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING id`,
-            [company_id, name, quantity, unit_price, condition]
+          const newItemId = crypto.randomUUID();
+          await client.query(
+            `INSERT INTO inventory_items (id, company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
+            [newItemId, company_id, name, quantity, unit_price, condition]
           );
-          itemId = ins[0]?.id || null;
+          itemId = newItemId;
         }
-        // Back-fill item_id on the log row we just inserted
+        // Back-fill item_id on the log row
         if (itemId) {
           await client.query(
             `UPDATE inventory_logs SET item_id = $1 WHERE id = $2`,
-            [itemId, logRow.id]
+            [itemId, logId]
           );
         }
       } catch (syncErr) {
-        // Non-fatal: inventory_logs is already written, cache sync can fail
-        console.warn('[stock-in] inventory_items sync failed (non-fatal):', syncErr.message);
+        console.warn('[stock-in] inventory_items cache sync failed (non-fatal):', syncErr.message);
       }
 
-      results.push({ log_id: logRow.id, item_id: itemId, name, quantity, unit_price, condition });
+      results.push({ log_id: logId, item_id: itemId, name, quantity, unit_price, condition });
     }
 
     await client.query('COMMIT');
