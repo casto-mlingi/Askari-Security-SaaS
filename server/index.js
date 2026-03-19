@@ -2821,6 +2821,8 @@ app.get('/api/inventory/items', requireAuth, async (req, res) => {
         SUM(CASE WHEN action = 'stock_in' THEN quantity ELSE 0 END)
           - SUM(CASE WHEN action = 'issue'  THEN quantity ELSE 0 END)
           + SUM(CASE WHEN action = 'return' THEN quantity ELSE 0 END) AS stock_quantity,
+        MAX(amount_owed) AS cost_per_unit,
+        MAX(return_condition) AS condition,
         MAX(created_at) AS updated_at
       FROM inventory_logs
       ${companyFilter}
@@ -2845,16 +2847,21 @@ app.get('/api/inventory/items', requireAuth, async (req, res) => {
     const extraItems = itemRows.filter(i => !logNames.has(String(i.name || '').toLowerCase()));
 
     const merged = [
-      ...logRows.map(r => ({
-        id: r.item_id || null,
-        name: r.item_name || r.name,
-        company_id: r.company_id,
-        stock_quantity: Number(r.stock_quantity) || 0,
-        total_in: Number(r.total_in) || 0,
-        total_issued: Number(r.total_issued) || 0,
-        total_returned: Number(r.total_returned) || 0,
-        updated_at: r.updated_at
-      })),
+      ...logRows.map(r => {
+        const cacheItem = itemRows.find(i => String(i.name || '').toLowerCase() === String(r.name || '').toLowerCase());
+        return {
+          id: r.item_id || cacheItem?.id || null,
+          name: r.item_name || r.name,
+          company_id: r.company_id,
+          stock_quantity: Number(r.stock_quantity) || 0,
+          total_in: Number(r.total_in) || 0,
+          total_issued: Number(r.total_issued) || 0,
+          total_returned: Number(r.total_returned) || 0,
+          cost_per_unit: Number(r.cost_per_unit) || cacheItem?.cost_per_unit || 0,
+          condition: r.condition || cacheItem?.condition || 'good',
+          updated_at: r.updated_at
+        };
+      }),
       ...extraItems.map(i => ({ ...i, total_in: i.stock_quantity, total_issued: 0, total_returned: 0 }))
     ];
 
