@@ -623,6 +623,116 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   }
 });
 
+// ── Inventory: ping probe (confirms this build is deployed) ─────────────────
+app.get('/api/inventory/ping', (req, res) => {
+  res.json({ ok: true, ts: new Date().toISOString(), build: 'stock-in-v4' });
+});
+
+// ── Inventory: stock-in (early registration – prevents any middleware eclipsing) ─
+// Frontend sends: { company_id, items: [{ name, qty, unitCost, condition }] }
+app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
+  console.log('🔴 [stock-in] ROUTE HIT (early)', { body: req.body, user: req.user?.sub });
+  const client = await pool.connect();
+  try {
+    const actor = req.user || {};
+    const b = req.body || {};
+
+    let company_id = actor.company_id || null;
+    if (!company_id) company_id = await getActorCompanyId(actor);
+    if ((actor.role === 'super_admin' || actor.role === 'system_hr') && b.company_id) {
+      company_id = b.company_id;
+    }
+    if (!company_id) {
+      return res.status(400).json({ error: 'bad_request', message: 'company_id could not be determined from session' });
+    }
+
+    const rawItems = Array.isArray(b.items) ? b.items : [];
+    const validItems = rawItems
+      .map(v => ({
+        name:       String(v.name || '').trim(),
+        quantity:   Number(v.qty || v.quantity) || 0,
+        unit_price: v.unitCost != null ? Number(v.unitCost) : (v.unit_price != null ? Number(v.unit_price) : null),
+        condition:  String(v.condition || 'good').toLowerCase()
+      }))
+      .filter(v => v.name && v.quantity > 0);
+
+    if (validItems.length === 0) {
+      return res.status(400).json({ error: 'bad_request', message: 'items array empty or invalid — each item needs name and qty > 0' });
+    }
+
+    await client.query('BEGIN');
+    const results = [];
+
+    for (const entry of validItems) {
+      const { name, quantity, unit_price, condition } = entry;
+      const logId = crypto.randomUUID();
+      console.log(`[stock-in] INSERT inventory_logs id=${logId} action=stock_in company_id=${company_id} item_name=${name} qty=${quantity}`);
+      try {
+        await client.query(
+          `INSERT INTO inventory_logs (id, action, company_id, item_id, item_name, quantity, created_at)
+           VALUES ($1, 'stock_in', $2, NULL, $3, $4, now())`,
+          [logId, company_id, name, quantity]
+        );
+      } catch (logErr) {
+        console.error('[stock-in] FAILED INSERT inventory_logs:', {
+          message: logErr.message, code: logErr.code, detail: logErr.detail,
+          hint: logErr.hint, table: logErr.table
+        });
+        throw logErr;
+      }
+
+      // Sync inventory_items cache (non-fatal)
+      let itemId = null;
+      try {
+        const { rows: ex } = await client.query(
+          `SELECT id FROM inventory_items WHERE company_id=$1 AND LOWER(name)=LOWER($2) LIMIT 1`,
+          [company_id, name]
+        );
+        if (ex[0]) {
+          const { rows: sr } = await client.query(
+            `SELECT SUM(CASE WHEN action='stock_in' THEN quantity ELSE 0 END)
+                    - SUM(CASE WHEN action='issue'    THEN quantity ELSE 0 END)
+                    + SUM(CASE WHEN action='return'   THEN quantity ELSE 0 END) AS net_qty
+             FROM inventory_logs WHERE company_id=$1 AND LOWER(item_name)=LOWER($2)`,
+            [company_id, name]
+          );
+          const netQty = Math.max(Number(sr[0]?.net_qty) || 0, 0);
+          if (unit_price != null) {
+            await client.query(`UPDATE inventory_items SET stock_quantity=$1,cost_per_unit=$2,condition=$3,updated_at=now() WHERE id=$4`,
+              [netQty, unit_price, condition, ex[0].id]);
+          } else {
+            await client.query(`UPDATE inventory_items SET stock_quantity=$1,condition=$2,updated_at=now() WHERE id=$3`,
+              [netQty, condition, ex[0].id]);
+          }
+          itemId = ex[0].id;
+        } else {
+          const nid = crypto.randomUUID();
+          await client.query(
+            `INSERT INTO inventory_items (id,company_id,name,stock_quantity,cost_per_unit,condition,created_at,updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,now(),now())`,
+            [nid, company_id, name, quantity, unit_price, condition]
+          );
+          itemId = nid;
+        }
+        if (itemId) await client.query(`UPDATE inventory_logs SET item_id=$1 WHERE id=$2`, [itemId, logId]);
+      } catch (syncErr) {
+        console.warn('[stock-in] inventory_items cache sync failed (non-fatal):', syncErr.message);
+      }
+      results.push({ log_id: logId, item_id: itemId, name, quantity, unit_price, condition });
+    }
+
+    await client.query('COMMIT');
+    console.log(`[stock-in] OK: ${results.length} item(s) saved for company ${company_id}`);
+    return res.status(200).json({ ok: true, items: results });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { }
+    console.error('[stock-in] FATAL:', e.message, e.detail || '', e.stack);
+    return sendDbError(res, e, 'Failed to record stock-in');
+  } finally {
+    client.release();
+  }
+});
+
 // BRELA endpoints removed
 
 // --- Education Records subresource ---
@@ -2899,141 +3009,8 @@ app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/inventory/stock-in
-// Frontend sends: { company_id, items: [{ name, qty, unitCost, condition }] }
-// SOURCE OF TRUTH: inventory_logs. We write there FIRST, then sync inventory_items as a cache.
-app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const actor = req.user || {};
-    const b = req.body || {};
-
-    // ── company_id resolution ──────────────────────────────────────────────
-    let company_id = actor.company_id || null;
-    if (!company_id) {
-      company_id = await getActorCompanyId(actor);
-    }
-    // Super/system-admin can override with an explicit body.company_id
-    if ((actor.role === 'super_admin' || actor.role === 'system_hr') && b.company_id) {
-      company_id = b.company_id;
-    }
-    if (!company_id) {
-      return res.status(400).json({ error: 'bad_request', message: 'company_id could not be determined from session' });
-    }
-
-    // ── validate payload ───────────────────────────────────────────────────
-    const rawItems = Array.isArray(b.items) ? b.items : [];
-    const validItems = rawItems
-      .map(v => ({
-        name:       String(v.name || '').trim(),
-        quantity:   Number(v.qty || v.quantity) || 0,
-        unit_price: v.unitCost != null ? Number(v.unitCost) : (v.unit_price != null ? Number(v.unit_price) : null),
-        condition:  String(v.condition || 'good').toLowerCase()
-      }))
-      .filter(v => v.name && v.quantity > 0);
-
-    if (validItems.length === 0) {
-      return res.status(400).json({
-        error: 'bad_request',
-        message: 'items array is empty or all rows invalid — each item needs name and qty > 0'
-      });
-    }
-
-    await client.query('BEGIN');
-
-    const results = [];
-
-    for (const entry of validItems) {
-      const { name, quantity, unit_price, condition } = entry;
-
-      // ── STEP 1: Write to inventory_logs first (source of truth) ──────────
-      // Generate UUIDs in Node — never rely on DB extension (pgcrypto/gen_random_uuid)
-      const logId = crypto.randomUUID();
-      console.log(`[stock-in] Inserting inventory_logs: action=stock_in company_id=${company_id} item_name=${name} qty=${quantity}`);
-      try {
-        await client.query(
-          `INSERT INTO inventory_logs
-             (id, action, company_id, item_id, item_name, quantity, created_at)
-           VALUES ($1, 'stock_in', $2, NULL, $3, $4, now())`,
-          [logId, company_id, name, quantity]
-        );
-      } catch (logInsertErr) {
-        // Log the exact Postgres error so it's visible in Coolify
-        console.error('[stock-in] FAILED to insert into inventory_logs:', {
-          message: logInsertErr.message,
-          code:    logInsertErr.code,
-          detail:  logInsertErr.detail,
-          hint:    logInsertErr.hint,
-          table:   logInsertErr.table,
-        });
-        throw logInsertErr; // re-throw so the transaction rolls back cleanly
-      }
-
-      // ── STEP 2: Sync inventory_items cache (non-fatal) ────────────────────
-      let itemId = null;
-      try {
-        const { rows: existing } = await client.query(
-          `SELECT id FROM inventory_items WHERE company_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-          [company_id, name]
-        );
-        if (existing[0]) {
-          // Recompute net stock from all logs
-          const { rows: sumRows } = await client.query(
-            `SELECT
-               SUM(CASE WHEN action = 'stock_in' THEN quantity ELSE 0 END)
-               - SUM(CASE WHEN action = 'issue'   THEN quantity ELSE 0 END)
-               + SUM(CASE WHEN action = 'return'  THEN quantity ELSE 0 END) AS net_qty
-             FROM inventory_logs
-             WHERE company_id = $1 AND LOWER(item_name) = LOWER($2)`,
-            [company_id, name]
-          );
-          const netQty = Math.max(Number(sumRows[0]?.net_qty) || 0, 0);
-          if (unit_price != null) {
-            await client.query(
-              `UPDATE inventory_items SET stock_quantity=$1, cost_per_unit=$2, condition=$3, updated_at=now() WHERE id=$4`,
-              [netQty, unit_price, condition, existing[0].id]
-            );
-          } else {
-            await client.query(
-              `UPDATE inventory_items SET stock_quantity=$1, condition=$2, updated_at=now() WHERE id=$3`,
-              [netQty, condition, existing[0].id]
-            );
-          }
-          itemId = existing[0].id;
-        } else {
-          const newItemId = crypto.randomUUID();
-          await client.query(
-            `INSERT INTO inventory_items (id, company_id, name, stock_quantity, cost_per_unit, condition, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
-            [newItemId, company_id, name, quantity, unit_price, condition]
-          );
-          itemId = newItemId;
-        }
-        // Back-fill item_id on the log row
-        if (itemId) {
-          await client.query(
-            `UPDATE inventory_logs SET item_id = $1 WHERE id = $2`,
-            [itemId, logId]
-          );
-        }
-      } catch (syncErr) {
-        console.warn('[stock-in] inventory_items cache sync failed (non-fatal):', syncErr.message);
-      }
-
-      results.push({ log_id: logId, item_id: itemId, name, quantity, unit_price, condition });
-    }
-
-    await client.query('COMMIT');
-    console.log(`[stock-in] OK: ${results.length} item(s) logged for company ${company_id}`);
-    return res.status(200).json({ ok: true, items: results });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch { }
-    console.error('[stock-in] FATAL:', e.message, e.detail || '', e.stack);
-    return sendDbError(res, e, 'Failed to record stock-in');
-  } finally {
-    client.release();
-  }
-});
+// POST /api/inventory/stock-in (late registration — kept as reference, early one above takes precedence)
+// See early registration after /api/upload for the active handler.
 
 // --- Settings: Disciplinary Codes ---
 app.get('/api/disciplinary-codes', requireAuth, async (req, res) => {
