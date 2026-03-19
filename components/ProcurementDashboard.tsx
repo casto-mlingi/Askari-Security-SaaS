@@ -225,6 +225,17 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       return s === 'interviewing' || s === 'active';
     });
   }, [guards]);
+
+  const guardsWithCustody = useMemo(() => {
+    const guardsMap = new Map<string, Guard>();
+    for (const c of custody) {
+      if (!guardsMap.has(c.guard_id)) {
+        const g = guards.find(x => x.id === c.guard_id);
+        if (g) guardsMap.set(g.id, g);
+      }
+    }
+    return Array.from(guardsMap.values()).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  }, [custody, guards]);
   const hiredCount = useMemo(() => eligibleGuards.length, [eligibleGuards]);
   useEffect(() => {
     console.log('ProcurementDashboard: hired guards count', hiredCount);
@@ -505,7 +516,15 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
       
       {tab === 'return' && (
         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-4">Currently Issued Items</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Currently Issued Items</h3>
+            <button 
+              onClick={() => { setReturnGuardId(null); setReturnRows([]); setReturnOpen(true); }} 
+              className="px-4 py-2 bg-[#1868A8] hover:bg-[#145a90] text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors"
+            >
+              Process Return
+            </button>
+          </div>
           <div className="space-y-3">
             {issuedWithNames.map(row => (
               <div key={row.custody.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
@@ -651,66 +670,86 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({ guards, com
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-                {returnRows.map((row, idx) => {
-                  const selectedCustody = returnGuardCustody.find(c => c.id === row.custodyId);
-                  return (
-                    <div key={idx} className="grid grid-cols-12 gap-3 items-end p-4 bg-slate-50 border border-slate-100 rounded-xl">
-                      <div className="col-span-12 md:col-span-6">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Item to Return</label>
-                        <select 
-                          value={row.custodyId} 
-                          onChange={e => setReturnRows(prev => prev.map((r, i) => i === idx ? { ...r, custodyId: e.target.value } : r))} 
-                          className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm"
-                        >
-                          <option value="">Select Item</option>
-                          {returnGuardCustody.map(c => {
-                            const iName = items.find(itm => itm.id === c.item_id)?.name || 'Unknown';
-                            return <option key={c.id} value={c.id}>{iName} ({c.quantity} issued)</option>;
-                          })}
-                        </select>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2 ml-2">
-                          Condition at Issue: {selectedCustody?.condition_at_issue || 'Unknown'}
-                        </p>
-                      </div>
-                      <div className="col-span-12 md:col-span-4">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Return Condition</label>
-                        <select 
-                          value={row.returnCondition} 
-                          onChange={e => setReturnRows(prev => prev.map((r, i) => i === idx ? { ...r, returnCondition: e.target.value as any } : r))} 
-                          className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm"
-                        >
-                          <option value="good">Good</option>
-                          <option value="damaged">Damaged</option>
-                          <option value="lost">Lost</option>
-                          <option value="bad">Bad</option>
-                          <option value="worse">Worse</option>
-                        </select>
-                      </div>
-                      <div className="col-span-12 md:col-span-2">
-                        <button 
-                          onClick={() => setReturnRows(prev => prev.filter((_, i) => i !== idx))}
-                          disabled={returnRows.length === 1}
-                          className="w-full h-12 bg-white border border-slate-200 text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-xl text-[10px] font-black uppercase transition-colors disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {returnRows.length < returnGuardCustody.length && (
-                  <button 
-                    onClick={() => {
-                      const unusedCustody = returnGuardCustody.find(c => !returnRows.some(r => r.custodyId === c.id));
-                      setReturnRows(prev => [...prev, { custodyId: unusedCustody?.id || '', returnCondition: 'good' }]);
-                    }} 
-                    className="w-full py-3 border-2 border-dashed border-slate-200 text-slate-400 hover:text-[#1868A8] hover:border-[#1868A8] hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors"
-                  >
-                    + Add Another Item
-                  </button>
-                )}
+              <div className="mb-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Select Guard</label>
+                <select 
+                  value={returnGuardId || ''} 
+                  onChange={e => {
+                     const gid = e.target.value;
+                     setReturnGuardId(gid ? gid : null);
+                     setReturnRows(gid ? [{ custodyId: '', returnCondition: 'good' }] : []);
+                  }}
+                  className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm font-medium"
+                >
+                  <option value="">Select a guard to view their issued items...</option>
+                  {guardsWithCustody.map(g => (
+                    <option key={g.id} value={g.id}>{g.full_name}</option>
+                  ))}
+                </select>
               </div>
+
+              {returnGuardId && (
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                  {returnRows.map((row, idx) => {
+                    const selectedCustody = returnGuardCustody.find(c => c.id === row.custodyId);
+                    return (
+                      <div key={idx} className="grid grid-cols-12 gap-3 items-end p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                        <div className="col-span-12 md:col-span-6">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Item to Return</label>
+                          <select 
+                            value={row.custodyId} 
+                            onChange={e => setReturnRows(prev => prev.map((r, i) => i === idx ? { ...r, custodyId: e.target.value } : r))} 
+                            className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm"
+                          >
+                            <option value="">Select Item</option>
+                            {returnGuardCustody.map(c => {
+                              const iName = items.find(itm => itm.id === c.item_id)?.name || 'Unknown';
+                              return <option key={c.id} value={c.id}>{iName} ({c.quantity} issued)</option>;
+                            })}
+                          </select>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2 ml-2">
+                            Condition at Issue: {selectedCustody?.condition_at_issue || 'Unknown'}
+                          </p>
+                        </div>
+                        <div className="col-span-12 md:col-span-4">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1 block">Return Condition</label>
+                          <select 
+                            value={row.returnCondition} 
+                            onChange={e => setReturnRows(prev => prev.map((r, i) => i === idx ? { ...r, returnCondition: e.target.value as any } : r))} 
+                            className="w-full h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm"
+                          >
+                            <option value="good">Good</option>
+                            <option value="damaged">Damaged</option>
+                            <option value="lost">Lost</option>
+                            <option value="bad">Bad</option>
+                            <option value="worse">Worse</option>
+                          </select>
+                        </div>
+                        <div className="col-span-12 md:col-span-2">
+                          <button 
+                            onClick={() => setReturnRows(prev => prev.filter((_, i) => i !== idx))}
+                            disabled={returnRows.length === 1}
+                            className="w-full h-12 bg-white border border-slate-200 text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-xl text-[10px] font-black uppercase transition-colors disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {returnRows.length < returnGuardCustody.length && (
+                    <button 
+                      onClick={() => {
+                        const unusedCustody = returnGuardCustody.find(c => !returnRows.some(r => r.custodyId === c.id));
+                        setReturnRows(prev => [...prev, { custodyId: unusedCustody?.id || '', returnCondition: 'good' }]);
+                      }} 
+                      className="w-full py-3 border-2 border-dashed border-slate-200 text-slate-400 hover:text-[#1868A8] hover:border-[#1868A8] hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors"
+                    >
+                      + Add Another Item
+                    </button>
+                  )}
+                </div>
+              )}
               <button 
                 onClick={() => confirmReturn()} 
                 disabled={isSyncing || returnRows.filter(r => r.custodyId).length === 0} 
