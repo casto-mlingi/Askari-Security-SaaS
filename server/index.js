@@ -1359,6 +1359,7 @@ const canViewGuardFull = async (actor, guard) => {
     actor.role === 'system_hr' ||
     (actor.role === 'company_admin' && (isSameCompany || String(guard?.status || '').toLowerCase() === 'marketplace')) ||
     (actor.role === 'hr_officer' && (isSameCompany || String(guard?.status || '').toLowerCase() === 'marketplace')) ||
+    (actor.role === 'reg_officer' && isSameCompany) ||
     (actor.role === 'supervisor' && isSameCompany && String(guard.company_id) === anasulId);
   return { allowed, isSameCompany, anasulId };
 };
@@ -1692,7 +1693,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     if (!payload['status']) payload['status'] = 'draft';
     // Company association: if HR user, force company_id to their company
     let myCompanyId = await getActorCompanyId(actor);
-    if ((actor.role === 'company_admin' || actor.role === 'hr_officer') && myCompanyId) {
+    if ((actor.role === 'company_admin' || actor.role === 'hr_officer' || actor.role === 'reg_officer') && myCompanyId) {
       payload['company_id'] = myCompanyId;
     }
     if (!payload['full_name'] || String(payload['full_name']).trim() === '' || payload['nida_number'] == null || String(payload['nida_number']).trim() === '') {
@@ -2743,7 +2744,7 @@ app.post('/api/profiles', requireAuth, async (req, res) => {
     }
 
     // Roles that are completely forbidden from creating other users
-    const blockedActorRoles = ['guard', 'reg_officer', 'applicant'];
+    const blockedActorRoles = ['guard', 'applicant'];
     if (blockedActorRoles.includes(actor.role)) {
       return res.status(403).json({ error: 'forbidden', message: 'Unauthorized actor role' });
     }

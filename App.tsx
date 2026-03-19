@@ -972,7 +972,19 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'intake' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.REG_OFFICER) && (
-              <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} />
+              <IntakeManager
+                guards={guards}
+                userRole={userRole}
+                onComplete={handleIntakeComplete}
+                sites={filteredSites}
+                profiles={profiles}
+                companies={companies}
+                incidents={filteredIncidents}
+                disciplinaryCodes={filteredDisciplinaryCodes}
+                onLock={handleLockGuard}
+                onFinalize={handleFinalizeVetting}
+                currentUser={user as Profile}
+              />
             )}
 
             {activeTab === 'wait-approval' && (isSystemHR) && (

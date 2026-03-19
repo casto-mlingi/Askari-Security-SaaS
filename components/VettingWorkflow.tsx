@@ -26,6 +26,7 @@ interface VettingWorkflowProps {
   currentUser?: Profile | null;
   resubmitRequests?: ResubmitRequest[];
   onResubmitDecision?: (requestId: string, guardId: string, decision: 'approved' | 'rejected') => void;
+  readOnly?: boolean;
 }
 
 const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
@@ -39,7 +40,8 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
   onFinalize,
   currentUser,
   resubmitRequests = [],
-  onResubmitDecision
+  onResubmitDecision,
+  readOnly = false
 }) => {
   const isPrivileged = currentUser?.role === UserRole.SYSTEM_HR || currentUser?.role === UserRole.SUPER_ADMIN;
   const isSystemHR = currentUser?.role === UserRole.SYSTEM_HR || currentUser?.role === UserRole.SUPER_ADMIN;
@@ -576,25 +578,27 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex flex-col gap-3 mt-auto">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
-                        className="group/btn relative w-full overflow-hidden py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] text-white transition-all shadow-xl shadow-emerald-500/10 active:scale-95"
-                      >
-                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 group-hover/btn:from-emerald-500 group-hover/btn:to-teal-400" />
-                        <span className="relative flex items-center justify-center gap-2">
-                          Hire & Deploy Professional
-                          <svg className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" strokeWidth="3" /></svg>
-                        </span>
-                      </button>
+                    {!readOnly && (
+                      <div className="flex flex-col gap-3 mt-auto">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('hire'); }}
+                          className="group/btn relative w-full overflow-hidden py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] text-white transition-all shadow-xl shadow-emerald-500/10 active:scale-95"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 group-hover/btn:from-emerald-500 group-hover/btn:to-teal-400" />
+                          <span className="relative flex items-center justify-center gap-2">
+                            Hire & Deploy Professional
+                            <svg className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" strokeWidth="3" /></svg>
+                          </span>
+                        </button>
 
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
-                        className="group/btnrelative w-full py-4 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-white/10 transition-all active:scale-95"
-                      >
-                        {isPrivileged ? 'Review & Interview' : 'Lock Account'}
-                      </button>
-                    </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
+                          className="group/btnrelative w-full py-4 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-white/10 transition-all active:scale-95"
+                        >
+                          {isPrivileged ? 'Review & Interview' : 'Lock Account'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )) : (
                   <div className="col-span-full py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
@@ -676,30 +680,34 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                           </div>
                         </div>
                       </div>
-                      <div
-                        onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
-                        className="px-6 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95"
-                      >
-                        Start Interview
-                      </div>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            const r = await api.patch(`/guards/${guard.id}`, { system_verification_status: 'verified' });
-                            if (r?.data) {
-                              (window as any).showNotification?.('success', 'Documents verified.');
-                            } else {
-                              (window as any).showNotification?.('warning', 'Offline: verification saved locally.');
-                            }
-                          } catch {
-                            (window as any).showNotification?.('error', 'Failed to verify.');
-                          }
-                        }}
-                        className="mt-3 px-6 py-3 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all active:scale-95"
-                      >
-                        Verify Docs
-                      </button>
+                      {!readOnly && (
+                        <>
+                          <div
+                            onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }}
+                            className="px-6 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-primary transition-all shadow-lg active:scale-95"
+                          >
+                            Start Interview
+                          </div>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const r = await api.patch(`/guards/${guard.id}`, { system_verification_status: 'verified' });
+                                if (r?.data) {
+                                  (window as any).showNotification?.('success', 'Documents verified.');
+                                } else {
+                                  (window as any).showNotification?.('warning', 'Offline: verification saved locally.');
+                                }
+                              } catch {
+                                (window as any).showNotification?.('error', 'Failed to verify.');
+                              }
+                            }}
+                            className="mt-3 px-6 py-3 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all active:scale-95"
+                          >
+                            Verify Docs
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )) : (
@@ -727,11 +735,13 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Submitted Application</p>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-800 transition-colors">Review</button>
-                  <button onClick={(e) => { e.stopPropagation(); handleApproveApplicant(guard.id); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Approve</button>
-                  <button onClick={(e) => { e.stopPropagation(); handleRequestImprovement(guard.id); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Return</button>
-                </div>
+                {!readOnly && (
+                  <div className="flex gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-800 transition-colors">Review</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleApproveApplicant(guard.id); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Approve</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleRequestImprovement(guard.id); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">Return</button>
+                  </div>
+                )}
               </div>
             )) : (
               <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
@@ -749,10 +759,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                   <h4 className="font-black text-slate-900 uppercase tracking-tight leading-none">{guard.full_name}</h4>
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Blacklisted</p>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Review</button>
-                  <button onClick={() => onFinalize(guard.id, 'fail', undefined, 'Reinstated by Super Admin')} className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Reinstate</button>
-                </div>
+                {!readOnly && (
+                  <div className="flex gap-2">
+                    <button onClick={() => { setSelectedGuard(guard); setDecisionMode('view'); }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Review</button>
+                    <button onClick={() => onFinalize(guard.id, 'fail', undefined, 'Reinstated by Super Admin')} className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Reinstate</button>
+                  </div>
+                )}
               </div>
             )) : (
               <div className="py-20 text-center border-4 border-dashed border-slate-100 rounded-[3rem]">
@@ -792,10 +804,12 @@ const VettingWorkflow: React.FC<VettingWorkflowProps> = ({
                     {analyzingId === guard.id ? (
                       <span className="px-6 py-3 bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-xl animate-pulse">Running Analysis...</span>
                     ) : (
-                      <button onClick={(e) => { e.stopPropagation(); handleRunAI(guard); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2">
-                        <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeWidth="2.5" /></svg>
-                        Run AI Analysis
-                      </button>
+                      !readOnly && (
+                        <button onClick={(e) => { e.stopPropagation(); handleRunAI(guard); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2">
+                          <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeWidth="2.5" /></svg>
+                          Run AI Analysis
+                        </button>
+                      )
                     )}
                     {aiAnalysis && analyzingId !== guard.id && selectedGuard?.id === guard.id && (
                       <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-100 mt-2">
