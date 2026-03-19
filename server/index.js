@@ -648,12 +648,16 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
 
     const rawItems = Array.isArray(b.items) ? b.items : [];
     const validItems = rawItems
-      .map(v => ({
-        name:       String(v.name || '').trim(),
-        quantity:   Number(v.qty || v.quantity) || 0,
-        unit_price: v.unitCost != null ? Number(v.unitCost) : (v.unit_price != null ? Number(v.unit_price) : null),
-        condition:  String(v.condition || 'good').toLowerCase()
-      }))
+      .map(v => {
+        let uPrice = v.unitCost != null ? Number(v.unitCost) : (v.unit_price != null ? Number(v.unit_price) : null);
+        if (Number.isNaN(uPrice)) uPrice = 0;
+        return {
+          name:       String(v.name || '').trim(),
+          quantity:   Number(v.qty || v.quantity) || 0,
+          unit_price: uPrice,
+          condition:  String(v.condition || 'good').toLowerCase()
+        };
+      })
       .filter(v => v.name && v.quantity > 0);
 
     if (validItems.length === 0) {
@@ -666,12 +670,12 @@ app.post('/api/inventory/stock-in', requireAuth, async (req, res) => {
     for (const entry of validItems) {
       const { name, quantity, unit_price, condition } = entry;
       const logId = crypto.randomUUID();
-      console.log(`[stock-in] INSERT inventory_logs id=${logId} action=stock_in company_id=${company_id} item_name=${name} qty=${quantity}`);
+      console.log(`[stock-in] INSERT inventory_logs id=${logId} action=stock_in company_id=${company_id} item_name=${name} qty=${quantity} amt=${unit_price} cond=${condition}`);
       try {
         await client.query(
-          `INSERT INTO inventory_logs (id, action, company_id, item_id, item_name, quantity, created_at)
-           VALUES ($1, 'stock_in', $2, NULL, $3, $4, now())`,
-          [logId, company_id, name, quantity]
+          `INSERT INTO inventory_logs (id, action, company_id, item_id, item_name, quantity, amount_owed, return_condition, created_at)
+           VALUES ($1, 'stock_in', $2, NULL, $3, $4, $5, $6, now())`,
+          [logId, company_id, name, quantity, unit_price, condition]
         );
       } catch (logErr) {
         console.error('[stock-in] FAILED INSERT inventory_logs:', {
