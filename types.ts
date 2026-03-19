@@ -6,7 +6,8 @@ export enum UserRole {
   PROCUREMENT = 'procurement',
   SUPERVISOR = 'supervisor',
   SYSTEM_HR = 'system_hr',
-  GUARD = 'guard'
+  GUARD = 'guard',
+  REG_OFFICER = 'reg_officer'
 }
 
 export enum SubscriptionStatus {

@@ -971,7 +971,7 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'intake' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN) && (
+            {activeTab === 'intake' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.REG_OFFICER) && (
               <IntakeManager guards={guards} userRole={userRole} onComplete={handleIntakeComplete} />
             )}
 
@@ -1033,7 +1033,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'interview-report' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN) && (
+            {activeTab === 'interview-report' && (userRole === UserRole.HR_OFFICER || userRole === UserRole.COMPANY_ADMIN || userRole === UserRole.SUPER_ADMIN || userRole === UserRole.REG_OFFICER) && (
               <InterviewReport guards={filteredGuards} companyId={userCompanyId} />
             )}
 

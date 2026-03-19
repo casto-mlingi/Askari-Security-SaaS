@@ -47,6 +47,18 @@ const requireAuth = (req, res, next) => {
   }
 };
 
+// Middleware factory — denies access to specified roles
+const blockRole = (...roles) => (req, res, next) => {
+  const userRole = req.user?.role;
+  if (roles.includes(userRole)) {
+    return res.status(403).json({ error: 'forbidden', message: `Role '${userRole}' is not permitted to access this resource.` });
+  }
+  return next();
+};
+
+// Convenience: deny access to reg_officers on all sensitive routes
+const blockRegOfficer = blockRole('reg_officer');
+
 const requireRefreshAuth = (req, res, next) => {
   const header = req.headers['authorization'] || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -531,6 +543,16 @@ async function ensureSchema() {
     await pool.query('ALTER TABLE IF EXISTS inventory_logs ALTER COLUMN item_id DROP NOT NULL');
   } catch (e) {
     console.warn('[schema] inventory_logs.item_id nullable ensure failed:', e?.message || e);
+  }
+  
+  // Update role checks
+  try {
+    await pool.query("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
+    await pool.query("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin', 'system_hr', 'company_admin', 'company_hr', 'supervisor', 'reg_officer', 'guard', 'hr_officer', 'procurement', 'applicant'))");
+    await pool.query("ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check");
+    await pool.query("ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('super_admin', 'system_hr', 'company_admin', 'company_hr', 'supervisor', 'reg_officer', 'guard', 'hr_officer', 'procurement', 'applicant'))");
+  } catch (e) {
+    console.warn('[schema] role constraints update failed:', e?.message || e);
   }
 }
 ensureSchema().catch(() => { });
@@ -2720,10 +2742,17 @@ app.post('/api/profiles', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'bad_request', message: 'Missing required fields' });
     }
 
-    // Only allow supervisors to be added for now via this specific endpoint if desired, 
+    // Allow supervisors and reg_officers to be added for now via this specific endpoint if desired, 
     // or allow other roles if the actor has permission.
-    if (role !== 'supervisor' && actor.role !== 'super_admin') {
-      return res.status(403).json({ error: 'forbidden', message: 'Only supervisor role can be added' });
+    const allowedRolesForHR = ['supervisor', 'reg_officer'];
+    const isAuthorized = actor.role === 'super_admin' || actor.role === 'company_admin' || actor.role === 'company_hr' || actor.role === 'hr_officer';
+    
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'forbidden', message: 'Unauthorized actor role' });
+    }
+    
+    if (actor.role !== 'super_admin' && !allowedRolesForHR.includes(role)) {
+      return res.status(403).json({ error: 'forbidden', message: 'Only supervisor or reg_officer roles can be added by tenant admins' });
     }
 
     const emailNorm = String(email).toLowerCase().trim();
@@ -2790,7 +2819,7 @@ app.get('/api/companies', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/inventory/items', requireAuth, async (req, res) => {
+app.get('/api/inventory/items', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const actor = req.user || {};
     const qCompanyId = String(req.query.company_id || '').trim() || null;
@@ -2872,7 +2901,7 @@ app.get('/api/inventory/items', requireAuth, async (req, res) => {
   }
 });
 
-app.patch('/api/inventory/items/:id', requireAuth, async (req, res) => {
+app.patch('/api/inventory/items/:id', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const id = req.params.id;
     const payload = req.body || {};
@@ -2895,7 +2924,7 @@ app.patch('/api/inventory/items/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/inventory/custody', requireAuth, async (req, res) => {
+app.get('/api/inventory/custody', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const actor = req.user || {};
     const qCompanyId = String(req.query.company_id || '').trim() || null;
@@ -2926,7 +2955,7 @@ app.get('/api/inventory/issued', requireAuth, async (req, res) => {
   app.handle(req, res);
 });
 
-app.post('/api/inventory/custody', requireAuth, async (req, res) => {
+app.post('/api/inventory/custody', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const b = req.body || {};
     const { company_id, guard_id, item_id, quantity, issued_at, condition_at_issue } = b;
@@ -2942,7 +2971,7 @@ app.post('/api/inventory/custody', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/inventory/custody/:id', requireAuth, async (req, res) => {
+app.delete('/api/inventory/custody/:id', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const id = req.params.id;
     const { rows: before } = await pool.query('SELECT * FROM inventory_custody WHERE id = $1 LIMIT 1', [id]);
@@ -2962,7 +2991,7 @@ app.delete('/api/inventory/custody/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/inventory/logs', requireAuth, async (req, res) => {
+app.get('/api/inventory/logs', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const actor = req.user || {};
     const qCompanyId = String(req.query.company_id || '').trim() || null;
@@ -2987,7 +3016,7 @@ app.get('/api/inventory/logs', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/inventory/logs', requireAuth, async (req, res) => {
+app.post('/api/inventory/logs', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const b = req.body || {};
     const { action, company_id, guard_id, item_id, quantity, return_condition, amount_owed, payment_status, created_at, paid_at } = b;
@@ -3009,7 +3038,7 @@ app.post('/api/inventory/return', requireAuth, async (req, res) => {
   app.handle(req, res);
 });
 
-app.patch('/api/inventory/logs/:id', requireAuth, async (req, res) => {
+app.patch('/api/inventory/logs/:id', requireAuth, blockRegOfficer, async (req, res) => {
   try {
     const id = req.params.id;
     const payload = req.body || {};

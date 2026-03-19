@@ -97,10 +97,10 @@ const PersonnelRegistry: React.FC<PersonnelRegistryProps> = ({
   const availableRoles = useMemo(() => {
     if (isSuperAdmin) {
        // Super Admins can create Company Admins or other staff types
-       return [UserRole.COMPANY_ADMIN, UserRole.HR_OFFICER, UserRole.PROCUREMENT, UserRole.SUPERVISOR];
+       return [UserRole.COMPANY_ADMIN, UserRole.HR_OFFICER, UserRole.PROCUREMENT, UserRole.SUPERVISOR, UserRole.REG_OFFICER];
     }
     // Tenant Admins can only provision operational roles for their own company
-    return [UserRole.SUPERVISOR, UserRole.PROCUREMENT, UserRole.HR_OFFICER];
+    return [UserRole.SUPERVISOR, UserRole.PROCUREMENT, UserRole.HR_OFFICER, UserRole.REG_OFFICER];
   }, [isSuperAdmin]);
 
   const handleAddSubmit = async (e: React.FormEvent) => {

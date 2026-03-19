@@ -105,6 +105,11 @@ const getNavItems = (role: UserRole, currentUser?: Profile | Guard | null): NavI
       return all.filter(item => ['overview', 'procurement', 'stock-in'].includes(item.tab));
     case UserRole.SUPERVISOR:
       return all.filter(item => ['overview', 'operations', 'roster', 'tactical-monitor', 'blacklisted'].includes(item.tab));
+    case UserRole.REG_OFFICER:
+      return [
+        { label: 'Intake', icon: 'Register', tab: 'intake' },
+        { label: 'Interview Report', icon: 'Report', tab: 'interview-report' },
+      ];
     default:
       return [];
   }
