@@ -497,7 +497,9 @@ const App: React.FC = () => {
     if (isApplicantFlow) {
       try {
         const targetId = newGuard?.id || (user as Profile)?.id;
+        const { id, created_at, updated_at, performance_score, ...rest } = newGuard as any;
         const result = await api.patch(`/guards/${targetId}`, {
+          ...rest,
           status: 'submitted_application',
           company_id: null
         });

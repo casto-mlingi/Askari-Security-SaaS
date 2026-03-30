@@ -129,6 +129,17 @@ app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
 
+// --- DIAGNOSTICS & HEALTH ---
+app.get('/api/health', async (req, res) => {
+  const start = Date.now();
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', latency: Date.now() - start });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: 'Database unreachable', error: err.message });
+  }
+});
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
@@ -1654,7 +1665,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       'passport_photo_url', 'previous_employer_letter_url', 'email', 'password_hash', 'system_verification_status',
       'hired_at', 'supervisor_id', 'assigned_site_id', 'readiness_score', 'medical_report_url', 'hr_feedback_note',
       'kin_name', 'kin_phone', 'kin_relationship', 'gender', 'physical_address', 'emergency_contact', 'status',
-      'emergency_contact_name', 'emergency_contact_phone', 'username'
+      'emergency_contact_name', 'emergency_contact_phone', 'username', 'dossier_data'
     ]);
 
     const payload = {};
@@ -1663,7 +1674,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
     }
 
     // CRITICAL: Sanitize Guard Payload (remove non-column fields as requested)
-    const fieldsToExclude = ['education_records', 'guarantors', 'dossier_data'];
+    const fieldsToExclude = ['education_records', 'guarantors'];
     fieldsToExclude.forEach(f => delete payload[f]);
     // Align frontend field names to DB columns
     if (Object.prototype.hasOwnProperty.call(body, 'site_id')) {
@@ -1734,7 +1745,7 @@ app.post('/api/guards', requireAuth, async (req, res) => {
         INSERT INTO guards (${fields.map(f => `"${f}"`).join(', ')}, created_at, updated_at)
         VALUES (${vals.join(', ')}, now(), now())
         ON CONFLICT ("nida_number") DO UPDATE
-          SET "full_name" = EXCLUDED."full_name",
+          SET ${fields.map(f => `"${f}" = EXCLUDED."${f}"`).join(', ')},
               "updated_at" = now()
         RETURNING *
       `;
@@ -1742,106 +1753,76 @@ app.post('/api/guards', requireAuth, async (req, res) => {
       const guard = rows[0];
       try { console.log('POST /api/guards inserted guard', { guard_id: guard?.id }); } catch { }
 
-      // Insert work experiences if provided
+      // Batch insert work experiences
       const safeWorkHistory = Array.isArray(body?.work_history) ? body.work_history : (Array.isArray(body?.work_experience) ? body.work_experience : []);
-      for (const ex of safeWorkHistory) {
-        if (!ex || !ex.company_name) continue;
-        const exId = ex.id && isValidUuid(ex.id) ? ex.id : crypto.randomUUID();
-        await client.query(
-          `INSERT INTO work_experiences (id, guard_id, company_name, role, start_date, end_date, recommendation_letter_url, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())`,
-          [exId, guard.id, ex.company_name, ex.role || null, ex.start_date || null, ex.end_date || null, ex.recommendation_letter_url || null]
-        );
+      if (safeWorkHistory.length > 0) {
+        const values = [];
+        const params = [];
+        let pIdx = 1;
+        for (const ex of safeWorkHistory) {
+          if (!ex || !ex.company_name) continue;
+          const exId = ex.id && isValidUuid(ex.id) ? ex.id : crypto.randomUUID();
+          values.push(`($${pIdx}, $${pIdx + 1}, $${pIdx + 2}, $${pIdx + 3}, $${pIdx + 4}, $${pIdx + 5}, $${pIdx + 6}, now(), now())`);
+          params.push(exId, guard.id, ex.company_name, ex.role || null, ex.start_date || null, ex.end_date || null, ex.recommendation_letter_url || null);
+          pIdx += 7;
+        }
+        if (values.length > 0) {
+          await client.query(`INSERT INTO work_experiences (id, guard_id, company_name, role, start_date, end_date, recommendation_letter_url, created_at, updated_at) VALUES ${values.join(',')}`, params);
+        }
       }
-      // NOTE: next_of_kin insertion moved to line ~1310 for unified schema alignment
-      // Insert education records if provided: map certificate_scan -> certificate_url and ensure integer graduation_year
-      // PRODUCTION HOTFIX: Ensure education_records is handled even if null/undefined
+      // Batch insert education records
       const safeEdu = Array.isArray(incomingEducation) ? incomingEducation : [];
-      for (const it of safeEdu) {
-        if (!it) continue;
-        let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
-        const allowedLevels = new Set(['primary', 'secondary', 'advanced', 'nta4_5', 'military', 'college', 'university']);
-        if (level && !allowedLevels.has(level)) {
-          level = 'advanced';
-        }
-        const inst = it?.institution_name || null;
+      if (safeEdu.length > 0) {
+        const values = [];
+        const params = [];
+        let pIdx = 1;
+        for (const it of safeEdu) {
+          if (!it) continue;
+          let level = it?.level ? String(it.level).toLowerCase() : (it?.qualification_level ? String(it.qualification_level).toLowerCase() : null);
+          const allowedLevels = new Set(['primary', 'secondary', 'advanced', 'nta4_5', 'military', 'college', 'university']);
+          if (level && !allowedLevels.has(level)) level = 'advanced';
 
-        // Strict graduation_year Type Enforcement
-        const yearRaw = it?.year ?? it?.graduation_year ?? it?.completion_year;
-        let graduationYearInt = null;
-        if (yearRaw !== undefined && yearRaw !== null && String(yearRaw).trim() !== '') {
-          graduationYearInt = parseInt(String(yearRaw), 10);
-          if (isNaN(graduationYearInt)) {
-            const err = new Error('education_graduation_year_invalid');
-            err.code = 'EDU_YEAR_INVALID';
-            err.field = 'graduation_year';
-            throw err;
+          const inst = it?.institution_name || null;
+          const yearRaw = it?.year ?? it?.graduation_year ?? it?.completion_year;
+          let graduationYearInt = null;
+          if (yearRaw !== undefined && yearRaw !== null && String(yearRaw).trim() !== '') {
+            graduationYearInt = parseInt(String(yearRaw), 10);
+            if (isNaN(graduationYearInt)) throw { code: 'EDU_YEAR_INVALID', field: 'graduation_year' };
           }
+          const cert = it?.certificate_url || it?.certificate_scan || null;
+          if (!level && !inst && graduationYearInt == null && !cert) continue;
+
+          values.push(`($${pIdx}, $${pIdx + 1}, $${pIdx + 2}, $${pIdx + 3}, $${pIdx + 4}, now(), now())`);
+          params.push(guard.id, inst, level, graduationYearInt, cert);
+          pIdx += 5;
         }
-
-        // Correct field mapping: prefers direct certificate_url, falls back to certificate_scan
-        const cert = it?.certificate_url || it?.certificate_scan || null;
-
-        const touched = !!(level || inst || graduationYearInt != null || cert);
-        if (!touched) continue;
-
-        try {
-          await client.query(
-            `INSERT INTO education_records (guard_id, institution_name, level, graduation_year, certificate_url, created_at, updated_at)
-             VALUES ($1,$2,$3,$4,$5, now(), now())`,
-            [guard.id, inst, level, graduationYearInt, cert]
-          );
-        } catch (eduErr) {
-          console.error('DATABASE ERROR: education_records insert failed', {
-            message: eduErr.message,
-            guard_id: guard.id,
-            data: { inst, level, graduationYearInt }
-          });
-          throw eduErr;
+        if (values.length > 0) {
+          await client.query(`INSERT INTO education_records (guard_id, institution_name, level, graduation_year, certificate_url, created_at, updated_at) VALUES ${values.join(',')}`, params);
         }
       }
 
-      // Insert guarantors: strictly use full_name and guarantor_letter_url mapping
-      const phoneOk = (p) => {
-        if (!p) return true;
-        const s = String(p).trim();
-        return /^\+?\d[\d\- ]{7,}$/.test(s);
-      };
-      for (const gt of incomingGuarantors) {
-        const full_name = (gt?.full_name || gt?.name || '').trim();
-        const occupation = gt?.occupation || null;
-        const relationship = gt?.relationship || null;
-        const phone = gt?.phone || null;
-        const idCopy = gt?.id_copy_url || null;
-        const letter = gt?.guarantor_letter_url || gt?.letter_url || null;
-        const residence = gt?.residence_letter_url || null;
-        const touched = !!(full_name || relationship || phone || letter || residence || occupation);
-        if (!touched) continue;
-        if (!full_name) {
-          const err = new Error('guarantor_full_name_required');
-          err.code = 'GUA_NAME_REQUIRED';
-          err.field = 'full_name';
-          throw err;
-        }
-        if (!phoneOk(phone)) {
-          const err = new Error('guarantor_phone_invalid');
-          err.code = 'GUA_PHONE_INVALID';
-          err.field = 'phone';
-          throw err;
-        }
-        try {
-          await client.query(
-            `INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(), now())`,
-            [guard.id, full_name, occupation, relationship, phone, idCopy, letter, residence]
+      // Batch insert guarantors
+      const safeGuarantors = Array.isArray(incomingGuarantors) ? incomingGuarantors : [];
+      if (safeGuarantors.length > 0) {
+        const values = [];
+        const params = [];
+        let pIdx = 1;
+        for (const gt of safeGuarantors) {
+          const full_name = (gt?.full_name || gt?.name || '').trim();
+          if (!full_name) continue;
+          const phone = gt?.phone || null;
+          if (phone && !/^\+?\d[\d\- ]{7,}$/.test(String(phone).trim())) throw { code: 'GUA_PHONE_INVALID', field: 'phone' };
+
+          values.push(`($${pIdx}, $${pIdx + 1}, $${pIdx + 2}, $${pIdx + 3}, $${pIdx + 4}, $${pIdx + 5}, $${pIdx + 6}, $${pIdx + 7}, now(), now())`);
+          params.push(
+            guard.id, full_name, gt?.occupation || null, gt?.relationship || null,
+            phone, gt?.id_copy_url || null, gt?.guarantor_letter_url || gt?.letter_url || null,
+            gt?.residence_letter_url || null
           );
-        } catch (guaErr) {
-          console.error('DATABASE ERROR: guarantors insert failed', {
-            message: guaErr.message,
-            guard_id: guard.id,
-            full_name
-          });
-          throw guaErr;
+          pIdx += 8;
+        }
+        if (values.length > 0) {
+          await client.query(`INSERT INTO guarantors (guard_id, full_name, occupation, relationship, phone, id_copy_url, guarantor_letter_url, residence_letter_url, created_at, updated_at) VALUES ${values.join(',')}`, params);
         }
       }
 

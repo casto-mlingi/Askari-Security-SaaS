@@ -6,9 +6,6 @@ export const guardService = {
    * Fetches all guards for the current tenant, INCLUDING related data.
    */
   async getGuards(): Promise<ApiResponse<Guard[]>> {
-    try {
-      console.log('Super Admin API Call:', getApiBase() + '/guards');
-    } catch { }
     const result = await api.get<Guard[]>('/guards');
     if (result.error) {
       const local = JSON.parse(localStorage.getItem('guards_local') || '[]');

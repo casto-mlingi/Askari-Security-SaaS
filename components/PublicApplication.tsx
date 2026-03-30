@@ -73,6 +73,7 @@ const PublicApplication: React.FC<PublicApplicationProps> = ({ onBack, onSubmit 
           updated_at: new Date().toISOString(),
           guarantors: [],
           education_history: [],
+          work_history: [],
           password: payload.password,
         } as Guard;
       }

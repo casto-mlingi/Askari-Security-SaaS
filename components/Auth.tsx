@@ -18,6 +18,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasSucceeded, setHasSucceeded] = useState(false);
   const loginAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -53,9 +54,13 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
       } else {
         const { token, user } = result.data;
         localStorage.setItem('amini_auth_token', token);
-        onLogin(user);
+        localStorage.setItem('token', token); // Ensure both keys are synced
         setIsSubmitting(false);
-        loginAbortRef.current = null;
+        setHasSucceeded(true); 
+        setTimeout(() => {
+          onLogin(user);
+          loginAbortRef.current = null;
+        }, 800); // Soothe the redirect
         return;
       }
     } catch (err) {
@@ -132,9 +137,10 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onPublicSubmit, guards, profiles, 
           </div>
 
           <div className="bg-surface rounded-2xl border border-border shadow-sm p-6 lg:p-8">
-            {error && (
-              <div className="mb-6 p-4 bg-error/10 border-2 border-error/30 rounded-xl text-error text-sm font-bold animate-fade-in">
-                {error}
+            {hasSucceeded && (
+              <div className="mb-6 p-4 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-emerald-600 text-sm font-bold flex items-center gap-3 animate-in zoom-in duration-300">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" strokeWidth="3" /></svg>
+                Access Granted. Redirecting...
               </div>
             )}
 

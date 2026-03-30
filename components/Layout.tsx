@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { UserRole, Profile, Guard } from '../types';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
+import DBStatus from './DBStatus';
 import { api } from '../services/api';
 
 interface LayoutProps {
@@ -102,6 +103,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
           </div>
 
           <div className="flex items-center gap-4 md:gap-8">
+            <div className="hidden lg:block">
+              <DBStatus />
+            </div>
             
             <div className="hidden md:flex flex-col items-end">
               <span className="text-xs font-semibold text-text-muted uppercase tracking-wider leading-none">Access Level</span>

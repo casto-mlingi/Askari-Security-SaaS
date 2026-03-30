@@ -204,6 +204,8 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   const [formData, setFormData] = useState<WizardData>(initialFormState);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStep, setSubmitStep] = useState<string>('');
+  const [isCheckingNida, setIsCheckingNida] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [profileScore, setProfileScore] = useState(0);
 
@@ -404,6 +406,20 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
       else delete next[name];
       return next;
     });
+  };
+
+  const handleNidaBlur = async () => {
+    const nida = String(formData.nida_number || '').trim();
+    if (!nida || nida.replace(/\D/g, '').length !== 20 || isReadOnly) return;
+    
+    setIsCheckingNida(true);
+    try {
+      const check = await api.get<{ exists: boolean }>(`/guards/check-nida/${encodeURIComponent(nida)}`);
+      if (!check.error && check.data?.exists) {
+        setErrors(prev => ({ ...prev, nida_number: 'Mlinzi mwenye NIDA hii tayari amesajiliwa' }));
+      }
+    } catch { }
+    setIsCheckingNida(false);
   };
 
   const handleFileChange = (field: keyof WizardData, url: string) => {
@@ -725,13 +741,13 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
     });
 
     setIsSubmitting(true);
+    setSubmitStep('Verifying Data...');
     try {
-      // 0. NIDA duplicate check
+      // 0. NIDA duplicate check (Final verification)
       const nida = String(formData.nida_number || '').trim();
       if (nida) {
-        console.log("Checking NIDA duplicate:", nida);
+        setSubmitStep('Checking Duplicates...');
         const check = await api.get<{ exists: boolean }>(`/guards/check-nida/${encodeURIComponent(nida)}`);
-        console.log("NIDA check result:", check);
         if (!check.error && check.data?.exists) {
           (window as any).showNotification?.('warning', 'Mlinzi mwenye NIDA hii tayari amesajiliwa');
           setIsSubmitting(false);
@@ -739,6 +755,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         }
       }
 
+      setSubmitStep('Synchronizing Record...');
       // 1. Separate core guard data from related arrays (guarantors, education)
       // We must strip these arrays because 'guards' table doesn't have these columns.
       const { guarantors, education_records, work_history, ...coreGuardData } = formData;
@@ -986,36 +1003,67 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
   };
 
   return (
-    <form
-      id="intakeForm"
-      className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-500 relative overflow-hidden"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (isLocked) return;
-        handleSubmit();
-      }}
-    >
-      <div className="space-y-16">
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
-          <SectionHeader number="01" title="Identity & Contact" />
-          {isApplicantFlow && (
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-700">
-              <p className="text-[10px] font-black uppercase tracking-widest">
-                Company itapangwa na HR baadaye; company ID si lazima wakati wa intake.
-              </p>
+    <div className="relative">
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[2000] flex items-center justify-center animate-in fade-in duration-500">
+          <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl border border-white/20 flex flex-col items-center max-w-sm w-full mx-4 text-center transform animate-in zoom-in-95 duration-500">
+            <div className="relative mb-8">
+               <div className="w-24 h-24 border-4 border-slate-100 border-t-primary rounded-full animate-spin" />
+               <div className="absolute inset-0 flex items-center justify-center">
+                  <Shield className="w-10 h-10 text-primary animate-pulse" />
+               </div>
             </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <InputField label="Full Official Name" name="full_name" value={formData.full_name} onChange={handleChange} error={errors.full_name} placeholder="AS PER NIDA CARD" disabled={isReadOnly} />
-            <InputField
-              label="NIDA Number"
-              name="nida_number"
-              value={formData.nida_number}
-              onChange={handleChange}
-              error={errors.nida_number}
-              placeholder="19900101-..."
-              disabled={isReadOnly}
-              rightElement={formData.nida_number.replace(/\D/g, '').length >= 8 && formData.dob && formData.nida_number.startsWith(formData.dob.replace(/-/g, '')) ? <span className="text-[10px] font-bold text-green-500 flex items-center gap-1">✓ DOB Linked</span> : null}
+            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Syncing Data</h3>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">Security Node Linkage Active</p>
+            
+            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-4">
+               <div className="bg-primary h-full transition-all duration-700 ease-out" style={{ width: submitStep.includes('Synchroniz') ? '80%' : (submitStep.includes('Duplicate') ? '40%' : '15%') }} />
+            </div>
+            
+            <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em] animate-pulse">
+              {submitStep}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <form
+        id="intakeForm"
+        className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-500 relative overflow-hidden"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (isLocked) return;
+          handleSubmit();
+        }}
+      >
+        <div className="space-y-16">
+          <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
+            <SectionHeader number="01" title="Identity & Contact" />
+            {isApplicantFlow && (
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-700">
+                <p className="text-[10px] font-black uppercase tracking-widest">
+                  Company itapangwa na HR baadaye; company ID si lazima wakati wa intake.
+                </p>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <InputField label="Full Official Name" name="full_name" value={formData.full_name} onChange={handleChange} error={errors.full_name} placeholder="AS PER NIDA CARD" disabled={isReadOnly} />
+              <InputField
+                label="NIDA Number"
+                name="nida_number"
+                value={formData.nida_number}
+                onChange={handleChange}
+                onBlur={handleNidaBlur}
+                error={errors.nida_number}
+                placeholder="19900101-..."
+                disabled={isReadOnly}
+                rightElement={
+                  isCheckingNida ? (
+                    <div className="w-3 h-3 border border-primary border-t-transparent rounded-full animate-spin" />
+                  ) : (formData.nida_number.replace(/\D/g, '').length >= 8 && formData.dob && formData.nida_number.startsWith(formData.dob.replace(/-/g, ''))) ? (
+                    <span className="text-[10px] font-bold text-green-500 flex items-center gap-1">✓ DOB Linked</span>
+                  ) : null
+                }
             />
             <InputField label="Mobile Phone" name="phone" value={formData.phone} onChange={handleChange} error={errors.phone} placeholder="+255..." disabled={isReadOnly} />
             <InputField
@@ -1430,7 +1478,7 @@ export const GuardWizard: React.FC<{ guards: Guard[], userRole: UserRole, initia
         )}
       </div>
 
-    </form>
+      </form>
+    </div>
   );
-
 };
