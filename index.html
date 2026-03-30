@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AMINI - Security Platform</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link href="/src/style.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            background-color: #2171B5;
+            line-height: 1.6;
+            color: #fff;
+        }
+        .font-hud { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.025em;
+        }
+        p {
+            line-height: 1.6;
+        }
+        .sidebar-gradient {
+            background: linear-gradient(135deg, #17578A 0%, #2171B5 50%, #4A8EC5 100%);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.1);
+        }
+        .glass-effect {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        .animate-slide-up {
+            animation: slideUp 0.5s ease-out;
+        }
+        .animate-scale-in {
+            animation: scaleIn 0.4s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .nav-item-hover {
+            transition: all 0.2s ease;
+        }
+        .nav-item-hover:hover {
+            transform: translateX(4px);
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            body {
+                -webkit-text-size-adjust: 100%;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            .mobile-optimized {
+                touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            .mobile-text {
+                font-size: 14px;
+                line-height: 1.4;
+            }
+
+            .mobile-heading {
+                font-size: 24px;
+                line-height: 1.2;
+            }
+
+            /* Better touch targets */
+            button, a, [role="button"] {
+                min-height: 44px;
+                min-width: 44px;
+            }
+
+            /* Prevent horizontal scroll */
+            .mobile-scroll {
+                overflow-x: hidden;
+            }
+        }
+
+        @media (max-width: 768px) and (min-width: 641px) {
+            /* Tablet-specific styles */
+            .tablet-optimized {
+                padding: 1rem;
+            }
+        }
+
+        /* Improved focus states for accessibility */
+        button:focus-visible,
+        a:focus-visible {
+            outline: 2px solid #2171B5;
+            outline-offset: 2px;
+        }
+
+        /* Desktop-only application styles */
+        @media (min-width: 1024px) {
+            .desktop-application {
+                background: linear-gradient(135deg, #17578A 0%, #4A8EC5 100%);
+                min-height: 100vh;
+                scroll-behavior: smooth;
+            }
+
+            /* Smooth scrolling for application page */
+            html {
+                scroll-behavior: smooth;
+            }
+
+            .application-card {
+                backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.1);
+            }
+
+            /* Scroll progress indicator */
+            .scroll-progress {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 3px;
+                background: linear-gradient(90deg, #2171B5, #2171B5);
+                transform-origin: left;
+                z-index: 1000;
+                transition: transform 0.1s ease-out;
+            }
+
+            /* Custom scrollbar */
+            .custom-scrollbar::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-track {
+                background: rgba(33, 113, 181, 0.1);
+                border-radius: 4px;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+                background: #2171B5;
+                border-radius: 4px;
+                transition: background 0.3s ease;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                background: #17578A;
+            }
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* Global overrides to replace gray/black with #2171B5 */
+        [class*="text-slate-"], [class*="text-gray-"], .text-black { color: #2171B5 !important; }
+        *:not(input):not(textarea):not(select)[class*="bg-slate-"],
+        *:not(input):not(textarea):not(select)[class*="bg-gray-"],
+        .bg-black { background-color: #2171B5 !important; color: #fff !important; }
+        *:not(input):not(textarea):not(select)[class*="border-slate-"],
+        *:not(input):not(textarea):not(select)[class*="border-gray-"],
+        .border-black { border-color: #2171B5 !important; }
+        *:not(input):not(textarea):not(select)[class*="stroke-slate-"],
+        *:not(input):not(textarea):not(select)[class*="stroke-gray-"],
+        .stroke-black { stroke: #2171B5 !important; }
+        *:not(input):not(textarea):not(select)[class*="fill-slate-"],
+        *:not(input):not(textarea):not(select)[class*="fill-gray-"],
+        .fill-black { fill: #2171B5 !important; }
+        /* Ensure text on white backgrounds is black for readability */
+        .bg-white { color: #000 !important; }
+        .bg-white :not(button)[class*="text-"] { color: #000 !important; }
+        .bg-white button[class*="text-"] { color: #fff !important; }
+        p.text-warning, p[class*="text-warning"], .text-warning { color: #ef4444 !important; }
+        button { background-color: #2171B5 !important; border-color: #2171B5 !important; color: #fff !important; }
+        button svg { color: #fff !important; stroke: #fff !important; }
+        /* White text for primary blues */
+        [class*="bg-primary"], [class*="from-primary"], [class*="via-primary"], [class*="to-primary"] { color: #fff !important; }
+        button[class*="bg-primary"], 
+        button[class*="from-primary"], 
+        button[class*="via-primary"], 
+        button[class*="to-primary"],
+        button.bg-black, 
+        button.bg-slate-900 { color: #fff !important; }
+        button[class*="bg-primary"] svg, 
+        button[class*="from-primary"] svg, 
+        button[class*="via-primary"] svg, 
+        button[class*="to-primary"] svg,
+        button.bg-black svg, 
+        button.bg-slate-900 svg { color: #fff !important; }
+        /* Preserve light gray backgrounds for form fields */
+        input[class*="bg-"], textarea[class*="bg-"], select[class*="bg-"] { background-color: #f8fafc !important; }
+        input, textarea, select { color: #000 !important; border-color: #e2e8f0 !important; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
+  }
+}
+</script>
+</head>
+<body class="text-primary antialiased overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>
